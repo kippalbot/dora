@@ -1,6 +1,6 @@
-# OpenAI WebSocket Browser Example
+# OpenAI WebSocket Browser Example (Docker)
 
-This example demonstrates a voice chat system using WebSocket for browser/client communication, with cloud-based AI models (MaaS) instead of local models.
+This example runs a voice chat pipeline via a WebSocket server inside Docker. It dynamically spawns a Dora dataflow from a template and routes audio + text between the client and the nodes.
 
 ## Architecture
 
@@ -9,29 +9,44 @@ The system uses a WebSocket server (`dora-openai-websocket`) that:
 2. Dynamically spawns a Dora dataflow based on the template
 3. Routes audio and text between the client and the dataflow
 
-## Prerequisites
+## Quick Start (Ubuntu 24.04)
 
-1. Ensure you have built the WebSocket server:
-```bash
-cd ../../node-hub/dora-openai-websocket
-cargo build --release -p dora-openai-websocket
-```
+1) Install Docker + Compose
+- sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg lsb-release
+- Install Docker Engine: https://docs.docker.com/engine/install/ubuntu/
+- Install Compose plugin: https://docs.docker.com/compose/install/linux/
+- Optional: add your user to docker group and re-login: sudo usermod -aG docker $USER
 
-2. Make sure all required Dora nodes are installed:
-```bash
-# Install Python nodes
-pip install -e ../../node-hub/dora-asr
-pip install -e ../../node-hub/dora-speechmonitor  
-pip install -e ../../node-hub/dora-text-segmenter
-pip install -e ../../node-hub/dora-primespeech
+2) Clone, build image
+- git clone https://github.com/dora-rs/dora.git && cd dora
+- docker build -t dora-voicechat:latest -f docker/Dockerfile .
 
-# Build Rust nodes
-cargo build --release -p dora-maas-client
-```
+3) Configure environment
+- Create repo root .env with your key:
+  OPENAI_API_KEY=sk-...
+- Export absolute host paths (no ~):
+  export MODELS_DIR="$(realpath ~/.dora/models)"
+  export HF_CACHE="$(realpath ~/.cache/huggingface)"
+  export REPO_DIR="$(pwd)"
 
-3. Ensure models are in place:
-- ASR models: `/Users/yuechen/.dora/models/asr`
-- PrimeSpeech models: `/Users/yuechen/.dora/models/primespeech`
+4) Download models (outside the container)
+- If you already have models under $MODELS_DIR, skip.
+- Or run the helper to populate host dirs:
+  bash docker/download-models.sh all
+
+5) Start the server
+- docker compose -f docker/docker-compose.yml up -d server
+- Logs: docker compose -f docker/docker-compose.yml logs -f --tail=200 server
+
+### Quick Test After Build
+- Ensure env vars are exported (same shell):
+  - export MODELS_DIR="$(realpath ~/.dora/models)"
+  - export HF_CACHE="$(realpath ~/.cache/huggingface)"
+  - export REPO_DIR="$(pwd)"
+- Run end-to-end ASR + TTS tests via compose:
+  - bash docker/compose-tests.sh
+  - Choose a different TTS voice:
+    - bash docker/compose-tests.sh --voice maple
 
 ## Configuration
 
@@ -42,8 +57,8 @@ The system uses `whisper-template-metal.yml` as a template. When a client connec
 4. Starts the dataflow automatically
 
 ### MaaS Configuration
-
-The MaaS client is configured via `maas_mcp_browser_config.toml`. Make sure your API keys and endpoints are properly set.
+The MaaS client is configured via `maas_mcp_browser_config.toml`. Prefer storing keys as env references in the file:
+`api_key = "env:OPENAI_API_KEY"` (OPENAI_API_KEY is picked from ../.env by compose).
 
 ## Running the System
 
@@ -54,19 +69,22 @@ If you want to test browser automation features:
 python mock_weather_server.py
 ```
 
-### Step 2: Start the WebSocket Server
-
-From this directory:
-```bash
-cargo run -p dora-openai-websocket
+### Run ASR + TTS validation (from host)
+- ASR:
 ```
-
-You should see output like:
+docker compose -f docker/docker-compose.yml exec \
+  -e ASR_MODELS_DIR=/root/.dora/models/asr \
+  server bash -lc 'cd /opt/dora/examples/setup-new-chatbot/asr-validation && python test_basic_asr.py'
 ```
-Server started, listening on 0.0.0.0:8123
+- TTS:
 ```
-
-The server is now waiting for WebSocket connections on port 8123.
+docker compose -f docker/docker-compose.yml exec \
+  -e PRIMESPEECH_MODEL_DIR=/root/.dora/models/primespeech \
+  server bash -lc 'cd /opt/dora/examples/setup-new-chatbot/primespeech-validation && python test_tts_direct.py --device cpu --voice doubao'
+```
+Alternatively:
+- `bash docker/compose-tests.sh` (uses compose `server` container)
+- `bash docker/run-tests.sh` (runs tests in a one-off container)
 
 ### Step 3: Connect with Moly Client
 
@@ -110,16 +128,14 @@ When Moly connects:
 - Verify network connectivity to cloud providers
 - Check MaaS client logs for errors
 
-## File Structure
-
-```
-openai-websocket-browser/
-├── README.md                           # This file
-├── whisper-template-metal.yml          # Dataflow template
-├── maas_mcp_browser_config.toml       # MaaS configuration
-├── mock_weather_server.py             # Mock server for testing
-└── whisper-*.yml                       # Generated dataflow files (created at runtime)
-```
+## Jupyter Notebook (in-container editing)
+- Optional notebook service is included in compose.
+- Set auth (choose one) in .env:
+  - `JUPYTER_PASSWORD=change-me` (recommended, disables token)
+  - OR `JUPYTER_TOKEN=dora`
+- Start: `docker compose -f docker/docker-compose.yml up -d notebook`
+- Open: `http://<server-ip>:${JUPYTER_PORT:-8888}`
+- Files under `/opt/dora` (mounted from `${REPO_DIR}`) — edits to templates (e.g., `whisper-template.yml`) take effect immediately.
 
 ## Notes
 

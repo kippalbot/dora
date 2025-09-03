@@ -251,7 +251,7 @@ install_dependencies() {
     
     # Install dora-rs
     print_info "Installing dora-rs..."
-    pip install dora-rs==0.3.6
+    pip install dora-rs==0.3.12
     
     # Install other dependencies
     print_info "Installing additional dependencies..."
@@ -267,32 +267,32 @@ install_dependencies() {
     print_success "Core dependencies installed"
 }
 
-# Check and link system dora CLI if available
-check_dora_cli() {
-    print_header "Checking Dora CLI"
+# Install and check dora CLI
+install_dora_cli() {
+    print_header "Installing Dora CLI"
     
-    # Check for system dora with version 0.3.12
-    SYSTEM_DORA=""
-    
-    # Check common locations
-    for dora_path in /usr/local/bin/dora ~/.cargo/bin/dora ~/bin/dora; do
-        if [ -f "$dora_path" ]; then
-            VERSION=$($dora_path --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+    # Check if cargo is available
+    if command -v cargo &> /dev/null; then
+        print_info "Installing dora-cli via cargo..."
+        cargo install dora-cli --locked
+        
+        # Check if installation was successful
+        if [ -f "$HOME/.cargo/bin/dora" ]; then
+            VERSION=$($HOME/.cargo/bin/dora --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
             if [ "$VERSION" = "0.3.12" ]; then
-                SYSTEM_DORA="$dora_path"
-                print_success "Found dora CLI version 0.3.12 at: $dora_path"
-                break
+                # Link to conda environment
+                ln -sf "$HOME/.cargo/bin/dora" "$CONDA_PREFIX/bin/dora"
+                print_success "Dora CLI version 0.3.12 installed and linked to environment"
+            else
+                print_warning "Dora CLI installed but version is $VERSION (expected 0.3.12)"
             fi
+        else
+            print_warning "Dora CLI installation failed"
         fi
-    done
-    
-    # Link system dora to environment if found
-    if [ -n "$SYSTEM_DORA" ]; then
-        ln -sf "$SYSTEM_DORA" "$CONDA_PREFIX/bin/dora"
-        print_success "Linked system dora CLI to environment"
     else
-        print_warning "Dora CLI version 0.3.12 not found in system"
-        print_info "Using dora from pip installation (may be older version)"
+        print_warning "Cargo not found. Cannot install dora-cli via cargo."
+        print_info "Install Rust from https://rustup.rs/ to get the latest dora-cli"
+        print_info "Using dora from pip installation instead"
     fi
 }
 
@@ -405,7 +405,7 @@ main() {
     conda activate $ENV_NAME
     
     install_dependencies
-    check_dora_cli
+    install_dora_cli
     install_dora_nodes
     fix_numpy_compatibility
     

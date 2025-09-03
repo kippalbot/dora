@@ -1,0 +1,68 @@
+services:
+  downloader:
+    image: dora-voicechat:latest
+    user: "${UID:-1000}:${GID:-1000}"
+    entrypoint: ["bash", "-lc"]
+    command: >-
+      python /opt/dora/examples/model-manager/download_models.py --download funasr &&
+      python /opt/dora/examples/model-manager/download_models.py --download primespeech &&
+      python /opt/dora/examples/model-manager/download_models.py --list &&
+      python /opt/dora/examples/model-manager/convert_to_onnx.py --convert all
+    environment:
+      HOME: /tmp/home
+      HF_HOME: /tmp/home/.cache/huggingface
+      TRANSFORMERS_CACHE: /tmp/home/.cache/huggingface
+      HUGGINGFACE_HUB_CACHE: /tmp/home/.cache/huggingface
+      # HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - ${MODELS_DIR:?set MODELS_DIR}:/tmp/home/.dora/models
+      - ${HF_CACHE:?set HF_CACHE}:/tmp/home/.cache/huggingface
+
+  server:
+    image: dora-voicechat:latest
+    ports:
+      - "8123:8123"
+    env_file:
+      - ../.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8123
+      # Force FunASR for zh, avoid Whisper model download at runtime
+      ASR_ENGINE: funasr
+      FUNASR_DISABLE_UPDATE: "true"
+      ASR_MODELS_DIR: /root/.dora/models/asr
+      PRIMESPEECH_MODEL_DIR: /root/.dora/models/primespeech
+      # Increase Dora logs if needed
+      RUST_LOG: info
+      # Inject OpenAI key from .env (../.env)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      # Mount repo so edits (templates, code) reflect live
+      - ${REPO_DIR:-..}:/opt/dora
+      # Set :ro after ONNX conversion is done; leave rw during first run
+      - ${MODELS_DIR:?set MODELS_DIR}:/root/.dora/models
+      - ${HF_CACHE:?set HF_CACHE}:/root/.cache/huggingface
+      # Optional: mount the browser MCP configuration if you use it
+      # - ${PWD}/examples/chatbot-openai-websocket-browser/maas_mcp_browser_config.toml:/opt/dora/examples/chatbot-openai-websocket-browser/maas_mcp_browser_config.toml:ro
+    depends_on:
+      - downloader
+    # restart: unless-stopped
+
+  notebook:
+    image: dora-voicechat:latest
+    env_file:
+      - ../.env
+    environment:
+      JUPYTER_PORT: ${JUPYTER_PORT:-8888}
+      # Option A (recommended): set a password, token will be disabled
+      # JUPYTER_PASSWORD: ${JUPYTER_PASSWORD:-change-me}
+      # Option B: leave password unset and use a token
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-dora}
+    entrypoint: ["/usr/local/bin/jupyter-entrypoint.sh"]
+    working_dir: /opt/dora/examples/chatbot-openai-websocket-browser
+    ports:
+      - "${JUPYTER_PORT:-8888}:${JUPYTER_PORT:-8888}"
+    volumes:
+      - ${REPO_DIR:-..}:/opt/dora
+      - ${MODELS_DIR:?set MODELS_DIR}:/root/.dora/models:ro
+      - ${HF_CACHE:?set HF_CACHE}:/root/.cache/huggingface

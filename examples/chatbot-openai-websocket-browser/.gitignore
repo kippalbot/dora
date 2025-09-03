@@ -1,2 +1,5 @@
 # Config files with API keys
 maas_mcp_browser_config.toml
+
+# Generated per-session dataflows (created at runtime by the websocket server)
+whisper-*.yml

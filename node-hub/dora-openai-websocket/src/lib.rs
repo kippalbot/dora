@@ -313,12 +313,34 @@ async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
     let id = random::<u16>();
     let node_id = format!("server-{id}");
     let dataflow = format!("{input_audio_transcription}-{}.yml", id);
-    let template = format!("{input_audio_transcription}-template-metal.yml");
+    // Pick a template suited for the platform
+    let candidates = [
+        format!("{input_audio_transcription}-template-linux.yml"),
+        format!("{input_audio_transcription}-template.yml"),
+        format!("{input_audio_transcription}-template-metal.yml"),
+    ];
+    let template = candidates
+        .iter()
+        .find(|p| std::path::Path::new(p.as_str()).exists())
+        .cloned()
+        .unwrap_or_else(|| format!("{input_audio_transcription}-template-metal.yml"));
     let mut replacements = HashMap::new();
     replacements.insert("NODE_ID".to_string(), node_id.clone());
     replacements.insert("LLM_ID".to_string(), llm);
     println!("Filling template: {}", template);
     replace_placeholder_in_file(&template, &replacements, &dataflow).unwrap();
+    // Build the dataflow first to avoid race with coordinator
+    println!("Building dataflow {} before start", dataflow);
+    let build_output = std::process::Command::new("dora")
+        .arg("build")
+        .arg(&dataflow)
+        .output()
+        .expect("Failed to execute dora build command");
+    if !build_output.status.success() {
+        eprintln!("Failed to build dataflow: {}", String::from_utf8_lossy(&build_output.stderr));
+        ws.write_frame(Frame::close(1011, b"Failed to build dataflow")).await?;
+        return Err(WebSocketError::InvalidConnectionHeader);
+    }
     // Start the dataflow using dora CLI with the node_id as the name
     println!("Starting dataflow {} with name {}", dataflow, node_id);
     let output = std::process::Command::new("dora")
