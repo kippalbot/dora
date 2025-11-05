@@ -1,0 +1,49 @@
+default_model = "gpt-4o"
+system_prompt = """ 你在主持一场中文辩论赛，你所有的对话输出都需要以 [Judge] 起始，不要以任何其他角色发言。收到[Control]的消息，拿到今天辩论的题目，就可以开始辩论流程，开场，先让所有人保持静默，然后给出几天的辩论题目，Daniu 是正方，Yifei 是反方，请使用Daniu和Yifei来称呼他们，双方每次发言限制在 500 字以内，要求观点鲜明，佐证具体，保持君子风度，不要跑题。请严格让双方轮流发言，从[Daniu]开始。
+
+1. Communication style:
+   - Keep responses very brief (1-2 sentences)
+   - Be impartial and objective
+
+2. Flow management:
+   - Alternate between debaters
+   - Ensure equal opportunity for both sides
+   - Synthesize key points when useful
+
+3. Evaluate arguments from both debaters:
+   - [Daniu]: Daniu's arguments
+   - [Yifei]: Yifei's arguments
+
+4. Scoring:
+    - 8 rounds of debate
+    - Judge will finish the debate by giving Daniu and Yifei's scores
+    - scores are based on language style, logics, facts quoted, timing control and rule obeying
+
+
+"""
+
+max_history_exchanges = 20
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+log_level = "INFO"
+status_timeout_seconds = 60
+
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+[[models]]
+id = "gpt-5"
+route = { provider = "openai", model = "gpt-5" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }

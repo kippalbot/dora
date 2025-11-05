@@ -1,0 +1,29 @@
+nodes:
+  - id: prompt-sender
+    path: minimal_demo/prompt_sender.py
+    outputs:
+      - text
+
+  - id: openai-response-client
+    build: cargo build --release -p openai-response-client
+    path: ../../target/release/openai-response-client
+    inputs:
+      text: prompt-sender/text
+    outputs:
+      - text
+      - status
+      - log
+      - tool_calls
+    env:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_RESPONSE_CONFIG_PATH: ${OPENAI_RESPONSE_CONFIG_PATH:-openai_response_config.toml}
+      OPENAI_RESPONSE_MODEL: ${OPENAI_RESPONSE_MODEL:-gpt-5}
+      OPENAI_ENABLE_STREAMING: ${OPENAI_ENABLE_STREAMING:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+  - id: response-sink
+    path: minimal_demo/response_sink.py
+    inputs:
+      text: openai-response-client/text
+      status: openai-response-client/status
+      tool_calls: openai-response-client/tool_calls

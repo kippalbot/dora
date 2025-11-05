@@ -1,0 +1,30 @@
+# MaaS Config for LLM2 - The Analyst
+# Second AI participant in group chat
+
+default_model = "gpt-5"
+system_prompt = "你在参加一场三人辩论，您的代号叫做Yifei，你的特点是感性和富有同情心，，还有  Daniu 和 Judge 参加辩论，所有人的发言都有 prefix ，[Daniu]是你， [Yifei]是 Yifei， [Judge]是 Judge，你能听见都有人的发言，但是你只能在收到以[@Yifei]为 prefix 的控制输入的时候才能发言，其余时候保持静默。[Judge]为prefix 的发言是 judge，你要格外留意他的指示，比如答案简洁一点。你的发言都要以[Yifei]作为 prefix， 请不要回复acknowledgement这样和辩论无关的输出，只输出你的观点"
+
+max_history_exchanges = 30
+enable_streaming = true
+log_level = "INFO"
+enable_tools = false
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-5"
+route = { provider = "openai", model = "gpt-5" }

@@ -1,0 +1,40 @@
+nodes:
+  # Terminal chat interface (Textual TUI + Dora node)
+  - id: chat-terminal
+    path: dynamic
+    outputs:
+      - text      # User messages to LLM
+      - control   # Control commands (reset, quit)
+      - log       # Log messages from chat terminal
+    inputs:
+      llm_text: maas-client/text         # LLM responses (streaming)
+      llm_status: maas-client/status     # LLM status updates
+      llm_log: maas-client/log           # LLM logs
+
+  # MaaS Client configured for conference demo
+  - id: maas-client
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: chat-terminal/text
+      control: chat-terminal/control
+    outputs:
+      - text
+      - status
+      - log
+      - available_tools
+      - function_call
+      - function_call_result
+    env:
+      MAAS_CONFIG_PATH: maas_config_llm1.toml
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  # Viewer - Monitor logs and events (optional, for debugging)
+  - id: viewer
+    path: dynamic
+    inputs:
+      chat_log: chat-terminal/log
+      llm_log: maas-client/log
+      llm_status: maas-client/status
+      user_text: chat-terminal/text
+      llm_text: maas-client/text

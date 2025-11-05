@@ -1,0 +1,44 @@
+nodes:
+  # Terminal chat interface (Textual TUI + Dora node)
+  - id: chat-terminal
+    path: dynamic
+    outputs:
+      - text      # User messages to LLM
+      - control   # Control commands (reset, quit)
+      - log       # Log messages from chat terminal
+    inputs:
+      llm_text: openai-response-client/text         # LLM responses (streaming)
+      llm_status: openai-response-client/status     # LLM status updates
+      llm_log: openai-response-client/log           # LLM logs
+
+  # OpenAI Responses API client (v1/responses)
+  - id: openai-response-client
+    build: cargo build --release -p openai-response-client
+    path: ../../target/release/openai-response-client
+    inputs:
+      text: chat-terminal/text
+      control: chat-terminal/control
+    outputs:
+      - text
+      - status
+      - log
+      - tool_calls
+    env:
+      # OpenAI configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_RESPONSE_CONFIG_PATH: ${OPENAI_RESPONSE_CONFIG_PATH:-openai_response_config.toml}
+      OPENAI_RESPONSE_MODEL: ${OPENAI_RESPONSE_MODEL:-gpt-5}
+      SYSTEM_PROMPT: ${SYSTEM_PROMPT:-You are a helpful AI assistant. Provide clear, concise, and accurate responses. Be friendly and professional.}
+      MAX_HISTORY_MESSAGES: ${MAX_HISTORY_MESSAGES:-12}
+      OPENAI_ENABLE_STREAMING: ${OPENAI_ENABLE_STREAMING:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+  # Viewer - Monitor logs and events (optional, for debugging)
+  - id: viewer
+    path: dynamic
+    inputs:
+      chat_log: chat-terminal/log       # Chat terminal logs
+      llm_log: openai-response-client/log
+      llm_status: openai-response-client/status
+      user_text: chat-terminal/text
+      llm_text: openai-response-client/text

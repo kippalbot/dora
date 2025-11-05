@@ -1,0 +1,41 @@
+nodes:
+  # Terminal chat interface (Textual TUI + Dora node)
+  - id: chat-terminal
+    path: dynamic
+    outputs:
+      - text # User messages to LLM
+      - control # Control commands (reset, quit)
+      - log # Log messages from chat terminal
+    inputs:
+      llm_text: response-client/text # LLM responses (streaming)
+      llm_status: response-client/status # LLM status updates
+      llm_log: response-client/log # LLM logs
+
+  # OpenAI Response Client
+  - id: response-client
+    path: ../../target/release/openai-response-client
+    inputs:
+      text: chat-terminal/text
+      control: chat-terminal/control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      # Configuration file
+      OPENAI_RESPONSE_CONFIG_PATH: maas_config.toml
+
+      # OpenAI API key (set via environment or replace with your key)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+      LOG_LEVEL: INFO
+
+  # Viewer - Monitor logs and events (optional, for debugging)
+  - id: viewer
+    path: dynamic
+    inputs:
+      chat_log: chat-terminal/log # Chat terminal logs
+      llm_log: response-client/log # LLM logs
+      llm_status: response-client/status # LLM status updates
+      user_text: chat-terminal/text # User messages
+      llm_text: response-client/text # LLM responses

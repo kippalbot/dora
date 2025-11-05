@@ -81,15 +81,15 @@ def main():
                 audio_array = event["value"].to_numpy()
                 input_metadata = event.get("metadata", {})
 
-                # Extract metadata
+                # Extract metadata - pass through all input metadata
                 segment_num = input_metadata.get("segment", 0)
                 sample_rate = input_metadata.get("sample_rate", config.SAMPLE_RATE)
-                question_id = input_metadata.get("question_id")  # Pass through question_id
 
                 # Calculate audio statistics
                 audio_stats = calculate_audio_stats(audio_array)
                 duration = audio_stats['duration']
 
+                question_id = input_metadata.get("question_id", "unknown")
                 send_log(node, "INFO", f"Processing segment #{segment_num} (question_id={question_id})", config.LOG_LEVEL)
                 send_log(node, "DEBUG", f"   Duration: {duration:.2f}s", config.LOG_LEVEL)
                 
@@ -153,11 +153,9 @@ def main():
                     send_log(node, "INFO", f"Language: {detected_language}", config.LOG_LEVEL)
                     send_log(node, "DEBUG", f"Processing time: {processing_time:.3f}s", config.LOG_LEVEL)
                     send_log(node, "DEBUG", f"Speed: {duration/processing_time:.1f}x realtime", config.LOG_LEVEL)
-                    
-                    # Send transcription output with question_id
-                    output_metadata = {}
-                    if question_id is not None:
-                        output_metadata["question_id"] = question_id
+
+                    # Send transcription output - pass through all input metadata
+                    output_metadata = input_metadata.copy()
 
                     node.send_output(
                         "transcription",
@@ -190,15 +188,15 @@ def main():
                     
                 except Exception as e:
                     send_log(node, "ERROR", f"Transcription error: {e}", config.LOG_LEVEL)
-                    
-                    # Send empty transcription on error
+
+                    # Send empty transcription on error - pass through input metadata
+                    error_metadata = input_metadata.copy()
+                    error_metadata["error"] = str(e)
+
                     node.send_output(
                         "transcription",
                         pa.array([""]),
-                        metadata={
-                            "task_id": task_id,
-                            "error": str(e)
-                        }
+                        metadata=error_metadata
                     )
             
             elif input_id == "control":

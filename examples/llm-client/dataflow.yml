@@ -1,0 +1,66 @@
+nodes:
+  # Terminal chat interface (Textual TUI + Dora node)
+  - id: chat-terminal
+    path: dynamic
+    outputs:
+      - text      # User messages to LLM
+      - control   # Control commands (reset, quit)
+      - log       # Log messages from chat terminal
+    inputs:
+      llm_text: qwen3-llm/text         # LLM responses (streaming)
+      llm_status: qwen3-llm/status     # LLM status updates
+      llm_log: qwen3-llm/log           # LLM logs
+
+  # Qwen3 Local LLM
+  - id: qwen3-llm
+    build: pip install -e ../../node-hub/dora-qwen3
+    path: dora-qwen3
+    inputs:
+      text: chat-terminal/text
+      control: chat-terminal/control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      # Model Configuration
+      USE_MLX: auto  # auto, true, or false (auto-detect MLX support)
+
+      # MLX model settings (for Apple Silicon)
+      # Choose your model (uncomment one):
+      MLX_MODEL: "Qwen/Qwen3-8B-MLX-4bit"          # Qwen3 8B - Balanced (4-bit quantized)
+      #MLX_MODEL: "Qwen/Qwen3-32B-MLX-6bit"         # Qwen3 32B - Large model (6-bit quantized)
+      #MLX_MODEL: "mlx-community/GLM-4.5-Air-3bit"  # GLM-4.5 Air - Very efficient (3-bit)
+      #MLX_MODEL: "mlx-community/gemma-2-9b-it-4bit" # Gemma 2 - For English/mixed
+
+      MLX_MAX_TOKENS: 512  # Max response length for MLX
+
+      # GGUF model settings (for CPU/CUDA, if MLX not available)
+      GGUF_MODEL: "Qwen/Qwen3-8B-GGUF"
+      GGUF_MODEL_FILE: "Qwen3-8B-Q4_K_M.gguf"
+
+      # Generation settings
+      MAX_TOKENS: 512          # Max response length
+      TEMPERATURE: 0.7         # Sampling temperature (0.0 = deterministic, 1.0 = creative)
+      TOP_P: 0.9               # Nucleus sampling
+      ENABLE_STREAMING: "true"
+
+      # History management
+      HISTORY_STRATEGY: "token_based"  # Options: "fixed", "token_based", "sliding_window"
+      MAX_HISTORY_EXCHANGES: "20"      # Keep last 20 Q&A pairs (for "fixed" strategy)
+      MAX_HISTORY_TOKENS: "4000"       # Max tokens for history (for "token_based" strategy)
+
+      # System prompt
+      SYSTEM_PROMPT: "You are a helpful AI assistant. Provide clear, concise, and accurate responses. Be friendly and professional."
+
+      LOG_LEVEL: INFO
+
+  # Viewer - Monitor logs and events (optional, for debugging)
+  - id: viewer
+    path: dynamic
+    inputs:
+      chat_log: chat-terminal/log       # Chat terminal logs
+      llm_log: qwen3-llm/log            # LLM logs
+      llm_status: qwen3-llm/status      # LLM status updates
+      user_text: chat-terminal/text     # User messages
+      llm_text: qwen3-llm/text          # LLM responses

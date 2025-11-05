@@ -20,23 +20,19 @@ class SpeechState(Enum):
 @dataclass
 class VoiceTask:
     """
-    Voice task representation from VoiceDialogue.
+    Voice task representation - simplified for question tracking.
     Represents a speech segment with metadata.
     """
-    id: str
-    session_id: str
-    answer_id: str
+    question_id: str
     user_voice: Optional[object] = None  # numpy array
     send_time: float = 0.0
     is_over_audio_frames_threshold: bool = False
-    
+
     @classmethod
-    def create(cls, task_id: str, session_id: str, audio_data=None):
+    def create(cls, question_id: str, audio_data=None):
         """Create a new voice task"""
         return cls(
-            id=task_id,
-            session_id=session_id,
-            answer_id=str(uuid.uuid4()),
+            question_id=question_id,
             user_voice=audio_data,
             send_time=time.time()
         )
@@ -46,21 +42,20 @@ class SpeechStateMachine:
     """
     Manages speech state transitions and tracking.
     """
-    
+
     def __init__(self):
         self.state = SpeechState.SILENCE
-        self.task_id: Optional[str] = None
-        self.session_id: str = str(uuid.uuid4())
-        
+        self.question_id: Optional[str] = None
+
         # Duration tracking (milliseconds)
         self.active_audio_frame_duration = 0.0
         self.user_silence_duration = 0.0
         self.silence_audio_frame_count = 0
-        
+
         # Flags
         self.is_audio_sent_for_processing = False
         self.is_audio_frames_empty = True
-        
+
     def reset(self):
         """Reset state machine to initial state"""
         self.state = SpeechState.SILENCE
@@ -69,17 +64,17 @@ class SpeechStateMachine:
         self.silence_audio_frame_count = 0
         self.is_audio_sent_for_processing = False
         self.is_audio_frames_empty = True
-        
-    def create_task_id(self):
-        """Create new task ID"""
-        self.task_id = str(uuid.uuid4())
-        return self.task_id
-        
+
+    def create_question_id(self):
+        """Create new question ID for each speech segment"""
+        self.question_id = str(uuid.uuid4())
+        return self.question_id
+
     def transition_to_speaking(self):
         """Transition to speaking state"""
         if self.state == SpeechState.SILENCE:
             self.state = SpeechState.SPEAKING
-            self.create_task_id()
+            self.create_question_id()  # Generate new question_id for each question
             self.user_silence_duration = 0.0
             return True
         elif self.state == SpeechState.TRAILING_SILENCE:

@@ -1,0 +1,16 @@
+default_model = "gpt-5"
+system_prompt = "You are a helpful assistant."
+max_history_exchanges = 5
+enable_streaming = true
+enable_tools = false
+log_level = "DEBUG"
+
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+
+[[models]]
+id = "gpt-5"
+route = { provider = "openai", model = "gpt-5" }

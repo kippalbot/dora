@@ -1,0 +1,37 @@
+# MaaS Client Configuration for OpenAI
+# Simple text-based chat with GPT models
+
+default_model = "gpt-5"
+system_prompt = "You are a helpful AI assistant. Provide clear, concise, and accurate responses. Be friendly and professional."
+
+max_history_exchanges = 20
+enable_streaming = true
+log_level = "INFO"
+
+# Disable tools for simple chat
+enable_tools = false
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"  # Set OPENAI_API_KEY environment variable
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+# Available Models
+[[models]]
+id = "gpt-5"
+route = { provider = "openai", model = "gpt-5" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }
+
+[[models]]
+id = "gpt-3.5-turbo"
+route = { provider = "openai", model = "gpt-3.5-turbo" }

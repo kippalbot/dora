@@ -260,16 +260,19 @@ def main():
                             
                             # Create voice task
                             voice_task = VoiceTask.create(
-                                task_id=state_machine.task_id,
-                                session_id=state_machine.session_id,
+                                question_id=state_machine.question_id,
                                 audio_data=audio_frames
                             )
                             voice_task.is_over_audio_frames_threshold = is_over_threshold
-                            
-                            # Send audio segment
+
+                            # Send audio segment with question_id metadata
                             node.send_output(
                                 "audio_segment",
-                                pa.array(audio_frames)
+                                pa.array(audio_frames),
+                                metadata={
+                                    "question_id": state_machine.question_id,
+                                    "sample_rate": sr
+                                }
                             )
                             
                             duration_s = audio_duration_ms / 1000
@@ -311,13 +314,17 @@ def main():
                 if current_duration_ms >= config.AUDIO_FRAMES_THRESHOLD:
                     # Force segment end due to length
                     send_log(node, "WARNING", "Max segment duration reached, forcing segment end")
-                    
-                    # Send audio segment
+
+                    # Send audio segment with question_id metadata
                     node.send_output(
                         "audio_segment",
-                        pa.array(audio_frames)
+                        pa.array(audio_frames),
+                        metadata={
+                            "question_id": state_machine.question_id,
+                            "sample_rate": sr
+                        }
                     )
-                    
+
                     # Reset buffers
                     audio_frames = np.array([])
                     state_machine.reset()

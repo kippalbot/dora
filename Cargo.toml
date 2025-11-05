@@ -36,8 +36,10 @@ members = [
     "node-hub/dora-rerun",
     "node-hub/terminal-print",
     "node-hub/openai-proxy-server",
+    "node-hub/openai-response-client",
     "node-hub/dora-openai-websocket",
     "node-hub/dora-maas-client",
+    "node-hub/dora-conference-bridge",
     "node-hub/dora-kit-car",
     "node-hub/dora-object-to-pose",
     "node-hub/dora-mistral-rs",
@@ -101,6 +103,9 @@ pythonize = "0.23"
 git2 = { version = "0.18.0", features = ["vendored-openssl"] }
 serde_yaml = "0.9.33"
 
+[patch.crates-io]
+openai_dive = { path = "../../openai-client/openai_dive" }
+
 [package]
 name = "dora-examples"
 rust-version = "1.85.0"
@@ -117,6 +122,7 @@ ros2-examples = []
 [dev-dependencies]
 eyre = "0.6.8"
 tokio = "1.24.2"
+
 dora-cli = { workspace = true }
 dora-coordinator = { workspace = true }
 dora-core = { workspace = true }
