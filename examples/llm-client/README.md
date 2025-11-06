@@ -42,7 +42,7 @@ Each flow can be paired with either the **Python Textual TUI** (`debate_monitor.
 
 All commands below assume you are inside `examples/llm-client/`.
 
-**Start every debate with a topic prompt.** When the monitor launches, find the input field at the bottom of the screen and type or paste a kickoff message for the judge, for example:
+**Start every debate with a topic prompt.** When the monitor launches, click the input field at the bottom of the screen and paste or type a kickoff message for the judge, for example:
 
 ```
 今天辩论的题目是动物实验是满足人类和动物长期健康福祉必要的牺牲，开始辩论
