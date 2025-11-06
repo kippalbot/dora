@@ -159,6 +159,19 @@ def main():
             config.LOG_LEVEL,
         )
 
+    effective_fragment_interval = (
+        config.FRAGMENT_INTERVAL
+        if config.FRAGMENT_INTERVAL is not None
+        else voice_config.get("fragment_interval")
+    )
+    if config.FRAGMENT_INTERVAL is not None:
+        send_log(
+            node,
+            "INFO",
+            f"Overriding fragment_interval via env to {effective_fragment_interval}",
+            config.LOG_LEVEL,
+        )
+
     voice_config.update({
         "top_k": config.TOP_K,
         "top_p": config.TOP_P,
@@ -169,11 +182,12 @@ def main():
         "text_split_method": config.TEXT_SPLIT_METHOD,
         "split_bucket": config.SPLIT_BUCKET,
         "return_fragment": config.RETURN_FRAGMENT,
-        "fragment_interval": config.FRAGMENT_INTERVAL,
         "use_gpu": config.USE_GPU,
         "device": config.DEVICE,
         "sample_rate": config.SAMPLE_RATE,
     })
+    if effective_fragment_interval is not None:
+        voice_config["fragment_interval"] = effective_fragment_interval
     
     # Initialize model manager
     model_manager = ModelManager(config.get_models_dir())
@@ -192,9 +206,30 @@ def main():
 
     # Print to stdout for immediate visibility
     speed_factor_value = voice_config.get('speed_factor')
-    print(f"[PRIMESPEECH SPEED_FACTOR] Voice: {voice_name}, Speed: {speed_factor_value}, Env Override: {config.SPEED_FACTOR_OVERRIDE}", flush=True)
+    fragment_interval_value = voice_config.get('fragment_interval')
+    print(
+        f"[PRIMESPEECH SPEED_FACTOR] Voice: {voice_name}, Speed: {speed_factor_value}, Env Override: {config.SPEED_FACTOR_OVERRIDE}",
+        flush=True,
+    )
+    if fragment_interval_value is not None:
+        print(
+            f"[PRIMESPEECH FRAGMENT_INTERVAL] Voice: {voice_name}, Interval: {fragment_interval_value}, Env Override: {config.FRAGMENT_INTERVAL_OVERRIDE}",
+            flush=True,
+        )
 
-    send_log(node, "INFO", f"Speed Factor: {speed_factor_value} (env override: {config.SPEED_FACTOR_OVERRIDE is not None})", config.LOG_LEVEL)
+    send_log(
+        node,
+        "INFO",
+        f"Speed Factor: {speed_factor_value} (env override: {config.SPEED_FACTOR_OVERRIDE is not None})",
+        config.LOG_LEVEL,
+    )
+    if fragment_interval_value is not None:
+        send_log(
+            node,
+            "INFO",
+            f"Fragment Interval: {fragment_interval_value} (env override: {config.FRAGMENT_INTERVAL_OVERRIDE is not None})",
+            config.LOG_LEVEL,
+        )
     send_log(node, "INFO", f"Device: {config.DEVICE}", config.LOG_LEVEL)
 
     # Validate the final configuration
@@ -320,6 +355,7 @@ def main():
                     
                     language = voice_config.get("text_lang", "zh")
                     speed = voice_config.get("speed_factor", 1.0)
+                    fragment_interval = voice_config.get("fragment_interval")
                     
                     if hasattr(tts_engine, 'enable_streaming') and tts_engine.enable_streaming:
                         # Streaming synthesis
@@ -327,6 +363,9 @@ def main():
                         fragment_num = 0
                         total_audio_duration = 0
                         
+                        if fragment_interval is not None:
+                            tts_engine.optimization_config["fragment_interval"] = fragment_interval
+
                         for sample_rate, audio_fragment in tts_engine.synthesize_streaming(text, language=language, speed=speed):
                             fragment_num += 1
                             fragment_duration = len(audio_fragment) / sample_rate
@@ -361,7 +400,14 @@ def main():
                         
                     else:
                         # Batch synthesis
-                        sample_rate, audio_array = tts_engine.synthesize(text, language=language, speed=speed, fragment_interval=config.FRAGMENT_INTERVAL)
+                        synth_kwargs = {
+                            "language": language,
+                            "speed": speed,
+                        }
+                        if fragment_interval is not None:
+                            synth_kwargs["fragment_interval"] = fragment_interval
+
+                        sample_rate, audio_array = tts_engine.synthesize(text, **synth_kwargs)
                         
                         synthesis_time = time.time() - start_time
                         audio_duration = len(audio_array) / sample_rate

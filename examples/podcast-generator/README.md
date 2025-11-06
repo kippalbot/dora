@@ -248,6 +248,8 @@ Edit `dataflow.yml` to modify voice selection:
 ```yaml
 env:
   VOICE_NAME: "Luo Xiang"  # Options: Doubao, Luo Xiang, Yang Mi, Zhou Jielun, Ma Yun, Maple, Cove
+  SPEED_FACTOR: "0.9"      # Optional tempo override (defaults to voice config)
+  FRAGMENT_INTERVAL: "0.07"  # Optional MoYoYo fragment interval
 ```
 
 #### MiniMax T2A Voices (dataflow-minimax.yml)
@@ -278,6 +280,7 @@ env:
 
   ```yaml
   env:
+    MINIMAX_MODEL: "speech-2.6-hd"  # MiniMax model id
     MINIMAX_SPEED: "<0.5-2.0>"           # Speech speed multiplier
     MINIMAX_VOL: "<0-2.0>"              # Output loudness
     MINIMAX_PITCH: "<-12-12>"           # Semitone shift
@@ -287,12 +290,12 @@ env:
 
 - Current values in this repo:
   - `dataflow-minimax.yml`
-    - Daniu: speed `1.0`, volume `1.0`, pitch `-1`
-    - Yifan: speed `1.0`, volume `1.0`, pitch `0`
+    - Daniu: model `speech-2.6-hd`, speed `1.0`, volume `1.0`, pitch `-1`
+    - Yifan: model `speech-2.6-hd`, speed `1.0`, volume `1.0`, pitch `0`
   - `dataflow-minimax-trio.yml`
-    - Daniu: speed `1.0`, volume `1.0`, pitch `-1`
-    - Yifan: speed `1.0`, volume `1.0`, pitch `0`
-    - Boyu: speed `1.0`, volume `1.1`, pitch `1`
+    - Daniu: model `speech-2.6-hd`, speed `1.0`, volume `1.0`, pitch `-1`
+    - Yifan: model `speech-2.6-hd`, speed `1.0`, volume `1.0`, pitch `0`
+    - Boyu: model `speech-2.6-hd`, speed `1.0`, volume `1.1`, pitch `1`
 
 #### Preventing Audio Packet Loss (MiniMax Only)
 

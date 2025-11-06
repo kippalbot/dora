@@ -25,6 +25,7 @@ nodes:
       - log
     env:
       MINIMAX_API_KEY: "$MINIMAX_API_KEY"
+      MINIMAX_MODEL: "speech-2.6-hd"
       MINIMAX_VOICE_ID: "ttv-voice-2025103011222725-sg8dZxUP"
       MINIMAX_SPEED: "1.0"
       MINIMAX_VOL: "1"
@@ -47,6 +48,7 @@ nodes:
       - log
     env:
       MINIMAX_API_KEY: "$MINIMAX_API_KEY"
+      MINIMAX_MODEL: "speech-2.6-hd"
       MINIMAX_VOICE_ID: "moss_audio_aaa1346a-7ce7-11f0-8e61-2e6e3c7ee85d"
       MINIMAX_SPEED: "1.0"
       MINIMAX_VOL: "1.0"
@@ -69,6 +71,7 @@ nodes:
       - log
     env:
       MINIMAX_API_KEY: "$MINIMAX_API_KEY"
+      MINIMAX_MODEL: "speech-2.6-hd"
       MINIMAX_VOICE_ID: "moss_audio_9c223de9-7ce1-11f0-9b9f-463feaa3106a"
       MINIMAX_SPEED: "1"
       MINIMAX_VOL: "1.1"

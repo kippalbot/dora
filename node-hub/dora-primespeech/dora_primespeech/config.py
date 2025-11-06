@@ -42,7 +42,10 @@ class PrimeSpeechConfig:
     TEXT_SPLIT_METHOD = os.getenv("TEXT_SPLIT_METHOD", "cut5")  # cut0, cut1, cut2, cut3, cut4, cut5
     SPLIT_BUCKET = os.getenv("SPLIT_BUCKET", "true").lower() == "true"
     RETURN_FRAGMENT = os.getenv("RETURN_FRAGMENT", "false").lower() == "true"  # Respect env variable
-    FRAGMENT_INTERVAL = float(os.getenv("FRAGMENT_INTERVAL", "0.3"))
+    FRAGMENT_INTERVAL_OVERRIDE: Optional[str] = os.getenv("FRAGMENT_INTERVAL")
+    FRAGMENT_INTERVAL: Optional[float] = (
+        float(FRAGMENT_INTERVAL_OVERRIDE) if FRAGMENT_INTERVAL_OVERRIDE is not None else None
+    )
     
     # Performance
     USE_GPU = os.getenv("USE_GPU", "false").lower() == "true"

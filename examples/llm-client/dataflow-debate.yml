@@ -68,6 +68,7 @@ nodes:
     inputs:
       llm1: llm1/text
       judge: judge/text
+      control: debate-monitor/bridge_control
     outputs:
       - text
       - status
@@ -86,6 +87,7 @@ nodes:
     inputs:
       llm2: llm2/text
       judge: judge/text
+      control: debate-monitor/bridge_control
     outputs:
       - text
       - status

@@ -49,7 +49,7 @@ members = [
     "libraries/extensions/ros2-bridge",
     "libraries/extensions/ros2-bridge/msg-gen",
     "libraries/extensions/ros2-bridge/python",
-    "tests/queue_size_latest_data_rust/receive_data",
+    "tests/queue_size_latest_data_rust/receive_data", "examples/llm-client/debate-monitor-tui",
 
 ]
 

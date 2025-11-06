@@ -12,7 +12,7 @@ class MinimaxT2AConfig:
 
     # API Configuration
     API_KEY: str = os.getenv("MINIMAX_API_KEY", "")
-    MODEL: str = os.getenv("MINIMAX_MODEL", "speech-2.5-hd-preview")
+    MODEL: str = os.getenv("MINIMAX_MODEL", "speech-2.6-hd")
 
     # Voice Configuration
     VOICE_ID: str = os.getenv("MINIMAX_VOICE_ID", "male-qn-qingse")

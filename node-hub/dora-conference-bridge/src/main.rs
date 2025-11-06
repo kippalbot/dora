@@ -143,18 +143,6 @@ impl MessageState {
         matches!(self, MessageState::Complete { .. })
     }
 
-    fn force_complete(&mut self) -> String {
-        match self {
-            MessageState::Streaming { chunks, .. } => {
-                let content = chunks.join("");
-                *self = MessageState::Complete {
-                    content: content.clone(),
-                };
-                content
-            }
-            MessageState::Complete { content, .. } => content.clone(),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -163,6 +151,7 @@ struct InputPort {
     is_streaming: bool,  // Explicitly configured
     message_state: Option<MessageState>,
     ready: bool,
+    draining: bool,
 }
 
 impl InputPort {
@@ -172,6 +161,7 @@ impl InputPort {
             is_streaming,
             message_state: None,
             ready: false,
+            draining: false,
         }
     }
 
@@ -233,18 +223,19 @@ impl InputPort {
     fn reset(&mut self) {
         self.message_state = None;
         self.ready = false;
+        self.draining = false;
     }
 
-    fn force_ready(&mut self) {
-        if let Some(state) = &mut self.message_state {
-            state.force_complete();
-        } else {
-            self.message_state = Some(MessageState::Complete {
-                content: String::new(),
-            });
-        }
-        self.ready = true;
+    fn reset_with_drain(&mut self, drain: bool) {
+        self.message_state = None;
+        self.ready = false;
+        self.draining = drain;
     }
+
+    fn is_streaming_active(&self) -> bool {
+        matches!(self.message_state, Some(MessageState::Streaming { .. }))
+    }
+
 }
 
 fn metadata_indicates_completion(metadata: &BTreeMap<String, Parameter>) -> bool {
@@ -265,8 +256,7 @@ struct ConferenceBridge {
     cold_start_enabled: bool,
     cold_start_used: bool,
     current_question_id: u32,
-   increment_question_id: bool,
-    drop_next_bundle: bool,
+    increment_question_id: bool,
 }
 
 impl ConferenceBridge {
@@ -287,7 +277,6 @@ impl ConferenceBridge {
             cold_start_used: false,
             current_question_id: 0,
             increment_question_id,
-            drop_next_bundle: false,
         };
 
         let preset_ports: Vec<String> = bridge
@@ -330,12 +319,7 @@ impl ConferenceBridge {
 
         // Handle the input
         if let Some(input) = self.inputs.get_mut(port_name) {
-            let ready = input.handle_input(text, metadata);
-            if self.drop_next_bundle {
-                input.force_ready();
-                return true;
-            }
-            ready
+            input.handle_input(text, metadata)
         } else {
             false
         }
@@ -362,47 +346,33 @@ impl ConferenceBridge {
             .collect()
     }
 
-    fn has_active_inputs(&self) -> bool {
-        !self.arrival_queue.is_empty()
-            || self.inputs
-                .values()
-                .any(|input| input.ready || input.message_state.is_some())
-    }
+    fn handle_drain(
+        &mut self,
+        port_name: &str,
+        is_starting: bool,
+        is_complete: bool,
+        has_session_status: bool,
+    ) -> bool {
+        if let Some(input) = self.inputs.get_mut(port_name) {
+            if input.draining {
+                if is_complete {
+                    input.draining = false;
+                    return true;
+                }
 
-    fn force_ready_for_drop(&mut self) {
-        for (_, input) in self.inputs.iter_mut() {
-            input.force_ready();
+                if is_starting || !has_session_status {
+                    input.draining = false;
+                    return false;
+                }
+
+                return true;
+            }
         }
+
+        false
     }
 
-    fn request_drop(&mut self) -> bool {
-        let was_pending = self.drop_next_bundle;
-        self.drop_next_bundle = true;
-        !was_pending
-    }
-
-    fn is_drop_pending(&self) -> bool {
-        self.drop_next_bundle
-    }
-
-    fn drop_ready_bundle(&mut self, node: &mut DoraNode, ready_inputs: &HashSet<String>) -> Result<()> {
-        let mut ordered_inputs = ready_inputs.iter().cloned().collect::<Vec<_>>();
-        ordered_inputs.sort();
-
-        send_log(
-            node,
-            LogLevel::Info,
-            self.log_level,
-            &format!(
-                "Dropping ready bundle instead of forwarding; inputs: {:?}",
-                ordered_inputs
-            ),
-        );
-
-        self.finalize_cycle(node, "dropped", true)
-    }
-
-    fn finalize_cycle(&mut self, node: &mut DoraNode, status: &str, retain_drop_flag: bool) -> Result<()> {
+    fn finalize_cycle(&mut self, node: &mut DoraNode, status: &str) -> Result<()> {
         if self.cold_start_enabled && !self.cold_start_used {
             self.cold_start_used = true;
             send_log(
@@ -419,11 +389,22 @@ impl ConferenceBridge {
 
         self.arrival_queue.clear();
         self.current_question_id = 0;
-        if !retain_drop_flag {
-            self.drop_next_bundle = false;
-        }
 
         send_status(node, status)?;
+        Ok(())
+    }
+
+    fn reset_state(&mut self, node: &mut DoraNode) -> Result<()> {
+        for (_, input) in self.inputs.iter_mut() {
+            let drain = input.is_streaming_active();
+            input.reset_with_drain(drain);
+        }
+
+        self.arrival_queue.clear();
+        self.current_question_id = 0;
+        self.cold_start_used = false;
+
+        send_status(node, "reset")?;
         Ok(())
     }
 
@@ -504,7 +485,7 @@ impl ConferenceBridge {
             self.current_question_id = output_question_id;
         }
 
-        self.finalize_cycle(node, "forwarded", false)
+        self.finalize_cycle(node, "forwarded")
     }
 }
 
@@ -517,19 +498,6 @@ fn main() -> Result<()> {
         .map(|s| s.trim().to_string())
         .collect::<HashSet<String>>();
 
-    let expected_ports = env::var("EXPECTED_PORTS").ok()
-        .unwrap_or_default()
-        .split(',')
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| s.trim().to_string())
-        .collect::<HashSet<String>>();
-
-    let expected_ports = if expected_ports.is_empty() {
-        streaming_ports.clone()
-    } else {
-        expected_ports
-    };
-
     let log_level = env::var("LOG_LEVEL").ok()
         .and_then(|s| LogLevel::parse(&s))
         .unwrap_or(LogLevel::Info);
@@ -541,17 +509,27 @@ fn main() -> Result<()> {
     let increment_question_id = env::var("INC_QUESTION_ID").ok()
         .and_then(|s| s.parse::<bool>().ok())
         .unwrap_or(false);
+    let (mut node, mut events) =
+        DoraNode::init_from_env().context("Failed to initialize Dora node from environment")?;
+
+    let mut expected_ports: HashSet<String> = node
+        .node_config()
+        .inputs
+        .keys()
+        .map(|data_id| data_id.to_string())
+        .filter(|name| name != "control")
+        .collect();
+    if expected_ports.is_empty() {
+        expected_ports = streaming_ports.clone();
+    }
 
     let mut bridge = ConferenceBridge::new(
         streaming_ports.clone(),
-        expected_ports.clone(),
+        expected_ports,
         log_level,
         cold_start,
         increment_question_id,
     );
-
-    let (mut node, mut events) =
-        DoraNode::init_from_env().context("Failed to initialize Dora node from environment")?;
 
     send_log(
         &mut node,
@@ -625,42 +603,13 @@ fn main() -> Result<()> {
 
                     match command.as_deref() {
                         Some("reset") => {
-                            let new_request = bridge.request_drop();
-                            if new_request {
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    "Reset command received - dropping next bundle",
-                                );
-                            } else {
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    "Reset command already pending - drop will occur when ready",
-                                );
-                            }
-
-                            if bridge.has_active_inputs() {
-                                bridge.force_ready_for_drop();
-                                let ready_inputs = bridge.get_ready_inputs();
-                                bridge.drop_ready_bundle(&mut node, &ready_inputs)?;
-                            } else {
-                                send_status(&mut node, "reset-requested")?;
-                            }
-                        }
-                        Some("resume") => {
-                            bridge.drop_next_bundle = false;
+                            bridge.reset_state(&mut node)?;
                             send_log(
                                 &mut node,
                                 LogLevel::Info,
                                 log_level,
-                                "Resume command received - forwarding re-enabled",
+                                "Reset command received - state restored to initial configuration",
                             );
-                            let ready_count = bridge.get_ready_inputs().len();
-                            let total_count = bridge.inputs.len();
-                            send_status(&mut node, &format!("waiting ({}/{})", ready_count, total_count))?;
                         }
                         Some(other) => {
                             send_log(
@@ -676,6 +625,8 @@ fn main() -> Result<()> {
                     continue;
                 }
 
+                bridge.register_input(port_name.clone());
+
                 let parameters = metadata.parameters;
 
                 let text_array = data.as_string::<i32>();
@@ -685,6 +636,21 @@ fn main() -> Result<()> {
                     .collect::<Vec<String>>()
                     .join(" ");
                 let completion_signal = metadata_indicates_completion(&parameters);
+
+                let session_status_value = parameters
+                    .get("session_status")
+                    .and_then(|param| match param {
+                        Parameter::String(status) => Some(status.as_str()),
+                        _ => None,
+                    });
+                let is_starting = session_status_value
+                    .map(|status| status.eq_ignore_ascii_case("started"))
+                    .unwrap_or(false);
+                let has_session_status = session_status_value.is_some();
+
+                if bridge.handle_drain(&port_name, is_starting, completion_signal, has_session_status) {
+                    continue;
+                }
 
                 if text.trim().is_empty() && !completion_signal {
                     send_log(
@@ -725,22 +691,11 @@ fn main() -> Result<()> {
                         &format!("All conditions met, ready inputs: {:?}", ready_inputs),
                     );
 
-                    if bridge.is_drop_pending() {
-                        bridge.drop_ready_bundle(&mut node, &ready_inputs)?;
-                    } else {
-                        bridge.forward_bundle(&mut node)?;
-                    }
-                } else if !bridge.is_drop_pending() {
+                    bridge.forward_bundle(&mut node)?;
+                } else {
                     let ready_count = bridge.get_ready_inputs().len();
                     let total_count = bridge.inputs.len();
                     send_status(&mut node, &format!("waiting ({}/{})", ready_count, total_count))?;
-                } else {
-                    send_log(
-                        &mut node,
-                        LogLevel::Debug,
-                        log_level,
-                        "Drop pending - waiting for inputs to complete before clearing",
-                    );
                 }
             }
             Event::Stop(_) => {

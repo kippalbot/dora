@@ -24,7 +24,8 @@ nodes:
     env:
       VOICE_NAME: "Zhao Daniu"
       TEXT_LANG: "zh"
-      SPEED_FACTOR: "1.0"
+      SPEED_FACTOR: "1.1"
+      FRAGMENT_INTERVAL: "0.1"
       PRIMESPEECH_MODEL_DIR: "$HOME/.dora/models/primespeech"
       LOG_LEVEL: "INFO"
 
@@ -41,7 +42,8 @@ nodes:
     env:
       VOICE_NAME: "Doubao"
       TEXT_LANG: "zh"
-      SPEED_FACTOR: "0.5"
+      SPEED_FACTOR: "1.1"
+      FRAGMENT_INTERVAL: "0.2"
       PRIMESPEECH_MODEL_DIR: "$HOME/.dora/models/primespeech"
       LOG_LEVEL: "INFO"
 
