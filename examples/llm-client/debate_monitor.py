@@ -16,8 +16,8 @@ from queue import Queue, Empty
 import pyarrow as pa
 from dora import Node
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical, ScrollableContainer
-from textual.widgets import Header, Footer, Input, Static
+from textual.containers import Horizontal, Vertical, ScrollableContainer, Container
+from textual.widgets import Header, Footer, Input, Static, Button
 from textual.binding import Binding
 from rich.text import Text
 from rich.console import Group, Console
@@ -293,9 +293,26 @@ class DebateMonitorApp(App):
         padding: 0 1;
     }
 
-    Input {
+    #controls {
         dock: bottom;
+        height: 3;
+        background: $panel;
+    }
+
+    #input {
+        width: 1fr;
         margin: 0 1;
+    }
+
+    #button-container {
+        width: 22;
+        min-width: 22;
+        max-width: 22;
+    }
+
+    #reset-button {
+        width: 100%;
+        margin: 0 1 0 0;
     }
     """
 
@@ -315,7 +332,10 @@ class DebateMonitorApp(App):
                 yield ParticipantPanel("llm2", "LLM2 (Debater B)", "green", classes="participant-panel", id="panel-llm2")
 
         yield StatusBar(id="status-bar")
-        yield Input(placeholder="Send prompt to Judge (control input)...", id="input")
+        with Horizontal(id="controls"):
+            yield Input(placeholder="Send prompt to Judge (control input)...", id="input")
+            with Container(id="button-container"):
+                yield Button("Reset Bridges", id="reset-button")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -328,6 +348,25 @@ class DebateMonitorApp(App):
 
         # Start processing messages from queue
         self.set_interval(0.1, self.process_messages)
+
+    def _request_bridge_reset(self) -> None:
+        """Send a reset command to all conference bridges"""
+        payload = json.dumps({"command": "reset"})
+        dora_node_queue.put({
+            "type": "bridge_control",
+            "content": payload,
+        })
+
+        message_queue.put({
+            "type": "text_chunk",
+            "participant": "judge",
+            "content": "[System] Reset requested. Bridge queues cleared and cold start restored.",
+        })
+        message_queue.put({"type": "complete", "participant": "judge"})
+
+        status_bar = self.query_one("#status-bar", StatusBar)
+        for participant in ["llm1", "judge", "llm2"]:
+            status_bar.set_status(participant, "idle")
 
     def process_messages(self) -> None:
         """Process messages from the queue"""
@@ -370,37 +409,8 @@ class DebateMonitorApp(App):
 
         lower_text = user_text.lower()
         if lower_text in {"reset", "/reset"}:
-            dora_node_queue.put({
-                "type": "bridge_control",
-                "content": json.dumps({"command": "reset"})
-            })
-            message_queue.put({
-                "type": "text_chunk",
-                "participant": "judge",
-                "content": "[System] Reset requested. Judge bridge will drop the next bundle."
-            })
-            message_queue.put({"type": "complete", "participant": "judge"})
-
-            status_bar = self.query_one("#status-bar", StatusBar)
-            for participant in ["llm1", "judge", "llm2"]:
-                status_bar.set_status(participant, "idle")
+            self._request_bridge_reset()
             return
-        if lower_text in {"resume", "/resume"}:
-            dora_node_queue.put({
-                "type": "bridge_control",
-                "content": json.dumps({"command": "resume"})
-            })
-            message_queue.put({
-                "type": "text_chunk",
-                "participant": "judge",
-                "content": "[System] Resume requested. Judge bridge will forward conversations again."
-            })
-            message_queue.put({"type": "complete", "participant": "judge"})
-            status_bar = self.query_one("#status-bar", StatusBar)
-            for participant in ["llm1", "judge", "llm2"]:
-                status_bar.set_status(participant, "idle")
-            return
-
         # Update status
         status_bar = self.query_one("#status-bar", StatusBar)
         status_bar.set_status("judge", "receiving")
@@ -418,6 +428,11 @@ class DebateMonitorApp(App):
             "content": f"[Control] {user_text}"
         })
         message_queue.put({"type": "complete", "participant": "judge"})
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button actions"""
+        if event.button.id == "reset-button":
+            self._request_bridge_reset()
 
     def action_clear(self) -> None:
         """Clear all panels"""

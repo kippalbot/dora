@@ -1,0 +1,143 @@
+nodes:
+  # LLM 1 - Debater A (Daniu - 正方)
+  # Uses Alibaba Cloud Qwen-max via dora-maas-client
+  - id: llm1
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-llm1/text
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: debate_config_maas_llm1.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  # LLM 2 - Debater B (Yifei - 反方)
+  # Uses Alibaba Cloud Qwen-max via dora-maas-client
+  - id: llm2
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-llm2/text
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: debate_config_maas_llm2.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  # Judge - Moderator (主持人)
+  # Uses Alibaba Cloud Qwen-max via dora-maas-client
+  - id: judge
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-judge/text
+      control: debate-monitor/control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: debate_config_maas_judge.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  # Bridge 1: LLM1 + LLM2 → Judge
+  # Waits for both LLM responses then forwards bundled message
+  - id: bridge-to-judge
+    path: ../../target/release/dora-conference-bridge
+    inputs:
+      llm1: llm1/text
+      llm2: llm2/text
+      control: debate-monitor/bridge_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      STREAMING_PORTS: "llm1,llm2" # Both LLMs send streaming responses
+      COLD_START: "false" # Wait for both inputs
+      INC_QUESTION_ID: "true" # Don't increment question_id
+      LOG_LEVEL: INFO
+      DORA_NODE_NAME: Bridge LLM1+LLM2->Judge
+
+  # Bridge 2: LLM1 + Judge → LLM2
+  # Uses cold start to forward judge's initial prompt immediately
+  - id: bridge-to-llm2
+    path: ../../target/release/dora-conference-bridge
+    inputs:
+      llm1: llm1/text
+      judge: judge/text
+      control: debate-monitor/bridge_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      STREAMING_PORTS: "llm1,judge" # LLM1 and judge send streaming responses
+      COLD_START: "false" # Forward judge's initial prompt immediately
+      INC_QUESTION_ID: "false" # Increment question_id for next round
+      LOG_LEVEL: INFO
+      DORA_NODE_NAME: Bridge LLM1+Judge->LLM2
+
+  # Bridge 3: LLM2 + Judge → LLM1
+  # Uses cold start to forward judge's initial prompt immediately
+  - id: bridge-to-llm1
+    path: ../../target/release/dora-conference-bridge
+    inputs:
+      llm2: llm2/text
+      judge: judge/text
+      control: debate-monitor/bridge_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      STREAMING_PORTS: "llm2,judge" # LLM2 and judge send streaming responses
+      COLD_START: "true" # Forward judge's initial prompt immediately
+      INC_QUESTION_ID: "false" # Increment question_id for next round
+      LOG_LEVEL: INFO
+      DORA_NODE_NAME: Bridge LLM2+Judge->LLM1
+
+  # Debate Monitor - Real-time 3-panel TUI
+  - id: debate-monitor
+    path: dynamic
+    inputs:
+      llm1_text: llm1/text
+      llm1_status: llm1/status
+      llm1_prompt: bridge-to-llm1/text
+      llm2_text: llm2/text
+      llm2_status: llm2/status
+      llm2_prompt: bridge-to-llm2/text
+      bundle_text: bridge-to-judge/text
+      judge_text: judge/text
+      judge_status: judge/status
+    outputs:
+      - control
+      - bridge_control
+
+  # Viewer - Log and event monitoring
+  - id: viewer
+    path: dynamic
+    inputs:
+      llm1_log: llm1/log
+      llm1_status: llm1/status
+      llm1_text: llm1/text
+      llm2_log: llm2/log
+      llm2_status: llm2/status
+      llm2_text: llm2/text
+      judge_log: judge/log
+      judge_status: judge/status
+      judge_text: judge/text
+      bridge1_log: bridge-to-judge/log
+      bridge1_status: bridge-to-judge/status
+      bridge1_text: bridge-to-judge/text
+      bridge2_log: bridge-to-llm2/log
+      bridge2_status: bridge-to-llm2/status
+      bridge2_text: bridge-to-llm2/text
+      bridge3_log: bridge-to-llm1/log
+      bridge3_status: bridge-to-llm1/status
+      bridge3_text: bridge-to-llm1/text
