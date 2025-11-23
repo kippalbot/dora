@@ -292,7 +292,6 @@ async fn main() -> Result<()> {
         match config.init_tool_set().await {
             Ok(Some(ts)) => {
                 let tool_count = ts.tools().len();
-                eprintln!("Initialized {} MCP tools", tool_count);
                 Some(Arc::new(Mutex::new(ts)))
             }
             Ok(None) => None,
@@ -310,30 +309,21 @@ async fn main() -> Result<()> {
 
     // Initialize cancellation manager if enabled
     let cancellation_manager = Arc::new(RequestCancellationManager::new());
-    eprintln!("Cancellation manager initialized (enabled: {})", config.enable_cancellation);
 
     // Initialize Dora node - use node_id if provided (dynamic node), otherwise from env
     let (mut node, events) = if let Some(id) = node_id {
-        eprintln!("Initializing as dynamic node with ID: {}", id);
         match DoraNode::init_from_node_id(dora_node_api::dora_core::config::NodeId::from(
             id.clone(),
         )) {
-            Ok((n, e)) => {
-                eprintln!("✅ Successfully initialized dynamic node '{}'", id);
-                (n, e)
-            }
+            Ok((n, e)) => (n, e),
             Err(e) => {
                 eprintln!("❌ Failed to initialize dynamic node '{}': {:?}", id, e);
                 return Err(e.into());
             }
         }
     } else {
-        eprintln!("Initializing from environment variables...");
         match DoraNode::init_from_env() {
-            Ok((n, e)) => {
-                eprintln!("✅ Successfully initialized node from environment");
-                (n, e)
-            }
+            Ok((n, e)) => (n, e),
             Err(e) => {
                 eprintln!("❌ Failed to initialize node from environment: {:?}", e);
                 return Err(e.into());
@@ -358,17 +348,9 @@ async fn main() -> Result<()> {
     let mut sessions: HashMap<String, ChatSession> = HashMap::new();
 
     // Process events
-    eprintln!("🔵 [MAAS-CLIENT] Starting event loop...");
     let events = futures::executor::block_on_stream(events);
-    eprintln!("🔵 [MAAS-CLIENT] Event stream created, waiting for events...");
 
-    let mut event_count = 0;
     for event in events {
-        event_count += 1;
-        eprintln!(
-            "🔵 [MAAS-CLIENT] Received event #{}: {:?}",
-            event_count, event
-        );
         match event {
             Event::Input { id, data, metadata } => {
                 // Extract session ID from metadata
@@ -879,9 +861,6 @@ async fn main() -> Result<()> {
                                             Parameter::String(error_msg),
                                         );
 
-                                        // Debug: log the metadata being sent
-                                        eprintln!("[MAAS-DEBUG] Path1: Sending error text with session_status={}", session_status);
-
                                         node.send_output(
                                             DataId::from("text".to_string()),
                                             error_metadata,
@@ -929,9 +908,6 @@ async fn main() -> Result<()> {
                                             "error_message".to_string(),
                                             Parameter::String(error_msg),
                                         );
-
-                                        // Debug: log the metadata being sent
-                                        eprintln!("[MAAS-DEBUG] Path2: Sending error text with session_status={}", error_type);
 
                                         node.send_output(
                                             DataId::from("text".to_string()),
@@ -1018,8 +994,7 @@ async fn main() -> Result<()> {
                                     }
                                     Err(e) => {
                                         let error_msg = format!("{}", e);
-                                        eprintln!("[MAIN] API call error: {}", error_msg);
-                                        send_log(&mut node, "ERROR", &error_msg)?;
+                                                                send_log(&mut node, "ERROR", &error_msg)?;
 
                                         // Classify error type for API call errors
                                         let error_type = if error_msg.contains("cancelled") || error_msg.contains("cancelled by user") {
@@ -1606,9 +1581,6 @@ async fn main() -> Result<()> {
                                             Parameter::String(error_msg),
                                         );
 
-                                        // Debug: log the metadata being sent
-                                        eprintln!("[MAAS-DEBUG] Sending error text with session_status={}", error_type);
-
                                         node.send_output(
                                             DataId::from("text".to_string()),
                                             error_metadata,
@@ -1652,9 +1624,6 @@ async fn main() -> Result<()> {
                                             "error_message".to_string(),
                                             Parameter::String(error_msg),
                                         );
-
-                                        // Debug: log the metadata being sent
-                                        eprintln!("[MAAS-DEBUG] Sending error text with session_status={}", error_type);
 
                                         node.send_output(
                                             DataId::from("text".to_string()),

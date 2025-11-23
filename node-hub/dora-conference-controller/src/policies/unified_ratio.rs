@@ -238,9 +238,15 @@ impl UnifiedRatioPolicy {
         }
         let word_count_obj: serde_json::Map<String, serde_json::Value> = self.word_counts.iter().map(|(k,v)| (k.clone(), serde_json::Value::Number(serde_json::Number::from(*v)))).collect();
         stats.insert("word_counts".to_string(), serde_json::Value::Object(word_count_obj));
-        stats.insert("position".to_string(), serde_json::Value::Number(self.position.into()));
+        // Compute next speaker from sequence and position
+        if let PolicyPattern::Sequential { participants, .. } = &self.pattern {
+            if !participants.is_empty() {
+                let next_speaker = &participants[self.position % participants.len()];
+                stats.insert("next_speaker".to_string(), serde_json::Value::String(next_speaker.clone()));
+            }
+        }
         stats.insert("cycle".to_string(), serde_json::Value::Number(self.sequential_cycle.into()));
-        if let Some(last) = &self.last_speaker { stats.insert("last_speaker".to_string(), serde_json::Value::String(last.clone())); }
+        if let Some(last) = &self.last_speaker { stats.insert("current_speaker".to_string(), serde_json::Value::String(last.clone())); }
         serde_json::Value::Object(stats)
     }
 }

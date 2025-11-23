@@ -264,7 +264,6 @@ impl ChatClient for OpenaiClient {
         mut request: CreateChatCompletionRequest,
         chunk_sender: mpsc::UnboundedSender<String>,
     ) -> Result<(String, Option<Vec<ChatCompletionMessageToolCall>>)> {
-        eprintln!("[{}] Starting streaming request", self.id);
 
         // Force streaming mode
         request.stream = Some(true);
@@ -301,7 +300,6 @@ impl ChatClient for OpenaiClient {
         cancellation_token: CancellationToken,
         timeout_duration: Duration,
     ) -> Result<(String, Option<Vec<ChatCompletionMessageToolCall>>)> {
-        eprintln!("[{}] Starting streaming request with cancellation", self.id);
 
         // Force streaming mode
         request.stream = Some(true);

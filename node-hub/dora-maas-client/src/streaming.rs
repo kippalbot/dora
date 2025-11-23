@@ -167,9 +167,7 @@ where
 
     while let Some(event) = event_source.next().await {
         match event {
-            Ok(Event::Open) => {
-                eprintln!("[SSE] Stream opened");
-            }
+            Ok(Event::Open) => {}
             Ok(Event::Message(msg)) => {
                 let data = msg.data;
                 chunk_count += 1;
@@ -182,7 +180,6 @@ where
 
                 // Check for end of stream
                 if data == "[DONE]" {
-                    eprintln!("[SSE] Stream complete after {} chunks", chunk_count);
                     break;
                 }
 
@@ -206,34 +203,13 @@ where
                             }
                         }
                     }
-                    Err(e) => {
-                        eprintln!("[SSE] Failed to parse chunk: {}. Data: {}", e, data);
+                    Err(_e) => {
+                        // Silently skip unparseable chunks (common with some APIs)
                     }
                 }
             }
             Err(e) => {
-                // Enhanced error logging for debugging DeepSeek API issues
-                eprintln!("[SSE] ==================== ERROR DETAILS ====================");
-                eprintln!("[SSE] Error: {}", e);
-                eprintln!("[SSE] Error Debug: {:?}", e);
-                eprintln!("[SSE] Chunks received before error: {}", chunk_count);
-                eprintln!("[SSE] Accumulated content so far ({} chars):", accumulated_content.len());
-                if accumulated_content.len() <= 500 {
-                    eprintln!("[SSE] Content: '{}'", accumulated_content);
-                } else {
-                    eprintln!("[SSE] Content (first 250 chars): '{}'", &accumulated_content[..250]);
-                    eprintln!("[SSE] Content (last 250 chars): '...{}'", &accumulated_content[accumulated_content.len()-250..]);
-                }
-                eprintln!("[SSE] Tool calls accumulated: {}", tool_accumulator.has_tool_calls());
-                eprintln!("[SSE] Last {} raw SSE events:", last_raw_events.len());
-                for (i, raw_event) in last_raw_events.iter().enumerate() {
-                    if raw_event.len() <= 200 {
-                        eprintln!("[SSE]   [{}]: {}", i, raw_event);
-                    } else {
-                        eprintln!("[SSE]   [{}]: {}...(truncated)", i, &raw_event[..200]);
-                    }
-                }
-                eprintln!("[SSE] ========================================================");
+                eprintln!("[SSE] Error after {} chunks: {}", chunk_count, e);
                 return Err(eyre!("SSE error: {}", e));
             }
         }
@@ -282,9 +258,7 @@ where
         tokio::select! {
             event = event_source.next() => {
                 match event {
-                    Some(Ok(Event::Open)) => {
-                        eprintln!("[SSE] Stream opened");
-                    }
+                    Some(Ok(Event::Open)) => {}
                     Some(Ok(Event::Message(msg))) => {
                         let data = msg.data;
                         chunk_count += 1;
@@ -297,7 +271,6 @@ where
 
                         // Check for end of stream
                         if data == "[DONE]" {
-                            eprintln!("[SSE] Stream complete after {} chunks", chunk_count);
                             break;
                         }
 
@@ -321,54 +294,28 @@ where
                                     }
                                 }
                             }
-                            Err(e) => {
-                                eprintln!("[SSE] Failed to parse chunk: {}. Data: {}", e, data);
+                            Err(_e) => {
+                                // Silently skip unparseable chunks
                             }
                         }
                     }
                     Some(Err(e)) => {
-                        // Enhanced error logging for debugging DeepSeek API issues
-                        eprintln!("[SSE] ==================== ERROR DETAILS ====================");
-                        eprintln!("[SSE] Error: {}", e);
-                        eprintln!("[SSE] Error Debug: {:?}", e);
-                        eprintln!("[SSE] Chunks received before error: {}", chunk_count);
-                        eprintln!("[SSE] Accumulated content so far ({} chars):", accumulated_content.len());
-                        if accumulated_content.len() <= 500 {
-                            eprintln!("[SSE] Content: '{}'", accumulated_content);
-                        } else {
-                            eprintln!("[SSE] Content (first 250 chars): '{}'", &accumulated_content[..250]);
-                            eprintln!("[SSE] Content (last 250 chars): '...{}'", &accumulated_content[accumulated_content.len()-250..]);
-                        }
-                        eprintln!("[SSE] Tool calls accumulated: {}", tool_accumulator.has_tool_calls());
-                        eprintln!("[SSE] Last {} raw SSE events:", last_raw_events.len());
-                        for (i, raw_event) in last_raw_events.iter().enumerate() {
-                            if raw_event.len() <= 200 {
-                                eprintln!("[SSE]   [{}]: {}", i, raw_event);
-                            } else {
-                                eprintln!("[SSE]   [{}]: {}...(truncated)", i, &raw_event[..200]);
-                            }
-                        }
-                        eprintln!("[SSE] ========================================================");
-
-                        // Check if cancellation occurred
                         if cancellation_token.is_cancelled() {
                             return Err(eyre!("Stream cancelled by user"));
                         }
+                        eprintln!("[SSE] Error after {} chunks: {}", chunk_count, e);
                         return Err(eyre!("SSE error: {}", e));
                     }
                     None => {
-                        eprintln!("[SSE] Stream ended");
                         break;
                     }
                 }
             }
             _ = cancellation_token.cancelled() => {
-                eprintln!("[SSE] Stream cancelled by user");
                 event_source.close();
                 return Err(eyre!("Stream cancelled by user"));
             }
             _ = timeout_future => {
-                eprintln!("[SSE] Stream timed out after {:?}", timeout_duration);
                 event_source.close();
                 return Err(eyre!("Stream timed out after {:?}", timeout_duration));
             }

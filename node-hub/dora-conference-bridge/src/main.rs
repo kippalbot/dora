@@ -243,39 +243,26 @@ impl InputPort {
         let signal_type = classify_signal(&metadata, &text);
         self.signal_type = Some(signal_type.clone());
 
+        // For control signals (reset/cancelled), discard completely - don't accumulate or mark ready
+        // These are notifications, not content to be forwarded
+        if matches!(signal_type, SignalType::ResetSignal | SignalType::CancelledSignal) {
+            // Clear any accumulated state - this input port is now empty
+            self.message_state = None;
+            self.ready = false;
+            self.should_forward = false;
+            return false;  // Not ready, nothing accumulated
+        }
+
         // Determine if this should be forwarded based on signal type
         self.should_forward = match signal_type {
-            SignalType::ResetSignal => {
-                println!("[BRIDGE-STDOUT] 🔄 RESET SIGNAL DETECTED: port='{}', dropping silently", self.port_name);
-                false  // Don't forward reset signals
+            SignalType::ResetSignal | SignalType::CancelledSignal => {
+                // Already handled above, but keep for completeness
+                false
             }
-            SignalType::CancelledSignal => {
-                println!("[BRIDGE-STDOUT] 🛑 CANCELLED SIGNAL DETECTED: port='{}', dropping silently", self.port_name);
-                false  // Don't forward cancelled signals
-            }
-            SignalType::TechnicalError => {
-                println!("[BRIDGE-STDOUT] ⚠️ TECHNICAL ERROR DETECTED: port='{}', will forward template message", self.port_name);
-                true   // Forward template message for technical errors
-            }
-            SignalType::ContentError => {
-                println!("[BRIDGE-STDOUT] ❌ CONTENT ERROR DETECTED: port='{}', text='{}'", self.port_name, text);
-                true   // Forward template message for content errors
+            SignalType::TechnicalError | SignalType::ContentError => {
+                true   // Forward template message for errors
             }
             SignalType::NormalContent => {
-                // Check if this is an ending signal (empty content with ending status)
-                let is_ending_signal = text.trim().is_empty() &&
-                    metadata.get("session_status")
-                        .and_then(|p| match p {
-                            Parameter::String(s) => Some(s.as_str()),
-                            _ => None,
-                        })
-                        .map_or(false, |status| status == "ended" || status == "error" || status == "cancelled" || status == "reset");
-
-                if is_ending_signal {
-                    println!("[BRIDGE-STDOUT] 🏁 ENDING SIGNAL DETECTED: port='{}', completing existing message", self.port_name);
-                } else {
-                    println!("[BRIDGE-STDOUT] ✅ NORMAL CONTENT DETECTED: port='{}', text='{}'", self.port_name, &text.chars().take(50).collect::<String>());
-                }
                 true   // Forward normal content as-is
             }
         };
@@ -290,7 +277,6 @@ impl InputPort {
 
         // Reset message state if this is a new start
         if is_new_start {
-            println!("[BRIDGE-STDOUT] 🆕 NEW MESSAGE START: port='{}', resetting message state", self.port_name);
             self.message_state = Some(MessageState::new_streaming());
             self.ready = false;
             self.was_already_ready = false;
@@ -314,8 +300,6 @@ impl InputPort {
 
                 if !is_ending_signal {
                     state.add_chunk(text, metadata.clone());
-                } else {
-                    println!("[BRIDGE-STDOUT] 🏁 SKIPPING EMPTY ENDING CHUNK - preserving accumulated content");
                 }
             }
 
@@ -552,72 +536,31 @@ impl ConferenceBridge {
     }
 
     fn forward_bundle(&mut self, node: &mut DoraNode) -> Result<()> {
-        println!("[BRIDGE-STDOUT] 🚀 forward_bundle() called!");
-
-        // DEBUG: Show all input states
-        println!("[BRIDGE-STDOUT] 🔍 INPUT STATES:");
-        for (port_name, input) in &self.inputs {
-            println!("[BRIDGE-STDOUT]   {}: ready={}, has_message={}",
-                     port_name, input.ready, input.get_bundled_message().is_some());
-        }
-
-        let ready_inputs = self.get_ready_inputs();
-        println!("[BRIDGE-STDOUT] 📋 READY INPUTS: {:?}", ready_inputs);
-
         send_log(
             node,
             LogLevel::Info,
             self.log_level,
-            &format!("🚀 FORWARDING BUNDLE - queue order: {:?}", self.arrival_queue),
-        );
-
-        send_log(
-            node,
-            LogLevel::Info,
-            self.log_level,
-            &format!("📊 Buffer state: {} inputs accumulated, {} expected ports", self.get_ready_inputs().len(), self.expected_ports.len()),
+            &format!("🚀 FORWARDING BUNDLE - queue: {:?}, {} ready inputs", self.arrival_queue, self.get_ready_inputs().len()),
         );
 
         // Step 1: Collect messages in FIFO order and concatenate
         let mut concatenated_content = String::new();
         let mut forwarded_count = 0;
 
-        println!("[BRIDGE-STDOUT] 🚀 ARRIVAL QUEUE: {:?}", self.arrival_queue);
-        send_log(
-            node,
-            LogLevel::Info,
-            self.log_level,
-            &format!("🚀 FORWARDING BUNDLE - queue order: {:?}", self.arrival_queue),
-        );
-
         // Iterate in FIFO queue order (not arbitrary HashMap order)
         for port_name in &self.arrival_queue {
-            println!("[BRIDGE-STDOUT] 🔍 Processing queue item: {}", port_name);
             if let Some(input) = self.inputs.get(port_name) {
-                println!("[BRIDGE-STDOUT]   Found input - ready: {}, has_message: {}",
-                         input.ready, input.get_bundled_message().is_some());
-                send_log(
-                    node,
-                    LogLevel::Info,
-                    self.log_level,
-                    &format!("🔍 Checking input {} - ready: {}", port_name, input.ready),
-                );
-
                 if !input.ready {
-                    println!("[BRIDGE-STDOUT]   ⏭️ Skipping - not ready");
                     continue; // Skip if not ready (cold start case)
                 }
 
                 // Handle signals based on type - either drop silently or forward template message
                 if !input.should_forward {
-                    println!("[BRIDGE-STDOUT]   🚫 DROPPING CONTROL SIGNAL from {}: {:?}", port_name, input.signal_type);
                     send_log(
                         node,
-                        LogLevel::Info,
+                        LogLevel::Debug,
                         self.log_level,
-                        &format!("🚫 Silently dropping {:?} signal from {}",
-                                input.signal_type,
-                                port_name),
+                        &format!("🚫 Dropping {:?} signal from {}", input.signal_type, port_name),
                     );
                     continue;  // Skip control signals (reset, cancelled)
                 }
@@ -625,8 +568,6 @@ impl ConferenceBridge {
                 // Handle error signals that should be forwarded with template message
                 if let Some(signal_type) = &input.signal_type {
                     if matches!(signal_type, SignalType::TechnicalError | SignalType::ContentError) {
-                        println!("[BRIDGE-STDOUT]   ⚠️ ERROR SIGNAL from {}: {:?}", port_name, signal_type);
-
                         // If we have an error message template, create and forward the error message
                         if let Some(template) = &self.error_message_template {
                             // Convert port_name to friendly participant name
@@ -636,8 +577,6 @@ impl ConferenceBridge {
                                 .replace("judge", "Judge");
 
                             let error_message = template.replace("{participant}", &participant_name);
-
-                            println!("[BRIDGE-STDOUT]   📢 Sending error message: '{}'", error_message);
                             send_log(
                                 node,
                                 LogLevel::Warn,
@@ -670,41 +609,10 @@ impl ConferenceBridge {
                 }
 
                 if let Some(message) = input.get_bundled_message() {
-                    println!("[BRIDGE-STDOUT]   📦 Got message: {} chars", message.content.len());
-                    println!("[BRIDGE-STDOUT]   🔍 Message details: participant='{}', complete={}, content='{}'",
-                             message.participant, message.complete, message.content);
-                    println!("[BRIDGE-STDOUT]   🔍 Content trimmed: '{}' (empty: {})",
-                             message.content.trim(), message.content.trim().is_empty());
-                    send_log(
-                        node,
-                        LogLevel::Info,
-                        self.log_level,
-                        &format!("📦 Got message from {}: {} chars (complete: {})",
-                                message.participant, message.content.len(), message.complete),
-                    );
-
                     // Skip empty messages (completion signals with no content)
                     if message.content.trim().is_empty() {
-                        println!("[BRIDGE-STDOUT]   ⚠️ SKIPPING EMPTY MESSAGE from {}", message.participant);
-                        send_log(
-                            node,
-                            LogLevel::Info,
-                            self.log_level,
-                            &format!("⚠️ Skipping empty message from {}", message.participant),
-                        );
                         continue;
                     }
-
-                    send_log(
-                        node,
-                        LogLevel::Info,
-                        self.log_level,
-                        &format!(
-                            "Adding {} to bundle ({} chars)",
-                            message.participant,
-                            message.content.len()
-                        ),
-                    );
 
                     // Add content with newline separator
                     if !concatenated_content.is_empty() {
@@ -713,40 +621,28 @@ impl ConferenceBridge {
                     concatenated_content.push_str(&message.content);
                     forwarded_count += 1;
 
-                    // Debug log what we're forwarding
                     send_log(
                         node,
-                        LogLevel::Info,
+                        LogLevel::Debug,
                         self.log_level,
-                        &format!("📦 Forwarding from {}: {} chars, content: '{}...'", message.participant, message.content.len(), &message.content.chars().take(50).collect::<String>()),
+                        &format!("📦 Adding {} to bundle: {} chars", message.participant, message.content.len()),
                     );
                 }
             }
         }
 
         if forwarded_count == 0 {
-            println!("[BRIDGE-STDOUT] ❌ forward_bundle() FAILED: No messages to forward!");
-            send_log(node, LogLevel::Warn, self.log_level, "No messages ready to forward");
+            send_log(node, LogLevel::Debug, self.log_level, "No messages ready to forward");
             return Ok(());
         }
 
-        // Step 3: Clear the arrival queue and reset input states after forwarding
-        send_log(
-            node,
-            LogLevel::Info,
-            self.log_level,
-            &format!("🧹 Clearing arrival queue and resetting {} input states", forwarded_count),
-        );
-
-        // Clear the arrival queue
+        // Clear the arrival queue and reset input states after forwarding
         self.arrival_queue.clear();
-
-        // Reset all input states
         for input in self.inputs.values_mut() {
             input.reset();
         }
 
-        // Step 2: Prepare question_id metadata
+        // Prepare question_id metadata
         let output_question_id = if self.increment_question_id {
             self.current_question_id + 1
         } else {
@@ -759,33 +655,8 @@ impl ConferenceBridge {
             Parameter::String(output_question_id.to_string()),
         );
 
-        send_log(
-            node,
-            LogLevel::Info,
-            self.log_level,
-            &format!(
-                "🚀 ABOUT TO SEND BUNDLED MESSAGE: {} ports, {} chars, question_id={}",
-                forwarded_count,
-                concatenated_content.len(),
-                output_question_id
-            ),
-        );
-
-        // CRITICAL DEBUG: Show first 500 chars of what we're about to send
-        let content_preview = if concatenated_content.chars().count() > 500 {
-            let truncated_chars: String = concatenated_content.chars().take(500).collect();
-            format!("{}...(truncated, total {} chars)",
-                   truncated_chars,
-                   concatenated_content.chars().count())
-        } else {
-            concatenated_content.clone()
-        };
-        send_log(
-            node,
-            LogLevel::Info,
-            self.log_level,
-            &format!("📤 CONTENT PREVIEW: {}", content_preview),
-        );
+        send_log(node, LogLevel::Info, self.log_level,
+            &format!("📤 Sending {} chars from {} inputs", concatenated_content.len(), forwarded_count));
 
         // Step 3: Send concatenated output with metadata
         node.send_output(
@@ -886,31 +757,12 @@ fn main() -> Result<()> {
     bridge.send_status(&mut node, "waiting")?;
 
     while let Some(event) = events.recv() {
-        // DEBUG: Log EVERY event received at the top of the loop
-        match &event {
-            Event::Input { id, .. } => {
-                println!("[BRIDGE-STDOUT] ⚡ EVENT RECEIVED: Input from '{}'", id.as_str());
-            }
-            Event::Stop(cause) => {
-                println!("[BRIDGE-STDOUT] ⚡ EVENT RECEIVED: Stop({:?})", cause);
-            }
-            Event::InputClosed { id } => {
-                println!("[BRIDGE-STDOUT] ⚡ EVENT RECEIVED: InputClosed({})", id.as_str());
-            }
-            _ => {
-                println!("[BRIDGE-STDOUT] ⚡ EVENT RECEIVED: Other event");
-            }
-        }
-
         match event {
             Event::Input { id, data, metadata } => {
                 let port_name = id.as_str().to_string();
 
                 if port_name == "control" {
-                    println!("[BRIDGE-STDOUT] 🎮 CONTROL EVENT PROCESSING: port={}", port_name);
                     let control_array = data.as_string::<i32>();
-                    println!("[BRIDGE-STDOUT] 🎮 CONTROL: control_array len={}", control_array.len());
-
                     let control_payload = control_array
                         .iter()
                         .filter_map(|value| value.map(str::to_string))
@@ -918,25 +770,10 @@ fn main() -> Result<()> {
                         .join(" ");
 
                     let trimmed = control_payload.trim();
-                    println!("[BRIDGE-STDOUT] 🎮 CONTROL PAYLOAD: '{}' (length: {})", trimmed, trimmed.len());
-
-                    // CRITICAL DEBUG: Log ALL control commands
-                    send_log(
-                        &mut node,
-                        LogLevel::Info,
-                        log_level,
-                        &format!("🎮 CONTROL COMMAND RECEIVED: '{}' (length: {})", trimmed, trimmed.len()),
-                    );
                     let mut command: Option<String> = None;
 
                     if trimmed.is_empty() {
-                        println!("[BRIDGE-STDOUT] 🎮 CONTROL: EMPTY PAYLOAD - ignoring!");
-                        send_log(
-                            &mut node,
-                            LogLevel::Warn,
-                            log_level,
-                            "Received empty control message; ignoring",
-                        );
+                        send_log(&mut node, LogLevel::Warn, log_level, "Empty control message");
                     } else if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
                         if let Some(cmd) = value.get("command").and_then(|v| v.as_str()) {
                             command = Some(cmd.to_ascii_lowercase());
@@ -945,118 +782,42 @@ fn main() -> Result<()> {
                         command = Some(trimmed.to_ascii_lowercase());
                     }
 
-                    println!("[BRIDGE-STDOUT] 🎮 CONTROL: command={:?}", command);
                     match command.as_deref() {
                         Some("reset") => {
                             bridge.reset_state(&mut node)?;
-                            send_log(
-                                &mut node,
-                                LogLevel::Info,
-                                log_level,
-                                "Reset command received - state restored to initial configuration",
-                            );
+                            send_log(&mut node, LogLevel::Info, log_level, "🔄 Reset command received");
                         }
                         Some("resume") => {
-                            // Bridge enters resume mode - will forward completed inputs as they arrive
                             bridge.resume_mode = true;
-                            println!("[BRIDGE-STDOUT] 🚀 RESUME: entering resume mode");
-                            send_log(
-                                &mut node,
-                                LogLevel::Info,
-                                log_level,
-                                "🚀 Resume command received - entering resume mode, will forward completed inputs as they arrive",
-                            );
+                            send_log(&mut node, LogLevel::Info, log_level, "🚀 Resume command received");
 
-                            // Check if any input is currently streaming (not complete yet)
                             let any_streaming = bridge.inputs.values().any(|input| input.is_streaming_active());
-
                             let ready_inputs = bridge.get_ready_inputs();
-                            println!("[BRIDGE-STDOUT] 🚀 RESUME: ready_inputs={:?}, any_streaming={}, expected_ports={:?}",
-                                ready_inputs, any_streaming, bridge.expected_ports);
-                            send_log(
-                                &mut node,
-                                LogLevel::Info,
-                                log_level,
-                                &format!("🔍 CONTROL INPUT DEBUG - ready_inputs: {:?}, any_streaming: {}, resume_mode: {}", ready_inputs, any_streaming, bridge.resume_mode),
-                            );
-
-                            // DEBUG: Show all input states
-                            for (port_name, input) in &bridge.inputs {
-                                println!("[BRIDGE-STDOUT] 🚀 RESUME INPUT STATE: {}  ready={}, streaming={}",
-                                    port_name, input.ready, input.is_streaming_active());
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    &format!("🔍 INPUT STATE - {}: ready={}, streaming={}", port_name, input.ready, input.is_streaming_active()),
-                                );
-                            }
 
                             // Forward if there are ready inputs AND no ongoing streaming
-                            // If streaming is ongoing, stay in resume_mode and let the input text loop forward when streaming completes
                             if !ready_inputs.is_empty() && !any_streaming {
-                                println!("[BRIDGE-STDOUT] 🚀 RESUME: READY TO FORWARD - calling forward_bundle()");
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    &format!("🚀 All inputs complete, calling forward_bundle()"),
-                                );
+                                send_log(&mut node, LogLevel::Info, log_level,
+                                    &format!("🚀 Forwarding {} ready inputs", ready_inputs.len()));
                                 match bridge.forward_bundle(&mut node) {
                                     Ok(_) => {
-                                        // Only set resume_mode = false AFTER successful forwarding
                                         bridge.resume_mode = false;
-                                        send_log(
-                                            &mut node,
-                                            LogLevel::Info,
-                                            log_level,
-                                            "✅ forward_bundle() completed successfully on resume - switching to pause mode",
-                                        );
+                                        send_log(&mut node, LogLevel::Info, log_level, "✅ Forward complete");
                                     }
                                     Err(e) => {
-                                        // Keep resume_mode = true on error so we can retry
-                                        send_log(
-                                            &mut node,
-                                            LogLevel::Error,
-                                            log_level,
-                                            &format!("❌ forward_bundle() failed on resume: {} - staying in resume mode", e),
-                                        );
+                                        send_log(&mut node, LogLevel::Error, log_level,
+                                            &format!("❌ Forward failed: {}", e));
                                     }
                                 }
                             } else {
-                                println!("[BRIDGE-STDOUT] 🚀 RESUME: NOT READY TO FORWARD (ready={}, streaming={}) - staying in resume mode",
-                                    !ready_inputs.is_empty(), any_streaming);
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    &format!("⚠️ Not ready to forward (ready_inputs={}, any_streaming={}) - staying in resume mode", !ready_inputs.is_empty(), any_streaming),
-                                );
-
-                                // DON'T switch to pause mode - stay in resume mode to wait for inputs to complete
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    "🔄 Remaining in resume mode - waiting for inputs to complete",
-                                );
+                                send_log(&mut node, LogLevel::Debug, log_level,
+                                    &format!("⏳ Waiting for inputs (ready={}, streaming={})", ready_inputs.len(), any_streaming));
                             }
-
-                            // resume_mode is set to false inside forward_bundle success block above
-                            // Do NOT reset here - only reset after actual forwarding succeeds
                         }
                         Some(other) => {
-                            send_log(
-                                &mut node,
-                                LogLevel::Warn,
-                                log_level,
-                                &format!("Unknown control command: {}", other),
-                            );
+                            send_log(&mut node, LogLevel::Warn, log_level, &format!("Unknown command: {}", other));
                         }
                         None => {}
                     }
-
-                    println!("[BRIDGE-STDOUT] 🎮 CONTROL EVENT DONE - continuing to next event");
                     continue;
                 }
 
@@ -1068,8 +829,6 @@ fn main() -> Result<()> {
                     .filter_map(|value| value.map(str::to_string))
                     .collect::<Vec<String>>()
                     .join(" ");
-
-                println!("[BRIDGE-STDOUT] 📝 TEXT INPUT PROCESSING: port={}, resume_mode={}", port_name, bridge.resume_mode);
 
                 bridge.register_input(port_name.clone());
                 let completion_signal = metadata_indicates_completion(&parameters);
@@ -1090,174 +849,57 @@ fn main() -> Result<()> {
                 }
 
                 if text.trim().is_empty() && !completion_signal {
-                    send_log(
-                        &mut node,
-                        LogLevel::Debug,
-                        log_level,
-                        &format!("Received empty text from {}, skipping", port_name),
-                    );
                     continue;
                 }
 
-                send_log(
-                    &mut node,
-                    LogLevel::Debug,
-                    log_level,
-                    &format!("Received input from {}: {} chars", port_name, text.len()),
-                );
+                // CRITICAL: Check if this is a reset signal from participant output
+                // session_status: "reset" from LLM output = LAST message from old debate
+                // When we see this, discard ALL accumulated inputs (they're all from old debate)
+                let is_reset_signal = session_status_value == Some("reset");
 
-                // Handle the input
-                println!("[BRIDGE-STDOUT] 📥 RAW INPUT RECEIVED from {}: '{}' ({} chars)", port_name, text, text.len());
-
-                // Debug: print session_status metadata value
-                let session_status_debug = parameters
-                    .get("session_status")
-                    .map(|p| format!("{:?}", p))
-                    .unwrap_or_else(|| "NONE".to_string());
-                println!("[BRIDGE-STDOUT] 📋 METADATA session_status from {}: {}", port_name, session_status_debug);
+                if is_reset_signal {
+                    send_log(&mut node, LogLevel::Info, log_level,
+                        &format!("🔄 RESET SIGNAL from {} - discarding ALL queued inputs", port_name));
+                    bridge.reset_state(&mut node)?;
+                    continue;  // Skip further processing, wait for new debate
+                }
 
                 let input_ready = bridge.handle_input(&port_name, text, parameters);
 
                 if input_ready {
-                    // Only log if this input wasn't already ready (deduplication)
+                    // Mark as ready (deduplication)
                     if let Some(input) = bridge.inputs.get_mut(&port_name) {
                         if !input.was_already_ready {
                             input.was_already_ready = true;
-
-                            // Log differently based on signal type
-                            match &input.signal_type {
-                                Some(SignalType::ResetSignal) => {
-                                    send_log(
-                                        &mut node,
-                                        LogLevel::Info,
-                                        log_level,
-                                        &format!("🔄 Input {} completed with RESET signal - will be dropped silently (resume_mode: {})", port_name, bridge.resume_mode),
-                                    );
-                                }
-                                Some(SignalType::CancelledSignal) => {
-                                    send_log(
-                                        &mut node,
-                                        LogLevel::Info,
-                                        log_level,
-                                        &format!("🛑 Input {} completed with CANCELLED signal - will be dropped silently (resume_mode: {})", port_name, bridge.resume_mode),
-                                    );
-                                }
-                                Some(SignalType::TechnicalError) | Some(SignalType::ContentError) => {
-                                    send_log(
-                                        &mut node,
-                                        LogLevel::Warn,
-                                        log_level,
-                                        &format!("❌ Input {} completed with ERROR signal ({:?}) - will forward template message (resume_mode: {})", port_name, input.signal_type, bridge.resume_mode),
-                                    );
-                                }
-                                Some(SignalType::NormalContent) => {
-                                    send_log(
-                                        &mut node,
-                                        LogLevel::Info,
-                                        log_level,
-                                        &format!("✅ Input {} completed with normal content (resume_mode: {})", port_name, bridge.resume_mode),
-                                    );
-                                }
-                                None => {
-                                    send_log(
-                                        &mut node,
-                                        LogLevel::Info,
-                                        log_level,
-                                        &format!("✅ Input {} marked as ready (resume_mode: {})", port_name, bridge.resume_mode),
-                                    );
-                                }
+                            // Log state changes only for errors
+                            if matches!(input.signal_type, Some(SignalType::TechnicalError) | Some(SignalType::ContentError)) {
+                                send_log(&mut node, LogLevel::Warn, log_level,
+                                    &format!("❌ Input {} completed with ERROR", port_name));
                             }
-
-                            // DEBUG: Input ready status and resume mode
-                            if !bridge.resume_mode {
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    &format!("⏳ Input {} ready but not in resume mode - will forward when resume is received", port_name),
-                                );
-                            } else {
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    &format!("✅ Input {} ready and resume_mode is true - will forward immediately", port_name),
-                                );
-                            }
-                        } else {
-                            // Log that we're skipping the duplicate
-                            send_log(
-                                &mut node,
-                                LogLevel::Debug,
-                                log_level,
-                                &format!("🔄 Input {} already ready - skipping duplicate log (resume_mode: {})", port_name, bridge.resume_mode),
-                            );
                         }
                     }
-                } else {
-                    // Input not ready - log for debugging
-                    send_log(
-                        &mut node,
-                        LogLevel::Debug,
-                        log_level,
-                        &format!("⏳ Input {} not ready yet (resume_mode: {})", port_name, bridge.resume_mode),
-                    );
                 }
 
-                // CRITICAL: If input just completed (became ready) and bridge is in resume mode, check if we can forward
-                // Only forward when: resume_mode=true AND this input just became ready AND no other inputs are still streaming
+                // If input completed and bridge is in resume mode, check if we can forward
                 if bridge.resume_mode && input_ready {
                     let any_streaming = bridge.inputs.values().any(|input| input.is_streaming_active());
                     let ready_inputs = bridge.get_ready_inputs();
 
-                    println!("[BRIDGE-STDOUT] 📥 INPUT COMPLETE in resume_mode: port={}, ready_inputs={:?}, any_streaming={}",
-                        port_name, ready_inputs, any_streaming);
-                    send_log(
-                        &mut node,
-                        LogLevel::Info,
-                        log_level,
-                        &format!("🚀 Input {} completed in resume mode - checking if ready to forward", port_name),
-                    );
-
                     // Only forward if no other inputs are still streaming
                     if !any_streaming && !ready_inputs.is_empty() {
-                        println!("[BRIDGE-STDOUT] 📥 FORWARDING from input loop: no streaming, {} ready inputs", ready_inputs.len());
-                        send_log(
-                            &mut node,
-                            LogLevel::Info,
-                            log_level,
-                            &format!("🔍 Ready to forward: {:?}", ready_inputs),
-                        );
+                        send_log(&mut node, LogLevel::Info, log_level,
+                            &format!("🚀 Forwarding {} ready inputs", ready_inputs.len()));
 
                         match bridge.forward_bundle(&mut node) {
                             Ok(_) => {
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    "✅ forward_bundle() completed successfully in input loop",
-                                );
-
-                                // Switch back to pause mode only after successful forwarding
                                 bridge.resume_mode = false;
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Info,
-                                    log_level,
-                                    "⏸️ Forwarding complete - switching back to pause mode (controller will send next resume when appropriate)",
-                                );
+                                send_log(&mut node, LogLevel::Info, log_level, "✅ Forward complete");
                             }
                             Err(e) => {
-                                send_log(
-                                    &mut node,
-                                    LogLevel::Error,
-                                    log_level,
-                                    &format!("❌ forward_bundle() failed in input loop: {}", e),
-                                );
+                                send_log(&mut node, LogLevel::Error, log_level,
+                                    &format!("❌ Forward failed: {}", e));
                             }
                         }
-                    } else {
-                        println!("[BRIDGE-STDOUT] 📥 NOT FORWARDING from input loop: any_streaming={}", any_streaming);
                     }
                 }
 

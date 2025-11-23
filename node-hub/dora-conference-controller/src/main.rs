@@ -179,31 +179,35 @@ impl ConferenceController {
         let session_status = metadata.parameters.get("session_status")
             .and_then(|p| match p { Parameter::String(s) => Some(s.as_str()), _ => None });
 
+        // CRITICAL: Check if this is a reset signal from participant output
+        // session_status: "reset" from LLM output = LAST message from old debate
+        if session_status == Some("reset") {
+            send_log(node, LogLevel::Info, self.log_level,
+                &format!("🔄 RESET SIGNAL from {} - discarding ALL inputs", participant_id));
+            self.participant_inputs.clear();
+            self.streaming_accumulators.clear();
+            self.state = ControllerState::Waiting;
+            self.reset_pending = true;
+            return Ok(());
+        }
+
         // If reset_pending is true, ignore ALL inputs EXCEPT "started" status
-        // This prevents stale completions from triggering new resume commands
         if self.reset_pending {
-            // A new "started" message clears reset_pending - debate is resuming from user action
             if session_status == Some("started") {
-                println!("[CONTROLLER] 🎬 New input started from {} - clearing reset_pending", participant_id);
                 send_log(node, LogLevel::Info, self.log_level,
-                    &format!("🎬 New debate round starting from {} - reset_pending cleared", participant_id));
+                    &format!("🎬 New debate starting from {}", participant_id));
                 self.reset_pending = false;
-                // Continue processing this input normally
             } else {
-                // Ignore ALL other inputs (ended, ongoing, reset, error, etc.) while reset_pending
-                println!("[CONTROLLER] 🔄 Ignoring input from {} while reset_pending (status={:?})", participant_id, session_status);
-                send_log(node, LogLevel::Debug, self.log_level,
-                    &format!("🔄 Ignoring input from {} - reset_pending, waiting for new 'started' input", participant_id));
-                return Ok(());
+                return Ok(());  // Ignore stale inputs while reset_pending
             }
         }
 
-        // Check if this is an error status - if so, proceed to next speaker without counting words
+        // Check if this is an error status
         let is_error = session_status == Some("error") || session_status == Some("cancelled");
 
         if is_error {
-            println!("[CONTROLLER] ❌ ERROR from {}: proceeding to next speaker", participant_id);
-            send_log(node, LogLevel::Warn, self.log_level, &format!("❌ CONTROLLER: {} had an error - proceeding to next speaker", participant_id));
+            send_log(node, LogLevel::Warn, self.log_level,
+                &format!("❌ {} had an error - proceeding to next speaker", participant_id));
 
             // Clear any accumulated streaming data for this participant
             self.streaming_accumulators.remove(participant_id);
@@ -231,47 +235,36 @@ impl ConferenceController {
         self.policy.update_word_count(participant_id, word_count);
 
         if is_complete {
-            println!("[CONTROLLER] 📥 INPUT COMPLETE: {} ({} words)", participant_id, word_count);
-            send_log(node, LogLevel::Info, self.log_level, &format!("📥 CONTROLLER: Input COMPLETE from {}: {} words", participant_id, word_count));
-            send_log(node, LogLevel::Info, self.log_level, &format!("📊 CONTROLLER: Current policy state: {} ready inputs, {} expected in sequence", self.participant_inputs.len(), self.policy.get_participants().len()));
-
-            // Only process next speaker when message is complete
+            send_log(node, LogLevel::Info, self.log_level,
+                &format!("📥 {} completed ({} words)", participant_id, word_count));
             self.process_next_speaker(node)?;
-        } else {
-            send_log(node, LogLevel::Debug, self.log_level, &format!("⏳ CONTROLLER: Input INCOMPLETE from {}: {} words (still accumulating)", participant_id, word_count));
         }
 
         Ok(())
     }
 
     fn process_next_speaker(&mut self, node: &mut DoraNode) -> Result<()> {
-        // Determine the next speaker based on policy
         if let Some(next_speaker) = self.policy.determine_next_speaker() {
-            println!("[CONTROLLER] 🎯 NEXT SPEAKER: {} -> SENDING RESUME", next_speaker);
-            send_log(node, LogLevel::Info, self.log_level, &format!("🎯 Next speaker determined: {}", next_speaker));
-
-            // Map speaker to control output
             let control_output = match next_speaker.as_str() {
                 "judge" => "control_judge",
                 "llm2" => "control_llm2",
                 "llm1" => "control_llm1",
                 _ => {
-                    send_log(node, LogLevel::Warn, self.log_level, &format!("⚠️ Unknown next speaker: {}", next_speaker));
+                    send_log(node, LogLevel::Warn, self.log_level,
+                        &format!("⚠️ Unknown speaker: {}", next_speaker));
                     return Ok(());
                 }
             };
 
-            // Send resume command to the appropriate bridge
-            println!("[CONTROLLER] 🚀 SENDING RESUME TO: {}", control_output);
-            send_log(node, LogLevel::Info, self.log_level, &format!("🚀 CONTROLLER: Sending resume command to bridge via {}", control_output));
-            send_log(node, LogLevel::Debug, self.log_level, &format!("📊 CONTROLLER: Next speaker determined: {} (policy: {})", next_speaker, serde_json::to_string(&self.policy.get_stats())?));
+            send_log(node, LogLevel::Info, self.log_level,
+                &format!("🎯 Next: {} → {}", next_speaker, control_output));
             node.send_output(
                 DataId::from(control_output.to_string()),
                 Default::default(),
                 StringArray::from(vec!["resume"]),
             )?;
         } else {
-            send_log(node, LogLevel::Warn, self.log_level, "⚠️ No next speaker determined");
+            send_log(node, LogLevel::Warn, self.log_level, "⚠️ No next speaker");
         }
 
         // Send policy statistics
@@ -285,40 +278,21 @@ impl ConferenceController {
     }
 
     fn reset(&mut self, node: &mut DoraNode) -> Result<()> {
-        send_log(node, LogLevel::Info, self.log_level, "🔄 Resetting controller state");
-        send_log(node, LogLevel::Info, self.log_level, "📡 Sending reset commands to all bridges and LLMs");
-
-        // Set reset_pending flag BEFORE sending reset commands
-        // This ensures incoming "reset" status from LLMs won't trigger next speaker
+        send_log(node, LogLevel::Info, self.log_level, "🔄 Resetting controller");
         self.reset_pending = true;
 
-        // Send reset commands to all bridges
-        let bridge_outputs = ["control_judge", "control_llm2", "control_llm1"];
-        for output_name in &bridge_outputs {
+        // Send reset to all bridges
+        for output_name in ["control_judge", "control_llm2", "control_llm1"] {
             node.send_output(
                 DataId::from(output_name.to_string()),
                 Default::default(),
                 StringArray::from(vec!["reset"]),
             )?;
-            send_log(node, LogLevel::Info, self.log_level,
-                &format!("🚀 Sent reset command to bridge via {}", output_name));
         }
 
-        // Send reset command to LLM1 and LLM2 via llm_control
-        node.send_output(
-            DataId::from("llm_control".to_string()),
-            Default::default(),
-            StringArray::from(vec!["reset"]),
-        )?;
-        send_log(node, LogLevel::Info, self.log_level, "🚀 Sent reset command to LLM1/LLM2 via llm_control");
-
-        // Send reset command to judge via judge_prompt
-        node.send_output(
-            DataId::from("judge_prompt".to_string()),
-            Default::default(),
-            StringArray::from(vec!["reset"]),
-        )?;
-        send_log(node, LogLevel::Info, self.log_level, "🚀 Sent reset command to judge via judge_prompt");
+        // Send reset to LLMs
+        node.send_output(DataId::from("llm_control".to_string()), Default::default(), StringArray::from(vec!["reset"]))?;
+        node.send_output(DataId::from("judge_prompt".to_string()), Default::default(), StringArray::from(vec!["reset"]))?;
 
         // Reset internal state
         self.participant_inputs.clear();
@@ -326,7 +300,7 @@ impl ConferenceController {
         self.policy.reset_counts();
         self.state = ControllerState::Waiting;
 
-        send_log(node, LogLevel::Info, self.log_level, "✅ Controller reset complete - waiting for new input (reset_pending=true)");
+        send_log(node, LogLevel::Info, self.log_level, "✅ Reset complete");
         Ok(())
     }
 
@@ -347,52 +321,27 @@ impl ConferenceController {
 
 /// Parse command line arguments and YAML configuration
 fn load_pattern_from_env() -> Result<String> {
-    // First check DORA_POLICY_PATTERN environment variable
     if let Ok(pattern) = env::var("DORA_POLICY_PATTERN") {
-        println!("📋 Using pattern from DORA_POLICY_PATTERN env var");
         return Ok(pattern);
     }
-
-    // Then check PATTERN environment variable
     if let Ok(pattern) = env::var("PATTERN") {
-        println!("📋 Using pattern from PATTERN env var");
         return Ok(pattern);
     }
-
-    // Default pattern
-    println!("⚠️ No pattern specified, using default: [Judge → Defense → Prosecution]");
     Ok("[Judge → Defense → Prosecution]".to_string())
 }
 
 fn main() -> Result<()> {
-    println!("🚀 Loading pattern configuration...");
     let pattern = load_pattern_from_env()?;
-
     let (mut node, events) = DoraNode::init_from_env()?;
 
-    // Set up logging
     let log_level = env::var("LOG_LEVEL").ok()
         .and_then(|s| LogLevel::parse(&s))
         .unwrap_or(LogLevel::Info);
 
-    send_log(&mut node, LogLevel::Info, log_level, &format!("🚀 Starting Conference Controller with pattern: {}", pattern));
+    send_log(&mut node, LogLevel::Info, log_level, &format!("🚀 Controller started with pattern: {}", pattern));
     let mut controller = ConferenceController::new(pattern, &mut node, log_level)?;
 
-    // Block on the event stream to get synchronous iteration
     let mut events = dora_node_api::futures::executor::block_on_stream(events);
-
-    send_log(&mut node, LogLevel::Info, log_level, "🔌 Conference Controller ready and listening for events");
-    send_log(&mut node, LogLevel::Info, log_level, "📢 TEST LOG: This should appear in the viewer");
-    send_log(&mut node, LogLevel::Info, log_level, "📋 CONFIRMED: Controller log output is connected");
-    send_log(&mut node, LogLevel::Info, log_level, "Accepted inputs: Participant inputs (e.g., llm1, llm2, llm3)");
-    send_log(&mut node, LogLevel::Info, log_level, "Accepted inputs: control: 'reset' command");
-    send_log(&mut node, LogLevel::Info, log_level, "Outputs: control: 'resume' commands to conference bridge");
-    send_log(&mut node, LogLevel::Info, log_level, "Outputs: status: JSON stats about controller state");
-
-    // Direct println! statements that should always be visible
-    println!("[CONTROLLER] 🚀 CONTROLLER STARTED - Should see this in terminal");
-    println!("[CONTROLLER] 📡 Log level: {:?}", log_level);
-    println!("[CONTROLLER] 🔍 Testing direct stdout output");
 
     loop {
         let event = events.next();

@@ -415,11 +415,12 @@ def main():
                             print_status(node_id, status)
 
                 # Handle control command outputs (controller sending resume)
+                # Use input_id directly for control commands since they are named control_judge, control_llm1, etc.
                 elif input_id.startswith("control_") or input_id == "control":
                     if len(value) > 0:
                         control_cmd = value[0].as_py()
                         if isinstance(control_cmd, str) and control_cmd.strip():
-                            print_control_command(node_id, control_cmd)
+                            print_control_command(input_id, control_cmd)
 
                 # Handle text outputs
                 elif input_id.endswith("_text") or input_id.endswith("/text"):
