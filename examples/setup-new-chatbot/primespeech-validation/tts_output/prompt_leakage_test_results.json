@@ -1,0 +1,390 @@
+{
+  "test_type": "prompt_leakage_detection_comprehensive",
+  "timestamp": "2025-10-12 23:07:01",
+  "total_test_time": 22.708588123321533,
+  "total_scenarios": 5,
+  "total_segments": 28,
+  "scenarios_tested": [
+    "short_alternating",
+    "similar_sounds",
+    "repeated_patterns",
+    "mixed_single_segment",
+    "rapid_succession"
+  ],
+  "detailed_results": {
+    "short_alternating": {
+      "scenario": {
+        "name": "short_alternating",
+        "description": "Very short alternating segments",
+        "segments": [
+          {
+            "id": 1,
+            "text": "Hi",
+            "language": "en"
+          },
+          {
+            "id": 2,
+            "text": "嗨",
+            "language": "zh"
+          },
+          {
+            "id": 3,
+            "text": "OK",
+            "language": "en"
+          },
+          {
+            "id": 4,
+            "text": "好",
+            "language": "zh"
+          },
+          {
+            "id": 5,
+            "text": "Bye",
+            "language": "en"
+          },
+          {
+            "id": 6,
+            "text": "拜",
+            "language": "zh"
+          }
+        ]
+      },
+      "results": [
+        {
+          "segment_id": 1,
+          "text": "Hi",
+          "language": "en",
+          "send_time": 0.4753131866455078
+        },
+        {
+          "segment_id": 2,
+          "text": "嗨",
+          "language": "zh",
+          "send_time": 0.3050870895385742
+        },
+        {
+          "segment_id": 3,
+          "text": "OK",
+          "language": "en",
+          "send_time": 0.3021090030670166
+        },
+        {
+          "segment_id": 4,
+          "text": "好",
+          "language": "zh",
+          "send_time": 0.3036332130432129
+        },
+        {
+          "segment_id": 5,
+          "text": "Bye",
+          "language": "en",
+          "send_time": 0.3051340579986572
+        },
+        {
+          "segment_id": 6,
+          "text": "拜",
+          "language": "zh",
+          "send_time": 0.30511999130249023
+        }
+      ],
+      "scenario_index": 0
+    },
+    "similar_sounds": {
+      "scenario": {
+        "name": "similar_sounds",
+        "description": "Words with similar sounds in both languages",
+        "segments": [
+          {
+            "id": 1,
+            "text": "hello",
+            "language": "en"
+          },
+          {
+            "id": 2,
+            "text": "哈喽",
+            "language": "zh"
+          },
+          {
+            "id": 3,
+            "text": "coffee",
+            "language": "en"
+          },
+          {
+            "id": 4,
+            "text": "咖啡",
+            "language": "zh"
+          },
+          {
+            "id": 5,
+            "text": "sofa",
+            "language": "en"
+          },
+          {
+            "id": 6,
+            "text": "沙发",
+            "language": "zh"
+          }
+        ]
+      },
+      "results": [
+        {
+          "segment_id": 1,
+          "text": "hello",
+          "language": "en",
+          "send_time": 0.5034842491149902
+        },
+        {
+          "segment_id": 2,
+          "text": "哈喽",
+          "language": "zh",
+          "send_time": 0.5036799907684326
+        },
+        {
+          "segment_id": 3,
+          "text": "coffee",
+          "language": "en",
+          "send_time": 0.5051488876342773
+        },
+        {
+          "segment_id": 4,
+          "text": "咖啡",
+          "language": "zh",
+          "send_time": 0.5051300525665283
+        },
+        {
+          "segment_id": 5,
+          "text": "sofa",
+          "language": "en",
+          "send_time": 0.505136251449585
+        },
+        {
+          "segment_id": 6,
+          "text": "沙发",
+          "language": "zh",
+          "send_time": 0.5051357746124268
+        }
+      ],
+      "scenario_index": 1
+    },
+    "repeated_patterns": {
+      "scenario": {
+        "name": "repeated_patterns",
+        "description": "Repeated patterns to test state clearing",
+        "segments": [
+          {
+            "id": 1,
+            "text": "test",
+            "language": "en"
+          },
+          {
+            "id": 2,
+            "text": "测试",
+            "language": "zh"
+          },
+          {
+            "id": 3,
+            "text": "test",
+            "language": "en"
+          },
+          {
+            "id": 4,
+            "text": "测试",
+            "language": "zh"
+          },
+          {
+            "id": 5,
+            "text": "test",
+            "language": "en"
+          },
+          {
+            "id": 6,
+            "text": "测试",
+            "language": "zh"
+          }
+        ]
+      },
+      "results": [
+        {
+          "segment_id": 1,
+          "text": "test",
+          "language": "en",
+          "send_time": 0.5051300525665283
+        },
+        {
+          "segment_id": 2,
+          "text": "测试",
+          "language": "zh",
+          "send_time": 0.5051383972167969
+        },
+        {
+          "segment_id": 3,
+          "text": "test",
+          "language": "en",
+          "send_time": 0.5051500797271729
+        },
+        {
+          "segment_id": 4,
+          "text": "测试",
+          "language": "zh",
+          "send_time": 0.5051572322845459
+        },
+        {
+          "segment_id": 5,
+          "text": "test",
+          "language": "en",
+          "send_time": 0.5004518032073975
+        },
+        {
+          "segment_id": 6,
+          "text": "测试",
+          "language": "zh",
+          "send_time": 0.5051300525665283
+        }
+      ],
+      "scenario_index": 2
+    },
+    "mixed_single_segment": {
+      "scenario": {
+        "name": "mixed_single_segment",
+        "description": "Mixed Chinese and English in single segments",
+        "segments": [
+          {
+            "id": 1,
+            "text": "Hello 世界",
+            "language": "mixed"
+          },
+          {
+            "id": 2,
+            "text": "你好 world",
+            "language": "mixed"
+          },
+          {
+            "id": 3,
+            "text": "AI 人工智能",
+            "language": "mixed"
+          },
+          {
+            "id": 4,
+            "text": "科技 technology",
+            "language": "mixed"
+          }
+        ]
+      },
+      "results": [
+        {
+          "segment_id": 1,
+          "text": "Hello 世界",
+          "language": "mixed",
+          "send_time": 0.5051510334014893
+        },
+        {
+          "segment_id": 2,
+          "text": "你好 world",
+          "language": "mixed",
+          "send_time": 0.5051109790802002
+        },
+        {
+          "segment_id": 3,
+          "text": "AI 人工智能",
+          "language": "mixed",
+          "send_time": 0.5029881000518799
+        },
+        {
+          "segment_id": 4,
+          "text": "科技 technology",
+          "language": "mixed",
+          "send_time": 0.5026183128356934
+        }
+      ],
+      "scenario_index": 3
+    },
+    "rapid_succession": {
+      "scenario": {
+        "name": "rapid_succession",
+        "description": "Segments sent in rapid succession",
+        "segments": [
+          {
+            "id": 1,
+            "text": "quick",
+            "language": "en"
+          },
+          {
+            "id": 2,
+            "text": "快速",
+            "language": "zh"
+          },
+          {
+            "id": 3,
+            "text": "fast",
+            "language": "en"
+          },
+          {
+            "id": 4,
+            "text": "迅速",
+            "language": "zh"
+          },
+          {
+            "id": 5,
+            "text": "speed",
+            "language": "en"
+          },
+          {
+            "id": 6,
+            "text": "速度",
+            "language": "zh"
+          }
+        ]
+      },
+      "results": [
+        {
+          "segment_id": 1,
+          "text": "quick",
+          "language": "en",
+          "send_time": 0.10068297386169434
+        },
+        {
+          "segment_id": 2,
+          "text": "快速",
+          "language": "zh",
+          "send_time": 0.10513091087341309
+        },
+        {
+          "segment_id": 3,
+          "text": "fast",
+          "language": "en",
+          "send_time": 0.10513710975646973
+        },
+        {
+          "segment_id": 4,
+          "text": "迅速",
+          "language": "zh",
+          "send_time": 0.10481405258178711
+        },
+        {
+          "segment_id": 5,
+          "text": "speed",
+          "language": "en",
+          "send_time": 0.10058403015136719
+        },
+        {
+          "segment_id": 6,
+          "text": "速度",
+          "language": "zh",
+          "send_time": 0.10512399673461914
+        }
+      ],
+      "scenario_index": 4
+    }
+  },
+  "analysis_instructions": {
+    "check_for": [
+      "Previous segment text appearing in current audio",
+      "Language mixing between segments",
+      "Incomplete audio generation",
+      "Delayed or overlapping audio output",
+      "State persistence issues"
+    ],
+    "audio_files_to_check": "tts_output/*.wav",
+    "metadata_to_review": "Segment metadata in audio files"
+  }
+}

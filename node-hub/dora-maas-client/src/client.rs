@@ -4,6 +4,8 @@ use outfox_openai::spec::{
 };
 use reqwest::Client as HttpClient;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use std::time::Duration;
 
 use crate::config::{GeminiConfig, OpenaiConfig, get_env_or_value};
 
@@ -45,6 +47,15 @@ pub trait ChatClient: Send + Sync {
         request: CreateChatCompletionRequest,
         chunk_sender: mpsc::UnboundedSender<String>,
     ) -> Result<(String, Option<Vec<ChatCompletionMessageToolCall>>)>;
+
+    /// Send a streaming chat completion request with cancellation support.
+    async fn complete_streaming_with_cancellation(
+        &self,
+        request: CreateChatCompletionRequest,
+        chunk_sender: mpsc::UnboundedSender<String>,
+        cancellation_token: CancellationToken,
+        timeout_duration: Duration,
+    ) -> Result<(String, Option<Vec<ChatCompletionMessageToolCall>>)>;
 }
 
 #[derive(Debug)]
@@ -57,10 +68,22 @@ pub struct GeminiClient {
 
 impl GeminiClient {
     pub fn new(config: &GeminiConfig) -> Self {
+        Self::new_with_timeout(config, Duration::from_secs(30))
+    }
+
+    pub fn new_with_timeout(config: &GeminiConfig, timeout: Duration) -> Self {
         let client = if config.proxy {
-            HttpClient::new()
+            HttpClient::builder()
+                .timeout(timeout)
+                .connect_timeout(Duration::from_secs(10))
+                .pool_idle_timeout(Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| HttpClient::new())
         } else {
             HttpClient::builder()
+                .timeout(timeout)
+                .connect_timeout(Duration::from_secs(10))
+                .pool_idle_timeout(Duration::from_secs(30))
                 .no_proxy()
                 .build()
                 .unwrap_or_else(|_| HttpClient::new())
@@ -132,6 +155,19 @@ impl ChatClient for GeminiClient {
             self.id
         ))
     }
+
+    async fn complete_streaming_with_cancellation(
+        &self,
+        _request: CreateChatCompletionRequest,
+        _chunk_sender: mpsc::UnboundedSender<String>,
+        _cancellation_token: CancellationToken,
+        _timeout_duration: Duration,
+    ) -> Result<(String, Option<Vec<ChatCompletionMessageToolCall>>)> {
+        Err(eyre!(
+            "Streaming with cancellation not implemented for provider '{}'",
+            self.id
+        ))
+    }
 }
 
 /// OpenAI API client implementation.
@@ -148,10 +184,22 @@ pub struct OpenaiClient {
 
 impl OpenaiClient {
     pub fn new(config: &OpenaiConfig) -> Self {
+        Self::new_with_timeout(config, Duration::from_secs(30))
+    }
+
+    pub fn new_with_timeout(config: &OpenaiConfig, timeout: Duration) -> Self {
         let client = if config.proxy {
-            HttpClient::new()
+            HttpClient::builder()
+                .timeout(timeout)
+                .connect_timeout(Duration::from_secs(10))
+                .pool_idle_timeout(Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| HttpClient::new())
         } else {
             HttpClient::builder()
+                .timeout(timeout)
+                .connect_timeout(Duration::from_secs(10))
+                .pool_idle_timeout(Duration::from_secs(30))
                 .no_proxy()
                 .build()
                 .unwrap_or_else(|_| HttpClient::new())
@@ -234,6 +282,45 @@ impl ChatClient for OpenaiClient {
             url,
             self.api_key.clone(),
             request_json,
+            |chunk| {
+                chunk_sender
+                    .send(chunk)
+                    .map_err(|e| eyre!("Failed to send chunk: {}", e))
+            },
+        )
+        .await?;
+
+        // Return both text and tool calls
+        Ok((accumulated, tool_calls))
+    }
+
+    async fn complete_streaming_with_cancellation(
+        &self,
+        mut request: CreateChatCompletionRequest,
+        chunk_sender: mpsc::UnboundedSender<String>,
+        cancellation_token: CancellationToken,
+        timeout_duration: Duration,
+    ) -> Result<(String, Option<Vec<ChatCompletionMessageToolCall>>)> {
+        eprintln!("[{}] Starting streaming request with cancellation", self.id);
+
+        // Force streaming mode
+        request.stream = Some(true);
+
+        // Convert request to JSON value to modify it
+        let request_json = serde_json::to_value(&request)?;
+
+        let url = format!("{}/chat/completions", self.api_url);
+
+        // Use the streaming module with cancellation support
+        use crate::streaming::stream_completion_with_cancellation;
+
+        let (accumulated, tool_calls) = stream_completion_with_cancellation(
+            &self.client,
+            url,
+            self.api_key.clone(),
+            request_json,
+            cancellation_token,
+            timeout_duration,
             |chunk| {
                 chunk_sender
                     .send(chunk)

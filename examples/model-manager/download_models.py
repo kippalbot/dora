@@ -40,8 +40,8 @@ except ImportError:
 VOICE_CONFIGS = {
     "Doubao": {
         "repository": "MoYoYoTech/tone-models",
-        "gpt_weights": "GPT_weights/doubao_best_gpt.ckpt",
-        "sovits_weights": "SoVITS_weights/doubao_best_sovits.pth",
+        "gpt_weights": "GPT_weights/doubao-mixed.ckpt",
+        "sovits_weights": "SoVITS_weights/doubao-mixed.pth",
         "reference_audio": "ref_audios/doubao_ref_mix_new.wav",
         "text_lang": "zh"
     },

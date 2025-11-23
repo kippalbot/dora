@@ -1,0 +1,168 @@
+{
+  "test_type": "prompt_leakage_direct_test",
+  "timestamp": "2025-10-12 23:16:39",
+  "total_segments": 8,
+  "successful_segments": 8,
+  "segments_tested": [
+    {
+      "text": "Hello",
+      "lang": "en",
+      "description": "English segment 1"
+    },
+    {
+      "text": "你好",
+      "lang": "zh",
+      "description": "Chinese segment 1"
+    },
+    {
+      "text": "world",
+      "lang": "en",
+      "description": "English segment 2"
+    },
+    {
+      "text": "世界",
+      "lang": "zh",
+      "description": "Chinese segment 2"
+    },
+    {
+      "text": "test",
+      "lang": "en",
+      "description": "English segment 3"
+    },
+    {
+      "text": "测试",
+      "lang": "zh",
+      "description": "Chinese segment 3"
+    },
+    {
+      "text": "AI",
+      "lang": "en",
+      "description": "English segment 4"
+    },
+    {
+      "text": "人工智能",
+      "lang": "zh",
+      "description": "Chinese segment 4"
+    }
+  ],
+  "results": [
+    {
+      "segment_id": 1,
+      "text": "Hello",
+      "language": "en",
+      "description": "English segment 1",
+      "expected_content": "Hello",
+      "audio_file": "tts_output/segment_01_Hello.wav",
+      "synthesis_time": 2.915193796157837,
+      "audio_duration": 0.67,
+      "file_size": 42924,
+      "success": true
+    },
+    {
+      "segment_id": 2,
+      "text": "你好",
+      "language": "zh",
+      "description": "Chinese segment 1",
+      "expected_content": "你好",
+      "audio_file": "tts_output/segment_02_你好.wav",
+      "synthesis_time": 0.7148759365081787,
+      "audio_duration": 0.67,
+      "file_size": 42924,
+      "success": true
+    },
+    {
+      "segment_id": 3,
+      "text": "world",
+      "language": "en",
+      "description": "English segment 2",
+      "expected_content": "world",
+      "audio_file": "tts_output/segment_03_world.wav",
+      "synthesis_time": 0.4042840003967285,
+      "audio_duration": 0.39,
+      "file_size": 25004,
+      "success": true
+    },
+    {
+      "segment_id": 4,
+      "text": "世界",
+      "language": "zh",
+      "description": "Chinese segment 2",
+      "expected_content": "世界",
+      "audio_file": "tts_output/segment_04_世界.wav",
+      "synthesis_time": 0.6011030673980713,
+      "audio_duration": 0.51,
+      "file_size": 32684,
+      "success": true
+    },
+    {
+      "segment_id": 5,
+      "text": "test",
+      "language": "en",
+      "description": "English segment 3",
+      "expected_content": "test",
+      "audio_file": "tts_output/segment_05_test.wav",
+      "synthesis_time": 0.46923398971557617,
+      "audio_duration": 0.55,
+      "file_size": 35244,
+      "success": true
+    },
+    {
+      "segment_id": 6,
+      "text": "测试",
+      "language": "zh",
+      "description": "Chinese segment 3",
+      "expected_content": "测试",
+      "audio_file": "tts_output/segment_06_测试.wav",
+      "synthesis_time": 0.7309627532958984,
+      "audio_duration": 0.67,
+      "file_size": 42924,
+      "success": true
+    },
+    {
+      "segment_id": 7,
+      "text": "AI",
+      "language": "en",
+      "description": "English segment 4",
+      "expected_content": "AI",
+      "audio_file": "tts_output/segment_07_AI.wav",
+      "synthesis_time": 0.5728018283843994,
+      "audio_duration": 0.83,
+      "file_size": 53164,
+      "success": true
+    },
+    {
+      "segment_id": 8,
+      "text": "人工智能",
+      "language": "zh",
+      "description": "Chinese segment 4",
+      "expected_content": "人工智能",
+      "audio_file": "tts_output/segment_08_人工智能.wav",
+      "synthesis_time": 0.7874739170074463,
+      "audio_duration": 1.11,
+      "file_size": 71084,
+      "success": true
+    }
+  ],
+  "leakage_analysis": {
+    "what_to_check": [
+      "Listen to segment_2 (你好) - should NOT contain 'Hello'",
+      "Listen to segment_3 (world) - should NOT contain 'Hello' or '你好'",
+      "Listen to segment_4 (世界) - should NOT contain 'world'",
+      "Each segment should only contain its specified text",
+      "Check for any audio artifacts or incomplete synthesis",
+      "Verify audio duration is appropriate for single words"
+    ],
+    "evidence_of_leakage": [
+      "Previous segment text audible in current segment",
+      "Mixed language contamination within single segment",
+      "Incomplete or truncated audio",
+      "Audio longer than expected for single word/phrase",
+      "Audio artifacts at beginning or end of segments"
+    ],
+    "expected_durations": {
+      "single_word_en": "0.5-2.0 seconds",
+      "single_word_zh": "0.5-2.0 seconds",
+      "warning_threshold": ">5.0 seconds"
+    }
+  }
+}

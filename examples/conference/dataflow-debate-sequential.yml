@@ -1,0 +1,223 @@
+# Conference Debate Example - Sequential Policy (3-Bridge Architecture)
+#
+# Implements a 3-person debate using conference controller and bridge
+# with sequential policy: llm1 → llm2 → judge → repeat
+#
+# Follows llm-client/dataflow-maas-debate.yml pattern with 3 bridges:
+# - bridge-to-judge: forwards to judge (inputs: llm1, llm2)
+# - bridge-to-llm2: forwards to llm2 (inputs: llm1, judge)
+# - bridge-to-llm1: forwards to llm1 (inputs: llm2, judge)
+#
+# Reuses components from llm-client:
+# - dora-maas-client (via maas configs)
+# - debate-monitor (3-panel TUI)
+# - viewer (log monitoring)
+
+nodes:
+  # ============ LLM Participants (MaaS) ============
+  # Same as dataflow-maas-debate.yml - uses path: not operator:
+
+  - id: llm1
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-llm1/text
+      control: conference-controller/llm_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: debate_config_maas_llm1.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  - id: llm2
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-llm2/text
+      control: conference-controller/llm_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: debate_config_maas_llm2.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  - id: judge
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-judge/text
+      control: conference-controller/judge_prompt  # User prompts from debate-monitor
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: debate_config_maas_judge.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  # ============ 3 Conference Bridges (Switch) ============
+  # Each bridge forwards to one LLM, controlled by conference-controller
+  # Defaults to PAUSED state, only forwards on explicit "resume" from controller
+  # Each bridge receives from the other two participants (matching llm-client pattern)
+
+  # Bridge 1: LLM1 + LLM2 → Judge
+  # Listens to controller for when judge should speak
+  - id: bridge-to-judge
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: llm1,judge,llm2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+    inputs:
+      # Other participants' outputs
+      llm1: llm1/text
+      llm2: llm2/text
+      # Controller tells bridge when to forward
+      control:
+        source: conference-controller/control_judge
+        queue_size: 10
+    outputs:
+      - text # → Judge
+      - status # → "forwarded" status
+      - log # → Debug logs
+
+  # Bridge 2: LLM1 + Judge → LLM2
+  # Listens to controller for when llm2 should speak
+  - id: bridge-to-llm2
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: llm1,judge,llm2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+    inputs:
+      # Other participants' outputs
+      llm1: llm1/text
+      judge: judge/text
+      # Controller tells bridge when to forward
+      control:
+        source: conference-controller/control_llm2
+        queue_size: 10
+    outputs:
+      - text # → LLM2
+      - status # → "forwarded" status
+      - log # → Debug logs
+
+  # Bridge 3: LLM2 + Judge → LLM1
+  # Listens to controller for when llm1 should speak
+  - id: bridge-to-llm1
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: llm1,judge,llm2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+    inputs:
+      # Other participants' outputs
+      llm2: llm2/text
+      judge: judge/text
+      # Controller tells bridge when to forward
+      control:
+        source: conference-controller/control_llm1
+        queue_size: 10
+    outputs:
+      - text # → LLM1
+      - status # → "forwarded" status
+      - log # → Debug logs
+
+  # ============ Conference Controller (Brain) ============
+  # Controls speaking order: llm1 → llm2 → judge → repeat
+  # Uses sequential policy from env variable
+  # Sends "resume" to appropriate bridge based on policy
+
+  - id: conference-controller
+    path: ../../target/release/dora-conference-controller
+    env:
+      # 🎯 Sequential policy: fixed speaking order
+      DORA_POLICY_PATTERN: "[llm1 → llm2 → judge]"
+    inputs:
+      # When any participant speaks, controller updates policy
+      llm1: llm1/text
+      llm2: llm2/text
+      judge: judge/text
+      # Control from debate-monitor UI
+      control: debate-monitor/control
+    outputs:
+      - control_judge # → "resume" to bridge-to-judge
+      - control_llm2 # → "resume" to bridge-to-llm2
+      - control_llm1 # → "resume" to bridge-to-llm1
+      - llm_control # → "reset/cancel" to LLM1 and LLM2
+      - judge_prompt # → User prompts and reset/cancel to judge
+      - status # → Policy statistics
+
+  # ============ Debate Monitor (TUI) ============
+  # Real-time 3-panel terminal UI
+  # Reused from llm-client/debate_monitor.py - use path: dynamic!
+
+  - id: debate-monitor
+    path: dynamic
+    inputs:
+      # LLM1 panel
+      llm1_text: llm1/text
+      llm1_status: llm1/status
+      llm1_prompt: bridge-to-llm1/text
+
+      # LLM2 panel
+      llm2_text: llm2/text
+      llm2_status: llm2/status
+      llm2_prompt: bridge-to-llm2/text
+
+      # Judge panel
+      judge_text: judge/text
+      judge_status: judge/status
+      judge_prompt: bridge-to-judge/text
+    outputs:
+      - control # → To conference-controller for reset and other commands
+
+  # ============ Viewer (Logging) ============
+  # Log and event monitoring
+  # Reused from llm-client/viewer.py - use path: dynamic!
+
+  - id: viewer
+    path: dynamic
+    inputs:
+      # LLM1 logs
+      llm1_log: llm1/log
+      llm1_status: llm1/status
+      llm1_text: llm1/text
+
+      # LLM2 logs
+      llm2_log: llm2/log
+      llm2_status: llm2/status
+      llm2_text: llm2/text
+
+      # Judge logs
+      judge_log: judge/log
+      judge_status: judge/status
+      judge_text: judge/text
+
+      # Bridge logs
+      bridge1_log: bridge-to-judge/log
+      bridge1_status: bridge-to-judge/status
+      bridge1_text: bridge-to-judge/text
+      bridge2_log: bridge-to-llm2/log
+      bridge2_status: bridge-to-llm2/status
+      bridge2_text: bridge-to-llm2/text
+      bridge3_log: bridge-to-llm1/log
+      bridge3_status: bridge-to-llm1/status
+      bridge3_text: bridge-to-llm1/text
+
+      # Controller logs and control commands
+      controller_status: conference-controller/status
+      controller_log: conference-controller/log
+      control_judge: conference-controller/control_judge
+      control_llm2: conference-controller/control_llm2
+      control_llm1: conference-controller/control_llm1

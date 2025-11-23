@@ -1,0 +1,70 @@
+# Example: Simple courtroom debate with sequential turns
+# Policy: [Judge → Defense → Prosecution]
+# The pattern itself determines the mode - no separate type field needed!
+
+nodes:
+  # LLM Generators
+  - id: llm-judge
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: Judge
+      SYSTEM_PROMPT: "You are a judge presiding over a debate. Be fair and impartial."
+    outputs:
+      - text
+
+  - id: llm-defense
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: Defense
+      SYSTEM_PROMPT: "You are a defense attorney. Argue convincingly for your client."
+    outputs:
+      - text
+
+  - id: llm-prosecution
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: Prosecution
+      SYSTEM_PROMPT: "You are a prosecutor. Present compelling evidence."
+    outputs:
+      - text
+
+  # Conference Controller - Pattern-based configuration
+  - id: conference-controller
+    operator:
+      rust: dora-conference-controller
+    env:
+      # 🎯 Pattern determines behavior - no separate type field!
+      # Use input port names directly: judge, defense, prosecution
+      DORA_POLICY_PATTERN: "[judge → defense → prosecution]"
+    inputs:
+      judge: llm-judge/text
+      defense: llm-defense/text
+      prosecution: llm-prosecution/text
+      control: reset-button/status
+    outputs:
+      - control
+      - status
+
+  # Conference Bridge (controlled by controller)
+  - id: conference-bridge
+    operator:
+      rust: dora-conference-bridge
+    inputs:
+      # Bridge receives inputs but waits for controller
+      judge: llm-judge/text
+      defense: llm-defense/text
+      prosecution: llm-prosecution/text
+      # Control port from controller
+      control: conference-controller/control
+    outputs:
+      - text
+
+  # Terminal Output
+  - id: terminal
+    operator:
+      rust: terminal-print
+    inputs:
+      data: conference-bridge/text

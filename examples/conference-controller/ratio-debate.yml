@@ -1,0 +1,71 @@
+# Example: Balanced debate with weighted ratios
+# Policy: [(Moderator, 2), (TeamA, 1), (TeamB, 1)]
+# Moderator gets 2x the speaking time of each team (2:1:1 ratio)
+# Pattern syntax determines ratio mode - no separate type field!
+
+nodes:
+  # LLM Participants
+  - id: moderator
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: Moderator
+      SYSTEM_PROMPT: "You are the debate moderator. Keep discussion organized and fair."
+    outputs:
+      - text
+
+  - id: team-a
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: TeamA
+      SYSTEM_PROMPT: "You are on Team A. Make compelling arguments for your side."
+    outputs:
+      - text
+
+  - id: team-b
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: TeamB
+      SYSTEM_PROMPT: "You are on Team B. Present strong counter-arguments."
+    outputs:
+      - text
+
+  # Conference Controller with Ratio Pattern
+  - id: conference-controller
+    operator:
+      rust: dora-conference-controller
+    env:
+      # 🎯 Ratio-based pattern!
+      # moderator (2) gets twice the time of each team (1)
+      # Total ratio: moderator:team-a:team-b = 2:1:1
+      # Use input port names directly: moderator, team-a, team-b
+      DORA_POLICY_PATTERN: "[(moderator, 2), (team-a, 1), (team-b, 1)]"
+    inputs:
+      moderator: moderator/text
+      team-a: team-a/text
+      team-b: team-b/text
+      control: reset-button/status
+    outputs:
+      - control
+      - status
+
+  # Conference Bridge
+  - id: conference-bridge
+    operator:
+      rust: dora-conference-bridge
+    inputs:
+      moderator: moderator/text
+      team-a: team-a/text
+      team-b: team-b/text
+      control: conference-controller/control
+    outputs:
+      - text
+
+  # Output
+  - id: terminal
+    operator:
+      rust: terminal-print
+    inputs:
+      data: conference-bridge/text

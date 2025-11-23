@@ -17,12 +17,13 @@
 //! 3. Streams responses through the segmenter
 //! 4. Emits segmented text for TTS processing
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use dora_node_api::{
     DoraNode, Event, Parameter,
-    arrow::array::{AsArray, StringArray},
+    arrow::array::{AsArray, StringArray, Array},
     dora_core::config::DataId,
 };
 use eyre::{Context, Result};
@@ -34,6 +35,8 @@ use outfox_openai::spec::{
     ChatCompletionToolType, CreateChatCompletionRequest, FunctionObject, PartibleTextContent,
 };
 use serde_json::json;
+use tokio::sync::Mutex as AsyncMutex;
+use tokio_util::sync::CancellationToken;
 
 mod client;
 mod config;
@@ -44,6 +47,9 @@ mod tool;
 use config::Config;
 use segmenter::StreamSegmenter;
 use tool::ToolSet;
+
+// Import CancellationReason from streaming module
+use crate::streaming::CancellationReason;
 
 // Helper function to send log messages
 fn send_log(node: &mut DoraNode, level: &str, message: &str) -> Result<()> {
@@ -60,6 +66,91 @@ fn send_log(node: &mut DoraNode, level: &str, message: &str) -> Result<()> {
     )
     .context("Failed to send log output")?;
     Ok(())
+}
+
+/// Manages active request cancellation tokens
+struct RequestCancellationManager {
+    /// Active tokens by request_id
+    active_tokens: Arc<AsyncMutex<HashMap<String, CancellationToken>>>,
+    /// Session mapping for tokens (session_id -> Vec<request_id>)
+    session_requests: Arc<AsyncMutex<HashMap<String, Vec<String>>>>,
+}
+
+impl RequestCancellationManager {
+    fn new() -> Self {
+        Self {
+            active_tokens: Arc::new(AsyncMutex::new(HashMap::new())),
+            session_requests: Arc::new(AsyncMutex::new(HashMap::new())),
+        }
+    }
+
+    /// Create a new cancellation token for a request
+    async fn create_token(
+        &self,
+        request_id: String,
+        session_id: String,
+    ) -> CancellationToken {
+        let token = CancellationToken::new();
+
+        // Store token
+        let mut tokens = self.active_tokens.lock().await;
+        tokens.insert(request_id.clone(), token.clone());
+        drop(tokens);
+
+        // Track session -> request mapping
+        let mut sessions = self.session_requests.lock().await;
+        sessions
+            .entry(session_id)
+            .or_insert_with(Vec::new)
+            .push(request_id);
+
+        token
+    }
+
+    /// Cancel a specific request by ID
+    async fn cancel_request(&self, request_id: &str) -> bool {
+        let mut tokens = self.active_tokens.lock().await;
+        if let Some(token) = tokens.remove(request_id) {
+            token.cancel();
+            eprintln!("[CANCELLATION] Cancelled request: {}", request_id);
+            true
+        } else {
+            eprintln!("[CANCELLATION] Request not found: {}", request_id);
+            false
+        }
+    }
+
+    /// Cancel all requests for a session
+    async fn cancel_session(&self, session_id: &str) -> usize {
+        let mut sessions = self.session_requests.lock().await;
+        let request_ids = sessions.remove(session_id).unwrap_or_default();
+        drop(sessions);
+
+        let mut cancelled_count = 0;
+        for request_id in request_ids {
+            if self.cancel_request(&request_id).await {
+                cancelled_count += 1;
+            }
+        }
+
+        eprintln!("[CANCELLATION] Cancelled {} requests for session: {}", cancelled_count, session_id);
+        cancelled_count
+    }
+
+    /// Clean up completed request
+    async fn cleanup_request(&self, request_id: &str, session_id: &str) {
+        let mut tokens = self.active_tokens.lock().await;
+        tokens.remove(request_id);
+        drop(tokens);
+
+        let mut sessions = self.session_requests.lock().await;
+        if let Some(request_ids) = sessions.get_mut(session_id) {
+            request_ids.retain(|id| id != request_id);
+            if request_ids.is_empty() {
+                sessions.remove(session_id);
+            }
+        }
+    }
 }
 
 struct ChatSession {
@@ -216,6 +307,10 @@ async fn main() -> Result<()> {
 
     // Create provider clients
     let clients = config.create_clients();
+
+    // Initialize cancellation manager if enabled
+    let cancellation_manager = Arc::new(RequestCancellationManager::new());
+    eprintln!("Cancellation manager initialized (enabled: {})", config.enable_cancellation);
 
     // Initialize Dora node - use node_id if provided (dynamic node), otherwise from env
     let (mut node, events) = if let Some(id) = node_id {
@@ -432,11 +527,46 @@ async fn main() -> Result<()> {
                                 let mut has_sent_segment = false;
                                 let mut segment_index: u32 = 0;
 
-                                // Start streaming in background
+                                // Start streaming in background with cancellation support
                                 let client_clone = client.clone();
                                 let request_clone = request.clone();
+                                let request_id = uuid::Uuid::new_v4().to_string();
+                                let session_id_clone = session_id.clone();
+                                let metadata_clone = metadata.parameters.clone();
+                                let cancellation_manager_clone = cancellation_manager.clone();
+
+                                // Create cancellation token if enabled
+                                let cancellation_token = if config.enable_cancellation {
+                                    Some(cancellation_manager.create_token(
+                                        request_id.clone(),
+                                        session_id.clone(),
+                                    ).await)
+                                } else {
+                                    None
+                                };
+
                                 let stream_handle = tokio::spawn(async move {
-                                    client_clone.complete_streaming(request_clone, tx).await
+                                    let result = if let Some(token) = cancellation_token {
+                                        // Use cancellation-aware streaming
+                                        client_clone.complete_streaming_with_cancellation(
+                                            request_clone,
+                                            tx,
+                                            token,
+                                            Duration::from_secs(config.stream_timeout_secs),
+                                        ).await
+                                    } else {
+                                        // Use regular streaming
+                                        client_clone.complete_streaming(request_clone, tx).await
+                                    };
+
+                                    // Clean up token after completion
+                                    if config.enable_cancellation {
+                                        cancellation_manager_clone
+                                            .cleanup_request(&request_id, &session_id_clone)
+                                            .await;
+                                    }
+
+                                    result
                                 });
 
                                 // Use segmenter to buffer chunks into meaningful segments
@@ -702,25 +832,55 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                     Ok(Err(e)) => {
+                                        let error_msg = format!("{}", e);
                                         send_log(
                                             &mut node,
                                             "ERROR",
-                                            &format!("Streaming error: {}", e),
+                                            &format!("Streaming error: {}", error_msg),
                                         )?;
 
-                                        // Send "error" status
+                                        // Classify error type and set appropriate session_status
+                                        let status = if error_msg.contains("cancelled") || error_msg.contains("cancelled by user") {
+                                            "cancelled"
+                                        } else if error_msg.contains("timed out") {
+                                            "timeout"
+                                        } else {
+                                            "error"
+                                        };
+
+                                        // Use same classification for session_status
+                                        let session_status = if error_msg.contains("cancelled") || error_msg.contains("cancelled by user") {
+                                            "cancelled"
+                                        } else if error_msg.contains("timed out") {
+                                            "timeout"
+                                        } else {
+                                            "error"
+                                        };
+
+                                        // Send status
                                         node.send_output(
                                             DataId::from("status".to_string()),
                                             Default::default(),
-                                            StringArray::from(vec![format!("error: {}", e)]),
+                                            StringArray::from(vec![status]),
                                         )
                                         .context("Failed to send status output")?;
 
                                         let mut error_metadata = metadata.parameters.clone();
                                         error_metadata.insert(
                                             "session_status".to_string(),
-                                            Parameter::String("ended".to_string()),
+                                            Parameter::String(session_status.to_string()),
                                         );
+                                        error_metadata.insert(
+                                            "error_type".to_string(),
+                                            Parameter::String(status.to_string()),
+                                        );
+                                        error_metadata.insert(
+                                            "error_message".to_string(),
+                                            Parameter::String(error_msg),
+                                        );
+
+                                        // Debug: log the metadata being sent
+                                        eprintln!("[MAAS-DEBUG] Path1: Sending error text with session_status={}", session_status);
 
                                         node.send_output(
                                             DataId::from("text".to_string()),
@@ -732,25 +892,47 @@ async fn main() -> Result<()> {
                                         .context("Failed to send error")?;
                                     }
                                     Err(e) => {
+                                        let error_msg = format!("{}", e);
                                         send_log(
                                             &mut node,
                                             "ERROR",
-                                            &format!("Task error: {}", e),
+                                            &format!("Task error: {}", error_msg),
                                         )?;
 
-                                        // Send "error" status
+                                        // Classify error type for task errors
+                                        let error_type = if error_msg.contains("cancelled") || error_msg.contains("cancelled by user") {
+                                            "cancelled"
+                                        } else if error_msg.contains("timed out") {
+                                            "timeout"
+                                        } else {
+                                            "error"
+                                        };
+
+                                        // Send error status
                                         node.send_output(
                                             DataId::from("status".to_string()),
                                             Default::default(),
-                                            StringArray::from(vec![format!("error: {}", e)]),
+                                            StringArray::from(vec![format!("{}: {}", error_type, e)]),
                                         )
                                         .context("Failed to send status output")?;
 
                                         let mut error_metadata = metadata.parameters.clone();
                                         error_metadata.insert(
                                             "session_status".to_string(),
-                                            Parameter::String("ended".to_string()),
+                                            Parameter::String(error_type.to_string()),
                                         );
+                                        error_metadata.insert(
+                                            "error_type".to_string(),
+                                            Parameter::String(error_type.to_string()),
+                                        );
+                                        error_metadata.insert(
+                                            "error_message".to_string(),
+                                            Parameter::String(error_msg),
+                                        );
+
+                                        // Debug: log the metadata being sent
+                                        eprintln!("[MAAS-DEBUG] Path2: Sending error text with session_status={}", error_type);
+
                                         node.send_output(
                                             DataId::from("text".to_string()),
                                             error_metadata,
@@ -835,15 +1017,24 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                     Err(e) => {
-                                        let error_msg = format!("Error: {}", e);
+                                        let error_msg = format!("{}", e);
                                         eprintln!("[MAIN] API call error: {}", error_msg);
                                         send_log(&mut node, "ERROR", &error_msg)?;
 
-                                        // Send "error" status
+                                        // Classify error type for API call errors
+                                        let error_type = if error_msg.contains("cancelled") || error_msg.contains("cancelled by user") {
+                                            "cancelled"
+                                        } else if error_msg.contains("timed out") {
+                                            "timeout"
+                                        } else {
+                                            "error"
+                                        };
+
+                                        // Send error status
                                         node.send_output(
                                             DataId::from("status".to_string()),
                                             Default::default(),
-                                            StringArray::from(vec![format!("error: {}", e)]),
+                                            StringArray::from(vec![format!("{}: {}", error_type, e)]),
                                         )
                                         .context("Failed to send status output")?;
 
@@ -851,7 +1042,15 @@ async fn main() -> Result<()> {
                                         let mut error_metadata = metadata.parameters.clone();
                                         error_metadata.insert(
                                             "session_status".to_string(),
-                                            Parameter::String("ended".to_string()),
+                                            Parameter::String(error_type.to_string()),
+                                        );
+                                        error_metadata.insert(
+                                            "error_type".to_string(),
+                                            Parameter::String(error_type.to_string()),
+                                        );
+                                        error_metadata.insert(
+                                            "error_message".to_string(),
+                                            Parameter::String(error_msg.clone()),
                                         );
                                         node.send_output(
                                             DataId::from("text".to_string()),
@@ -1002,7 +1201,19 @@ async fn main() -> Result<()> {
                             .collect::<Vec<String>>()
                             .join(" ");
 
-                        send_log(&mut node, "INFO", &format!("Received control input: {}", control_text))?;
+                        // ENHANCED LOGGING: Log ALL control inputs for debugging
+                        send_log(&mut node, "INFO", &format!("🔍 CONTROL INPUT RECEIVED: '{}'", control_text))?;
+                        send_log(&mut node, "INFO", &format!("  Session ID: {}", session_id))?;
+                        send_log(&mut node, "INFO", &format!("  Metadata: {:?}", metadata.parameters))?;
+
+                        // Only proceed with detailed logging if this is an unexpected command
+                        if !control_text.eq_ignore_ascii_case("reset") &&
+                           !control_text.eq_ignore_ascii_case("cancel") &&
+                           !control_text.eq_ignore_ascii_case("ready") &&
+                           !control_text.eq_ignore_ascii_case("exit") {
+                            send_log(&mut node, "WARNING", &format!("🚨 UNEXPECTED CONTROL COMMAND!"))?;
+                            send_log(&mut node, "WARNING", &format!("  This should help trace where 'resume' is coming from!"))?;
+                        }
 
                         // Try to parse as JSON first, fall back to plain text
                         let parsed = serde_json::from_str::<serde_json::Value>(&control_text)
@@ -1010,6 +1221,7 @@ async fn main() -> Result<()> {
                             .and_then(|v| if v.is_object() { Some(v) } else { None });
 
                         let mut should_reset = false;
+                        let mut should_cancel = false;
                         let mut prompt_text: Option<String> = None;
 
                         if let Some(json) = parsed {
@@ -1020,6 +1232,8 @@ async fn main() -> Result<()> {
                                 send_log(&mut node, "DEBUG", &format!("Found command: {}", command))?;
                                 if command.eq_ignore_ascii_case("reset") {
                                     should_reset = true;
+                                } else if command.eq_ignore_ascii_case("cancel") {
+                                    should_cancel = true;
                                 } else if command.eq_ignore_ascii_case("ready") {
                                     // Send ready status
                                     node.send_output(
@@ -1044,6 +1258,8 @@ async fn main() -> Result<()> {
                             // Plain text command (backward compatibility)
                             if control_text.eq_ignore_ascii_case("reset") {
                                 should_reset = true;
+                            } else if control_text.eq_ignore_ascii_case("cancel") {
+                                should_cancel = true;
                             } else if control_text.eq_ignore_ascii_case("ready") {
                                 node.send_output(
                                     DataId::from("status".to_string()),
@@ -1054,14 +1270,110 @@ async fn main() -> Result<()> {
                             } else if control_text.eq_ignore_ascii_case("exit") {
                                 sessions.remove(&session_id);
                                 send_log(&mut node, "INFO", &format!("Removed session: {}", session_id))?;
+                            } else {
+                                // ENHANCED LOGGING: Unknown control command - show complete context
+                                send_log(&mut node, "WARNING", &format!("🚨 UNKNOWN CONTROL COMMAND DETECTED!"))?;
+                                send_log(&mut node, "WARNING", &format!("Unknown control command: {}", control_text))?;
+
+                                // Debug context information
+                                let node_id = node.id();
+                                let context_msg = format!("🔍 DEBUG CONTEXT:\n  Node ID: {:?}\n  Session ID: {}\n  Input Port: control\n  Raw Control Text: '{}'\n  Control Text Length: {}\n  Metadata Parameters: {:?}",
+                                    node_id, session_id, control_text, control_text.len(), metadata.parameters);
+                                send_log(&mut node, "WARNING", &context_msg)?;
+                                send_log(&mut node, "WARNING", &format!("  Expected Commands: reset, cancel, ready, exit"))?;
+
+                                // Log environment info for debugging
+                                if let Ok(node_name) = std::env::var("DORA_NODE_NAME") {
+                                    send_log(&mut node, "WARNING", &format!("  Environment DORA_NODE_NAME: {}", node_name))?;
+                                }
+                                if let Ok(maas_config) = std::env::var("MAAS_CONFIG_PATH") {
+                                    send_log(&mut node, "WARNING", &format!("  Environment MAAS_CONFIG_PATH: {}", maas_config))?;
+                                }
+
+                                // Log data details
+                                let data_array = data.as_string::<i32>();
+                                send_log(&mut node, "WARNING", &format!("  Data Array Length: {}", data_array.len()))?;
+                                if let Some(first_item) = data_array.iter().next().flatten() {
+                                    send_log(&mut node, "WARNING", &format!("  First Data Item: '{}'", first_item))?;
+                                }
+
+                                send_log(&mut node, "WARNING", &format!("  This suggests LLM1 is incorrectly receiving control commands!"))?;
                             }
                         }
 
-                        // Handle reset command
+                        // Handle cancel command - cancel streaming but keep history
+                        if should_cancel {
+                            let cancellation_manager_for_cancel = cancellation_manager.clone();
+                            let session_id_for_cancel = session_id.clone();
+                            let cancelled_count = {
+                                futures::executor::block_on(
+                                    cancellation_manager_for_cancel.cancel_session(&session_id_for_cancel)
+                                )
+                            };
+                            if cancelled_count > 0 {
+                                send_log(&mut node, "INFO", &format!("🛑 Cancelled {} active streaming request(s) for session: {} (history preserved)", cancelled_count, session_id))?;
+
+                                // Send session_status: "cancelled" to signal cancellation
+                                let mut end_metadata = BTreeMap::new();
+                                end_metadata.insert(
+                                    "session_status".to_string(),
+                                    Parameter::String("cancelled".to_string()),
+                                );
+                                end_metadata.insert(
+                                    "is_complete".to_string(),
+                                    Parameter::Bool(true),
+                                );
+                                node.send_output(
+                                    DataId::from("text".to_string()),
+                                    end_metadata,
+                                    StringArray::from(vec![""]),
+                                ).context("Failed to send end signal on cancel")?;
+                            } else {
+                                send_log(&mut node, "INFO", &format!("🛑 Cancel requested but no active streaming for session: {}", session_id))?;
+                            }
+                            node.send_output(
+                                DataId::from("status".to_string()),
+                                Default::default(),
+                                StringArray::from(vec!["cancelled"]),
+                            )
+                            .context("Failed to send status output")?;
+                        }
+
+                        // Handle reset command - cancel streaming AND clear history
                         if should_reset {
+                            // Cancel any active streaming requests for this session
+                            let cancellation_manager_for_reset = cancellation_manager.clone();
+                            let session_id_for_reset = session_id.clone();
+                            let cancelled_count = {
+                                // Use futures::executor for synchronous block
+                                futures::executor::block_on(
+                                    cancellation_manager_for_reset.cancel_session(&session_id_for_reset)
+                                )
+                            };
+                            if cancelled_count > 0 {
+                                send_log(&mut node, "INFO", &format!("🔄 Cancelled {} active streaming request(s) for session: {}", cancelled_count, session_id))?;
+                            }
+
+                            // Send session_status: "reset" to signal reset (always, even if nothing was cancelled)
+                            let mut end_metadata = BTreeMap::new();
+                            end_metadata.insert(
+                                "session_status".to_string(),
+                                Parameter::String("reset".to_string()),
+                            );
+                            end_metadata.insert(
+                                "is_complete".to_string(),
+                                Parameter::Bool(true),
+                            );
+                            node.send_output(
+                                DataId::from("text".to_string()),
+                                end_metadata,
+                                StringArray::from(vec![""]),
+                            ).context("Failed to send end signal on reset")?;
+
+                            // Clear conversation history
                             if let Some(session) = sessions.get_mut(&session_id) {
                                 session.reset();
-                                send_log(&mut node, "INFO", &format!("Reset session: {}", session_id))?;
+                                send_log(&mut node, "INFO", &format!("🔄 Reset session history: {}", session_id))?;
                             }
                             node.send_output(
                                 DataId::from("status".to_string()),
@@ -1129,11 +1441,46 @@ async fn main() -> Result<()> {
                                 let mut has_sent_segment = false;
                                 let mut segment_index: u32 = 0;
 
-                                // Start streaming in background
+                                // Start streaming in background with cancellation support
                                 let client_clone = client.clone();
                                 let request_clone = request.clone();
+                                let request_id = uuid::Uuid::new_v4().to_string();
+                                let session_id_clone = session_id.clone();
+                                let metadata_clone = metadata.parameters.clone();
+                                let cancellation_manager_clone = cancellation_manager.clone();
+
+                                // Create cancellation token if enabled
+                                let cancellation_token = if config.enable_cancellation {
+                                    Some(cancellation_manager.create_token(
+                                        request_id.clone(),
+                                        session_id.clone(),
+                                    ).await)
+                                } else {
+                                    None
+                                };
+
                                 let stream_handle = tokio::spawn(async move {
-                                    client_clone.complete_streaming(request_clone, tx).await
+                                    let result = if let Some(token) = cancellation_token {
+                                        // Use cancellation-aware streaming
+                                        client_clone.complete_streaming_with_cancellation(
+                                            request_clone,
+                                            tx,
+                                            token,
+                                            Duration::from_secs(config.stream_timeout_secs),
+                                        ).await
+                                    } else {
+                                        // Use regular streaming
+                                        client_clone.complete_streaming(request_clone, tx).await
+                                    };
+
+                                    // Clean up token after completion
+                                    if config.enable_cancellation {
+                                        cancellation_manager_clone
+                                            .cleanup_request(&request_id, &session_id_clone)
+                                            .await;
+                                    }
+
+                                    result
                                 });
 
                                 send_log(&mut node, "DEBUG", "Stream created successfully, starting event loop")?;
@@ -1224,23 +1571,97 @@ async fn main() -> Result<()> {
                                         )?;
                                     }
                                     Ok(Err(e)) => {
-                                        send_log(&mut node, "ERROR", &format!("Streaming error: {}", e))?;
+                                        let error_msg = format!("{}", e);
+                                        send_log(&mut node, "ERROR", &format!("Streaming error: {}", error_msg))?;
+
+                                        // Classify error type
+                                        let error_type = if error_msg.contains("cancelled") || error_msg.contains("cancelled by user") {
+                                            "cancelled"
+                                        } else if error_msg.contains("timed out") {
+                                            "timeout"
+                                        } else {
+                                            "error"
+                                        };
+
+                                        // Send error status
                                         node.send_output(
                                             DataId::from("status".to_string()),
                                             Default::default(),
-                                            StringArray::from(vec!["error"]),
+                                            StringArray::from(vec![error_type]),
                                         )
                                         .context("Failed to send error status")?;
+
+                                        // Send error text output with metadata
+                                        let mut error_metadata = metadata.parameters.clone();
+                                        error_metadata.insert(
+                                            "session_status".to_string(),
+                                            Parameter::String(error_type.to_string()),
+                                        );
+                                        error_metadata.insert(
+                                            "error_type".to_string(),
+                                            Parameter::String(error_type.to_string()),
+                                        );
+                                        error_metadata.insert(
+                                            "error_message".to_string(),
+                                            Parameter::String(error_msg),
+                                        );
+
+                                        // Debug: log the metadata being sent
+                                        eprintln!("[MAAS-DEBUG] Sending error text with session_status={}", error_type);
+
+                                        node.send_output(
+                                            DataId::from("text".to_string()),
+                                            error_metadata,
+                                            StringArray::from(vec![format!("Error: {}", e).as_str()]),
+                                        )
+                                        .context("Failed to send error text")?;
                                         continue;
                                     }
                                     Err(e) => {
-                                        send_log(&mut node, "ERROR", &format!("Stream task failed: {}", e))?;
+                                        let error_msg = format!("{}", e);
+                                        send_log(&mut node, "ERROR", &format!("Stream task failed: {}", error_msg))?;
+
+                                        // Classify error type for stream task failures
+                                        let error_type = if error_msg.contains("cancelled") || error_msg.contains("cancelled by user") {
+                                            "cancelled"
+                                        } else if error_msg.contains("timed out") {
+                                            "timeout"
+                                        } else {
+                                            "error"
+                                        };
+
+                                        // Send error status
                                         node.send_output(
                                             DataId::from("status".to_string()),
                                             Default::default(),
-                                            StringArray::from(vec!["error"]),
+                                            StringArray::from(vec![error_type]),
                                         )
                                         .context("Failed to send error status")?;
+
+                                        // Send error text output with metadata
+                                        let mut error_metadata = metadata.parameters.clone();
+                                        error_metadata.insert(
+                                            "session_status".to_string(),
+                                            Parameter::String(error_type.to_string()),
+                                        );
+                                        error_metadata.insert(
+                                            "error_type".to_string(),
+                                            Parameter::String(error_type.to_string()),
+                                        );
+                                        error_metadata.insert(
+                                            "error_message".to_string(),
+                                            Parameter::String(error_msg),
+                                        );
+
+                                        // Debug: log the metadata being sent
+                                        eprintln!("[MAAS-DEBUG] Sending error text with session_status={}", error_type);
+
+                                        node.send_output(
+                                            DataId::from("text".to_string()),
+                                            error_metadata,
+                                            StringArray::from(vec![format!("Error: {}", e).as_str()]),
+                                        )
+                                        .context("Failed to send error text")?;
                                         continue;
                                     }
                                 }

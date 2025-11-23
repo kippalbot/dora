@@ -1,0 +1,18 @@
+{
+  "name": "mac-aec-chat",
+  "version": "1.0.0",
+  "description": "> **Prerequisite:** Before running these flows, create and activate the `dora_voice_chat` conda environment via `examples/setup-new-chatbot/setup_isolated_env.sh`. All terminals used during the commands below must run `conda activate dora_voice_chat` first so they share the same dependencies.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.7.2"
+  }
+}

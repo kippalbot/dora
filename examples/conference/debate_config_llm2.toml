@@ -1,0 +1,35 @@
+default_model = "gpt-4o"
+system_prompt = """，您的名字叫做Yifei，你在参加一场三人辩论，回答必须用中文，你的特点是感性和富有同情心，但是又咄咄逼人，有非常强的好胜心，以击败对方辩手为荣。所有人的发言都有 prefix ，[Daniu]是Daniu， [Yifei]是 Yifei， [Judge]是 Judge, 请严格遵守下面的规则:
+
+- 你的回答必须以[Yifei]为起始
+- 格外注意带有[Judge]的发言
+- 观点简明，不要长篇大论，使用事实和数据说话
+- 致敬对方的观点，直接使用对方的名字
+
+"""
+
+max_history_exchanges = 20
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+log_level = "INFO"
+status_timeout_seconds = 60
+
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+[[models]]
+id = "gpt-5"
+route = { provider = "openai", model = "gpt-5" }
+
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }

@@ -1,0 +1,62 @@
+nodes:
+  # Mixed language text sender for leakage testing
+  - id: text-sender
+    path: test_prompt_leakage_detection.py
+    outputs:
+      - text_output
+      
+  # Text Segmenter - potential leakage point
+  - id: text-segmenter
+    build: pip install -e ../../node-hub/dora-text-segmenter
+    path: dora-text-segmenter
+    inputs:
+      text:
+        source: text-sender/text_output
+        queue_size: 10
+      tts_complete:
+        source: primespeech/segment_complete
+        queue_size: 10
+    outputs:
+      - text_segment
+      - status
+      - metrics
+    env:
+      CLEAR_SCREEN: false
+      MAX_SEGMENT_LENGTH: 50  # Shorter segments for testing
+      MIN_SEGMENT_LENGTH: 1   # Allow very short segments
+      SEGMENT_MODE: word      # Word-level segmentation
+      PUNCTUATION_MARKS: " .!?,。！？，"
+      LOG_LEVEL: DEBUG
+      
+  # PrimeSpeech TTS - main test target
+  - id: primespeech
+    build: pip install -e ../../node-hub/dora-primespeech
+    path: dora-primespeech
+    inputs:
+      text:
+        source: text-segmenter/text_segment
+        queue_size: 10
+    outputs:
+      - audio
+      - segment_complete
+      - log
+    env:
+      VOICE_NAME: Doubao
+      TEXT_LANG: auto  # Auto-detect for mixed language
+      USE_GPU: false
+      DEVICE: cpu
+      RETURN_FRAGMENT: false
+      PRIMESPEECH_MODEL_DIR: ${HOME}/.dora/models/primespeech
+      SPEED_FACTOR: 1.0
+      LOG_LEVEL: DEBUG
+      CLEAR_STATE_BETWEEN_SEGMENTS: "true"  # Test state clearing
+      
+  # Audio recorder to capture output for analysis
+  - id: audio-recorder
+    path: audio_recorder_static.py
+    inputs:
+      audio:
+        source: primespeech/audio
+        queue_size: 100
+    outputs:
+      - status

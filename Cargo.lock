@@ -3992,6 +3992,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dora-conference-controller"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dora-core 0.3.12",
+ "dora-node-api 0.3.12",
+ "eyre",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dora-coordinator"
 version = "0.3.12"
 dependencies = [
@@ -4174,6 +4186,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid 1.16.0",

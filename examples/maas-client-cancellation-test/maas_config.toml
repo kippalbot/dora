@@ -1,0 +1,31 @@
+default_model = "gpt-4"
+system_prompt = "You are a helpful assistant. Provide detailed, comprehensive responses."
+max_history_exchanges = 10
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+
+# HTTP request cancellation settings
+request_timeout_secs = 30
+stream_timeout_secs = 120
+enable_cancellation = true
+emit_cancellation_events = true
+
+[[providers]]
+kind = "openai"
+id = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+[[models]]
+id = "gpt-4"
+[models.route]
+provider = "openai"
+model = "gpt-4"
+
+[[models]]
+id = "gpt-3.5-turbo"
+[models.route]
+provider = "openai"
+model = "gpt-3.5-turbo"

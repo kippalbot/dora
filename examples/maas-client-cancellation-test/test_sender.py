@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""
+Test script for MaaS client cancellation feature.
+
+This script sends two test sequences:
+1. First sequence: Send a long prompt and immediately cancel it
+2. Second sequence: Send a prompt, wait for some chunks, then cancel
+
+This demonstrates the cancellation feature working end-to-end.
+"""
+
+import time
+import json
+import sys
+from pathlib import Path
+
+# Add dora-node-api to path for standalone testing
+dora_path = Path(__file__).parent.parent.parent / "apis/python/node"
+sys.path.insert(0, str(dora_path))
+
+from dora import Node
+
+
+def main():
+    print("🚀 Starting MaaS Client Cancellation Test")
+    print("=" * 60)
+
+    # Initialize Dora node
+    node = Node()
+    print("✅ Connected to Dora dataflow")
+
+    # Test 1: Immediate cancellation
+    print("\n📋 Test 1: Immediate cancellation after sending prompt")
+    print("-" * 60)
+
+    session_id = "test-session-1"
+    prompt = "Tell me a very long and detailed story about artificial intelligence that takes at least 30 seconds to complete. "
+
+    print(f"📝 Sending prompt: {prompt[:60]}...")
+    node.send_output(
+        "prompt",
+        bytes(prompt, "utf-8"),
+        {"session_id": session_id}
+    )
+
+    # Wait just a tiny bit, then cancel immediately
+    time.sleep(0.5)
+    print(f"⏹️  Sending cancellation command for session: {session_id}")
+    cancel_command = json.dumps({
+        "command": "cancel",
+        "target": "session"
+    })
+    node.send_output(
+        "control",
+        bytes(cancel_command, "utf-8"),
+        {"session_id": session_id}
+    )
+
+    # Wait a bit to see cancellation event
+    time.sleep(2.0)
+
+    # Test 2: Cancel after receiving some content
+    print("\n📋 Test 2: Cancel after receiving some content")
+    print("-" * 60)
+
+    session_id_2 = "test-session-2"
+    prompt_2 = "Write a comprehensive essay about the future of renewable energy technologies. Include details about solar, wind, hydroelectric, and geothermal power."
+
+    print(f"📝 Sending prompt: {prompt_2[:60]}...")
+    node.send_output(
+        "prompt",
+        bytes(prompt_2, "utf-8"),
+        {"session_id": session_id_2}
+    )
+
+    # Wait for some chunks to arrive
+    print("⏳ Waiting 3 seconds to receive some content...")
+    time.sleep(3.0)
+
+    # Now cancel
+    print(f"⏹️  Sending cancellation command for session: {session_id_2}")
+    node.send_output(
+        "control",
+        bytes(cancel_command, "utf-8"),
+        {"session_id": session_id_2}
+    )
+
+    # Wait to see cancellation
+    time.sleep(2.0)
+
+    # Test 3: Cancel by specific request ID (advanced)
+    print("\n📋 Test 3: Request-specific cancellation")
+    print("-" * 60)
+
+    session_id_3 = "test-session-3"
+    request_id = "test-request-123"
+
+    # Note: In a real implementation, you'd need to track request IDs
+    # This demonstrates the API
+    print("📝 Sending prompt with specific request tracking...")
+    node.send_output(
+        "prompt",
+        bytes("Explain quantum computing in extreme detail with examples.", "utf-8"),
+        {"session_id": session_id_3, "request_id": request_id}
+    )
+
+    time.sleep(1.0)
+
+    print(f"⏹️  Cancelling specific request: {request_id}")
+    cancel_specific = json.dumps({
+        "command": "cancel",
+        "target": "request",
+        "id": request_id
+    })
+    node.send_output(
+        "control",
+        bytes(cancel_specific, "utf-8"),
+        {"session_id": session_id_3}
+    )
+
+    time.sleep(2.0)
+
+    print("\n" + "=" * 60)
+    print("✅ All cancellation tests completed!")
+    print("\nCheck the receiver logs to see:")
+    print("  - text output (should stop when cancelled)")
+    print("  - cancellation events (should be emitted)")
+    print("  - status updates (should show 'cancelled')")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n👋 Shutting down gracefully...")
+        sys.exit(0)

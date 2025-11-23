@@ -32,11 +32,24 @@ pub struct Config {
     #[serde(default)]
     pub enable_local_mcp: bool, // Enable local MCP host (false = pass through to client)
     pub mcp: Option<McpConfig>, // MCP server configurations
+    // HTTP request cancellation settings
+    #[serde(default = "default_request_timeout")]
+    pub request_timeout_secs: u64,
+    #[serde(default = "default_stream_timeout")]
+    pub stream_timeout_secs: u64,
+    #[serde(default = "default_enable_cancellation")]
+    pub enable_cancellation: bool,
 }
 
 fn default_log_level() -> String {
     "INFO".to_string()
 }
+
+fn default_request_timeout() -> u64 { 30 }
+
+fn default_stream_timeout() -> u64 { 120 }
+
+fn default_enable_cancellation() -> bool { true }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -44,6 +57,7 @@ pub enum ProviderConfig {
     Openai(OpenaiConfig),
     Gemini(GeminiConfig),
     Alicloud(AlicloudConfig),
+    Deepseek(DeepseekConfig),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -71,6 +85,20 @@ pub struct AlicloudConfig {
     pub api_url: String,
     #[serde(default)]
     pub proxy: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct DeepseekConfig {
+    pub id: String,
+    pub api_key: String,
+    #[serde(default = "default_deepseek_url")]
+    pub api_url: String,
+    #[serde(default)]
+    pub proxy: bool,
+}
+
+fn default_deepseek_url() -> String {
+    "https://api.deepseek.com/v1".to_string()
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -106,7 +134,12 @@ impl Config {
             _ => Figment::new().merge(Toml::file(config_path)),
         };
 
-        let config: Config = figment.merge(Env::prefixed("MAAS_")).extract()?;
+        // Allow MAAS-prefixed env vars (e.g., MAAS_LOG_LEVEL)
+        // Also allow direct env vars for common settings (e.g., MAX_HISTORY_EXCHANGES)
+        let config: Config = figment
+            .merge(Env::prefixed("MAAS_"))
+            .merge(Env::raw().only(&["MAX_HISTORY_EXCHANGES"]))
+            .extract()?;
         Ok(config)
     }
 
@@ -129,12 +162,22 @@ impl Config {
                         proxy: config.proxy,
                     }))
                 }
+                ProviderConfig::Deepseek(config) => {
+                    // DeepSeek uses OpenAI-compatible API, so we can reuse OpenaiClient
+                    Arc::new(OpenaiClient::new(&OpenaiConfig {
+                        id: config.id.clone(),
+                        api_key: config.api_key.clone(),
+                        api_url: config.api_url.clone(),
+                        proxy: config.proxy,
+                    }))
+                }
             };
 
             let provider_id = match provider {
                 ProviderConfig::Openai(c) => &c.id,
                 ProviderConfig::Gemini(c) => &c.id,
                 ProviderConfig::Alicloud(c) => &c.id,
+                ProviderConfig::Deepseek(c) => &c.id,
             };
 
             clients.insert(provider_id.clone(), client);

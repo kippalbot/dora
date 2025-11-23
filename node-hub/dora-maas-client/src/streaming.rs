@@ -2,6 +2,17 @@ use eyre::{Result, eyre};
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
 use serde::Deserialize;
+use std::time::Duration;
+use tokio_util::sync::CancellationToken;
+
+/// Reasons why a request was cancelled
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum CancellationReason {
+    UserRequested { source: String },
+    Timeout { duration_secs: u64 },
+    NodeShutdown,
+    Error { details: String },
+}
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -150,6 +161,10 @@ where
     let mut accumulated_content = String::new();
     let mut tool_accumulator = ToolCallAccumulator::default();
 
+    // Track last few raw SSE events for debugging
+    let mut last_raw_events: std::collections::VecDeque<String> = std::collections::VecDeque::with_capacity(5);
+    let mut chunk_count: usize = 0;
+
     while let Some(event) = event_source.next().await {
         match event {
             Ok(Event::Open) => {
@@ -157,10 +172,17 @@ where
             }
             Ok(Event::Message(msg)) => {
                 let data = msg.data;
+                chunk_count += 1;
+
+                // Keep track of last 5 raw events for debugging
+                if last_raw_events.len() >= 5 {
+                    last_raw_events.pop_front();
+                }
+                last_raw_events.push_back(data.clone());
 
                 // Check for end of stream
                 if data == "[DONE]" {
-                    eprintln!("[SSE] Stream complete");
+                    eprintln!("[SSE] Stream complete after {} chunks", chunk_count);
                     break;
                 }
 
@@ -190,8 +212,165 @@ where
                 }
             }
             Err(e) => {
+                // Enhanced error logging for debugging DeepSeek API issues
+                eprintln!("[SSE] ==================== ERROR DETAILS ====================");
                 eprintln!("[SSE] Error: {}", e);
+                eprintln!("[SSE] Error Debug: {:?}", e);
+                eprintln!("[SSE] Chunks received before error: {}", chunk_count);
+                eprintln!("[SSE] Accumulated content so far ({} chars):", accumulated_content.len());
+                if accumulated_content.len() <= 500 {
+                    eprintln!("[SSE] Content: '{}'", accumulated_content);
+                } else {
+                    eprintln!("[SSE] Content (first 250 chars): '{}'", &accumulated_content[..250]);
+                    eprintln!("[SSE] Content (last 250 chars): '...{}'", &accumulated_content[accumulated_content.len()-250..]);
+                }
+                eprintln!("[SSE] Tool calls accumulated: {}", tool_accumulator.has_tool_calls());
+                eprintln!("[SSE] Last {} raw SSE events:", last_raw_events.len());
+                for (i, raw_event) in last_raw_events.iter().enumerate() {
+                    if raw_event.len() <= 200 {
+                        eprintln!("[SSE]   [{}]: {}", i, raw_event);
+                    } else {
+                        eprintln!("[SSE]   [{}]: {}...(truncated)", i, &raw_event[..200]);
+                    }
+                }
+                eprintln!("[SSE] ========================================================");
                 return Err(eyre!("SSE error: {}", e));
+            }
+        }
+    }
+
+    // Build tool calls if any were accumulated
+    let tool_calls = if tool_accumulator.has_tool_calls() {
+        Some(tool_accumulator.build_tool_calls())
+    } else {
+        None
+    };
+
+    Ok((accumulated_content, tool_calls))
+}
+
+/// Stream completion with cancellation support
+pub async fn stream_completion_with_cancellation<F>(
+    client: &reqwest::Client,
+    url: String,
+    api_key: String,
+    request_body: serde_json::Value,
+    cancellation_token: CancellationToken,
+    timeout_duration: Duration,
+    mut on_chunk: F,
+) -> Result<(String, Option<Vec<ChatCompletionMessageToolCall>>)>
+where
+    F: FnMut(String) -> Result<()>,
+{
+    let request = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&request_body);
+
+    let mut event_source = EventSource::new(request)?;
+    let mut accumulated_content = String::new();
+    let mut tool_accumulator = ToolCallAccumulator::default();
+
+    // Track last few raw SSE events for debugging
+    let mut last_raw_events: std::collections::VecDeque<String> = std::collections::VecDeque::with_capacity(5);
+    let mut chunk_count: usize = 0;
+
+    loop {
+        let timeout_future = tokio::time::sleep(timeout_duration);
+
+        tokio::select! {
+            event = event_source.next() => {
+                match event {
+                    Some(Ok(Event::Open)) => {
+                        eprintln!("[SSE] Stream opened");
+                    }
+                    Some(Ok(Event::Message(msg))) => {
+                        let data = msg.data;
+                        chunk_count += 1;
+
+                        // Keep track of last 5 raw events for debugging
+                        if last_raw_events.len() >= 5 {
+                            last_raw_events.pop_front();
+                        }
+                        last_raw_events.push_back(data.clone());
+
+                        // Check for end of stream
+                        if data == "[DONE]" {
+                            eprintln!("[SSE] Stream complete after {} chunks", chunk_count);
+                            break;
+                        }
+
+                        // Parse the JSON chunk
+                        match serde_json::from_str::<StreamChunk>(&data) {
+                            Ok(chunk) => {
+                                if let Some(choice) = chunk.choices.first() {
+                                    // Handle content
+                                    if let Some(content) = &choice.delta.content {
+                                        if !content.is_empty() {
+                                            accumulated_content.push_str(content);
+                                            on_chunk(content.clone())?;
+                                        }
+                                    }
+
+                                    // Handle tool calls
+                                    if let Some(tool_calls) = &choice.delta.tool_calls {
+                                        for delta_call in tool_calls {
+                                            tool_accumulator.add_delta(delta_call);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[SSE] Failed to parse chunk: {}. Data: {}", e, data);
+                            }
+                        }
+                    }
+                    Some(Err(e)) => {
+                        // Enhanced error logging for debugging DeepSeek API issues
+                        eprintln!("[SSE] ==================== ERROR DETAILS ====================");
+                        eprintln!("[SSE] Error: {}", e);
+                        eprintln!("[SSE] Error Debug: {:?}", e);
+                        eprintln!("[SSE] Chunks received before error: {}", chunk_count);
+                        eprintln!("[SSE] Accumulated content so far ({} chars):", accumulated_content.len());
+                        if accumulated_content.len() <= 500 {
+                            eprintln!("[SSE] Content: '{}'", accumulated_content);
+                        } else {
+                            eprintln!("[SSE] Content (first 250 chars): '{}'", &accumulated_content[..250]);
+                            eprintln!("[SSE] Content (last 250 chars): '...{}'", &accumulated_content[accumulated_content.len()-250..]);
+                        }
+                        eprintln!("[SSE] Tool calls accumulated: {}", tool_accumulator.has_tool_calls());
+                        eprintln!("[SSE] Last {} raw SSE events:", last_raw_events.len());
+                        for (i, raw_event) in last_raw_events.iter().enumerate() {
+                            if raw_event.len() <= 200 {
+                                eprintln!("[SSE]   [{}]: {}", i, raw_event);
+                            } else {
+                                eprintln!("[SSE]   [{}]: {}...(truncated)", i, &raw_event[..200]);
+                            }
+                        }
+                        eprintln!("[SSE] ========================================================");
+
+                        // Check if cancellation occurred
+                        if cancellation_token.is_cancelled() {
+                            return Err(eyre!("Stream cancelled by user"));
+                        }
+                        return Err(eyre!("SSE error: {}", e));
+                    }
+                    None => {
+                        eprintln!("[SSE] Stream ended");
+                        break;
+                    }
+                }
+            }
+            _ = cancellation_token.cancelled() => {
+                eprintln!("[SSE] Stream cancelled by user");
+                event_source.close();
+                return Err(eyre!("Stream cancelled by user"));
+            }
+            _ = timeout_future => {
+                eprintln!("[SSE] Stream timed out after {:?}", timeout_duration);
+                event_source.close();
+                return Err(eyre!("Stream timed out after {:?}", timeout_duration));
             }
         }
     }

@@ -40,6 +40,7 @@ members = [
     "node-hub/dora-openai-websocket",
     "node-hub/dora-maas-client",
     "node-hub/dora-conference-bridge",
+    "node-hub/dora-conference-controller",
     "node-hub/dora-kit-car",
     "node-hub/dora-object-to-pose",
     "node-hub/dora-mistral-rs",

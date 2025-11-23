@@ -1,0 +1,70 @@
+# Example: Interview with host priority
+# Policy: [(Host, *), (Guest1, 1), (Guest2, 1)]
+# The * indicates priority - host speaks first unless they just spoke
+# No separate type field needed - pattern syntax determines behavior!
+
+nodes:
+  # LLM Participants
+  - id: host
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: Host
+      SYSTEM_PROMPT: "You are the show host. Ask insightful questions to your guests."
+    outputs:
+      - text
+
+  - id: guest1
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: Guest1
+      SYSTEM_PROMPT: "You are a guest expert. Share your knowledge thoughtfully."
+    outputs:
+      - text
+
+  - id: guest2
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: Guest2
+      SYSTEM_PROMPT: "You are a guest expert. Provide valuable insights."
+    outputs:
+      - text
+
+  # Conference Controller with Priority Pattern
+  - id: conference-controller
+    operator:
+      rust: dora-conference-controller
+    env:
+      # 🎯 Priority-based pattern!
+      # host (*) has priority, then guests share equally (1:1 ratio)
+      # Use input port names directly: host, guest1, guest2
+      DORA_POLICY_PATTERN: "[(host, *), (guest1, 1), (guest2, 1)]"
+    inputs:
+      host: host/text
+      guest1: guest1/text
+      guest2: guest2/text
+      control: reset-button/status
+    outputs:
+      - control
+      - status
+
+  # Conference Bridge
+  - id: conference-bridge
+    operator:
+      rust: dora-conference-bridge
+    inputs:
+      host: host/text
+      guest1: guest1/text
+      guest2: guest2/text
+      control: conference-controller/control
+    outputs:
+      - text
+
+  # Output
+  - id: terminal
+    operator:
+      rust: terminal-print
+    inputs:
+      data: conference-bridge/text

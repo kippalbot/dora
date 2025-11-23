@@ -1,0 +1,89 @@
+# Complete example: Courtroom debate with all components
+# Demonstrates how names flow from YAML → Controller → Policy
+
+nodes:
+  # ============ LLM Participants ============
+  # Each LLM generates responses for their role
+
+  - id: llm-judge
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: judge
+      SYSTEM_PROMPT: "You are a judge. Be fair, ask clarifying questions, and maintain order."
+    outputs:
+      - text
+
+  - id: llm-defense
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: defense
+      SYSTEM_PROMPT: "You are a defense attorney. Protect your client's rights and present strong arguments."
+    outputs:
+      - text
+
+  - id: llm-prosecution
+    operator:
+      python: ../../examples/openai-proxy-server
+    env:
+      CHARACTER: prosecution
+      SYSTEM_PROMPT: "You are a prosecutor. Present evidence clearly and argue for justice."
+    outputs:
+      - text
+
+  # ============ Conference Controller ============
+  # Controls who speaks when based on policy
+
+  - id: conference-controller
+    operator:
+      rust: dora-conference-controller
+    env:
+      # 🎯 Pattern uses INPUT PORT NAMES directly!
+      # These match the input port names below: judge, defense, prosecution
+      DORA_POLICY_PATTERN: "[judge → defense → prosecution]"
+    inputs:
+      # When these ports receive data, controller updates word counts
+      # and determines the next speaker
+      judge: llm-judge/text        # Port name: "judge"
+      defense: llm-defense/text    # Port name: "defense"
+      prosecution: llm-prosecution/text  # Port name: "prosecution"
+      control: reset-button/status
+    outputs:
+      - control      # Sends "resume" commands to bridge
+      - status       # Policy statistics (word counts, etc.)
+
+  # ============ Conference Bridge ============
+  # Forwards messages based on controller commands
+
+  - id: conference-bridge
+    operator:
+      rust: dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+    inputs:
+      # Bridge receives inputs from all participants
+      judge: llm-judge/text
+      defense: llm-defense/text
+      prosecution: llm-prosecution/text
+      # Control from controller - determines when to forward
+      control: conference-controller/control
+    outputs:
+      - text      # Combined output stream
+
+  # ============ Output ============
+
+  - id: terminal
+    operator:
+      rust: terminal-print
+    inputs:
+      data: conference-bridge/text
+
+  # ============ Control Panel (optional) ============
+  # Simple node to send reset commands
+
+  - id: reset-button
+    operator:
+      python: ../chatbot/status-reporter
+    outputs:
+      - status

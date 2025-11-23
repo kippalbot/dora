@@ -350,17 +350,22 @@ class DebateMonitorApp(App):
         self.set_interval(0.1, self.process_messages)
 
     def _request_bridge_reset(self) -> None:
-        """Send a reset command to all conference bridges"""
-        payload = json.dumps({"command": "reset"})
+        """Send a reset command to controller (which forwards to bridges and LLMs)"""
+        # Send reset via control output to controller
         dora_node_queue.put({
-            "type": "bridge_control",
-            "content": payload,
+            "type": "control",
+            "content": "reset",
+        })
+
+        # Also signal local state reset in event loop
+        dora_node_queue.put({
+            "type": "reset_local_state",
         })
 
         message_queue.put({
             "type": "text_chunk",
             "participant": "judge",
-            "content": "[System] Reset requested. Bridge queues cleared and cold start restored.",
+            "content": "[System] Reset requested. Controller notified to reset all bridges and LLMs.",
         })
         message_queue.put({"type": "complete", "participant": "judge"})
 
@@ -473,10 +478,15 @@ def dora_event_loop(node: Node, stop_signal: threading.Event):
 
             try:
                 if msg_type == "control":
-                    # Send control message to judge
+                    # Send control message to controller
                     node.send_output("control", pa.array([content]))
-                elif msg_type == "bridge_control":
-                    node.send_output("bridge_control", pa.array([content]))
+                elif msg_type == "reset_local_state":
+                    # Reset local streaming state when reset command is sent
+                    for participant in ["llm1", "llm2", "judge"]:
+                        streaming_state[participant]["content"] = ""
+                        streaming_state[participant]["active"] = False
+                        last_chunk_time[participant] = 0
+                    print("[debate-monitor] Local streaming state reset", file=sys.stderr)
             except Exception as e:
                 print(f"Failed to send control message: {e}")
 

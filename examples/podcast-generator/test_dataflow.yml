@@ -1,0 +1,33 @@
+nodes:
+  # Simple text sender (DYNAMIC)
+  - id: text-sender
+    path: dynamic
+    outputs:
+      - text
+
+  # MiniMax T2A TTS
+  - id: minimax-tts
+    build: pip install -e .
+    path: dora-minimax-t2a
+    inputs:
+      text: text-sender/text
+    outputs:
+      - audio
+      - segment_complete
+      - log
+    env:
+      MINIMAX_API_KEY: "$MINIMAX_API_KEY"
+      MINIMAX_VOICE_ID: "male-qn-qingse"
+      MINIMAX_SPEED: "1.0"
+      SAMPLE_RATE: "32000"
+      BATCH_DURATION_MS: "2000"
+      TEXT_LANG: "zh"
+      LOG_LEVEL: "INFO"
+
+  # Audio receiver (DYNAMIC)
+  - id: audio-receiver
+    path: dynamic
+    inputs:
+      audio: minimax-tts/audio
+      segment_complete: minimax-tts/segment_complete
+      log: minimax-tts/log

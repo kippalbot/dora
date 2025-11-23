@@ -190,6 +190,8 @@ nodes:
 | `ready` | Request ready status |
 | `exit` | Remove session and cleanup |
 
+📖 **Complete API Specification**: See [API.md](API.md) for detailed input/output specifications, metadata fields, cancellation handling, configuration options, and integration examples.
+
 ## Streaming & Segmentation
 
 When `enable_streaming = true`, the client:

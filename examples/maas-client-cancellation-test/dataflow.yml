@@ -1,0 +1,33 @@
+nodes:
+  - id: maas-client
+    path: ../../target/release/dora-maas-client
+    inputs:
+      prompt: test-sender/prompt
+      control: test-sender/control
+    outputs:
+      - text
+      - status
+      - cancellation
+    env:
+      MAAS_CONFIG_PATH: maas_config.toml
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      REQUEST_TIMEOUT_SECS: "30"
+      STREAM_TIMEOUT_SECS: "120"
+      ENABLE_CANCELLATION: "true"
+      EMIT_CANCELLATION_EVENTS: "true"
+      RUST_LOG: "info"
+
+  - id: test-receiver
+    path: test_receiver.py
+    inputs:
+      text: maas-client/text
+      status: maas-client/status
+      cancellation: maas-client/cancellation
+    outputs:
+      - log
+
+  - id: test-sender
+    path: test_sender.py
+    outputs:
+      - prompt
+      - control

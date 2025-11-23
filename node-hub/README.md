@@ -197,6 +197,56 @@ node-hub/
 
 The README.md file should explicit all inputs/outputs of the node and how to configure it in the YAML file.
 
+## 📚 Essential Node Documentation
+
+### Rust Nodes with API Specifications
+
+#### [dora-maas-client](./dora-maas-client/)
+Cloud AI integration node with multi-provider support (OpenAI, Gemini, etc.)
+- **Features**: Streaming, session management, MCP tools, request cancellation
+- **📖 API Spec**: [dora-maas-client/API.md](./dora-maas-client/API.md)
+- **Use Cases**: Chatbots, voice assistants, multi-agent systems
+
+#### [dora-conference-bridge](./dora-conference-bridge/)
+Multi-participant coordination node for conference/debate scenarios
+- **Features**: Bundled/cold-start modes, dynamic ports, session_status-based completion, cancellation handling
+- **📖 API Spec**: [dora-conference-bridge/API.md](./dora-conference-bridge/API.md)
+- **Use Cases**: Multi-person conferences, debates, multi-agent coordination
+
+### Key Python Nodes
+
+#### [dora-asr](./dora-asr/)
+Speech recognition with GPU acceleration and multi-engine support (FunASR, Whisper)
+- **Features**: GPU acceleration (2.27x faster), Chinese/English support, intelligent engine selection
+- **Use Cases**: Voice chatbots, transcription, real-time ASR
+
+#### [dora-primespeech](./dora-primespeech/)
+High-quality text-to-speech with G2PW phonetic model and enhanced error handling
+- **Features**: Chinese TTS, complete G2PW model, error recovery with tracebacks
+- **Use Cases**: Voice synthesis, pronunciation correction
+
+#### [dora-openai-websocket](./dora-openai-websocket/)
+WebSocket server for OpenAI-compatible API endpoints
+- **Features**: WebSocket streaming, real-time audio/text exchange
+- **Use Cases**: Web-based voice chat, browser integration
+
+#### [dora-mcp-host](./dora-mcp-host/) and [dora-mcp-server](./dora-mcp-server/)
+Model Context Protocol (MCP) integration for tool use
+- **Features**: Tool registration, execution, pass-through to LLMs
+- **Use Cases**: Function calling, API integration, knowledge retrieval
+
+## 📖 Node API Documentation Guidelines
+
+When creating a new node, please include a comprehensive `API.md` file that documents:
+
+- **Input ports**: Name, type, metadata fields, required/optional
+- **Output ports**: Name, type, metadata fields, data format
+- **Configuration**: Environment variables, config files, defaults
+- **Examples**: Dataflow configurations, usage patterns
+- **Special behaviors**: Completion detection, error handling, edge cases
+
+See [dora-maas-client/API.md](./dora-maas-client/API.md) for a comprehensive example.
+
 ## License
 
 This project is licensed under Apache-2.0. Check out [NOTICE.md](../NOTICE.md) for more information.
