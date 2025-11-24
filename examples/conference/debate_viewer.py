@@ -4,6 +4,7 @@ Debate Viewer - Monitor logs and events from LLM debate dataflow
 Tracks LLM1, LLM2, Judge, and Bridge nodes
 """
 import json
+import os
 from datetime import datetime
 import pyarrow as pa
 from dora import Node
@@ -25,88 +26,176 @@ class Colors:
 
 STREAM_BUFFERS = {}
 
-NODE_CONFIG_ENTRIES = [
-    ("bridge-to-judge", {
-        "name": "LLM1+LLM2->Judge",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("bridge llm1+llm2->judge", {
-        "name": "LLM1+LLM2->Judge",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("bridge-to-llm1", {
-        "name": "LLM2+Judge->LLM1",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("bridge1", {
-        "name": "LLM1+LLM2->Judge",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("bridge llm2+judge->llm1", {
-        "name": "LLM2+Judge->LLM1",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("bridge-to-llm2", {
-        "name": "LLM1+Judge->LLM2",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("bridge2", {
-        "name": "LLM1+Judge->LLM2",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("bridge llm1+judge->llm2", {
-        "name": "LLM1+Judge->LLM2",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("bridge3", {
-        "name": "LLM2+Judge->LLM1",
-        "icon": "🌉",
-        "color": Colors.YELLOW
-    }),
-    ("llm1", {
-        "name": "LLM1 (Debater A)",
-        "icon": "🤖",
-        "color": Colors.CYAN
-    }),
-    ("llm2", {
-        "name": "LLM2 (Debater B)",
-        "icon": "🤖",
-        "color": Colors.GREEN
-    }),
-    ("judge", {
-        "name": "Judge (Moderator)",
-        "icon": "⚖️ ",
-        "color": Colors.MAGENTA
-    }),
-    ("openai-response-client", {
-        "name": "OpenAI Client",
-        "icon": "🔌",
-        "color": Colors.BLUE
-    }),
-    ("dora-maas-client", {
-        "name": "MaaS Client",
-        "icon": "🔌",
-        "color": Colors.BLUE
-    }),
-    ("conference-controller", {
-        "name": "Controller",
-        "icon": "🎯",
-        "color": Colors.BLUE
-    }),
-    ("controller", {
-        "name": "Controller",
-        "icon": "🎯",
-        "color": Colors.BLUE
-    }),
-]
+def get_participant_display_names():
+    """Dynamically detect participant names from environment or use defaults"""
+    # Check if we're in study mode by looking for study-specific environment variables
+    if os.environ.get("DORA_STUDY_MODE", "").lower() in {"1", "true", "yes"}:
+        return {
+            "student1": "Student1 (Daniu)",
+            "student2": "Student2 (Yifei)",
+            "tutor": "Tutor (Sunwen)",
+            "conversation": "Dialogue Bundle",
+            "system": "System",
+        }
+    else:
+        # Default debate mode
+        return {
+            "llm1": "LLM1 (Debater A)",
+            "llm2": "LLM2 (Debater B)",
+            "judge": "Judge (Moderator)",
+            "conversation": "Dialogue Bundle",
+            "system": "System",
+        }
+
+def get_display_name(participant_id):
+    names = get_participant_display_names()
+    return names.get(participant_id, participant_id.upper())
+
+def get_node_config_entries():
+    """Get dynamic node configuration entries based on mode"""
+    display_names = get_participant_display_names()
+
+    # Common configurations
+    common_entries = [
+        ("openai-response-client", {
+            "name": "OpenAI Client",
+            "icon": "🔌",
+            "color": Colors.BLUE
+        }),
+        ("dora-maas-client", {
+            "name": "MaaS Client",
+            "icon": "🔌",
+            "color": Colors.BLUE
+        }),
+        ("conference-controller", {
+            "name": "Controller",
+            "icon": "🎯",
+            "color": Colors.BLUE
+        }),
+        ("controller", {
+            "name": "Controller",
+            "icon": "🎯",
+            "color": Colors.BLUE
+        }),
+    ]
+
+    if "student1" in display_names:
+        # Study mode configuration
+        study_entries = [
+            ("bridge-to-tutor", {
+                "name": "Student1+Student2->Tutor",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge-to-student2", {
+                "name": "Student1+Tutor->Student2",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge-to-student1", {
+                "name": "Student2+Tutor->Student1",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge1", {
+                "name": "Student1+Student2->Tutor",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge2", {
+                "name": "Student1+Tutor->Student2",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge3", {
+                "name": "Student2+Tutor->Student1",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("student1", {
+                "name": "Student1 (Daniu)",
+                "icon": "🤖",
+                "color": Colors.CYAN
+            }),
+            ("student2", {
+                "name": "Student2 (Yifei)",
+                "icon": "🤖",
+                "color": Colors.GREEN
+            }),
+            ("tutor", {
+                "name": "Tutor (Sunwen)",
+                "icon": "⚖️ ",
+                "color": Colors.MAGENTA
+            }),
+        ]
+        return study_entries + common_entries
+    else:
+        # Debate mode configuration
+        debate_entries = [
+            ("bridge-to-judge", {
+                "name": "LLM1+LLM2->Judge",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge llm1+llm2->judge", {
+                "name": "LLM1+LLM2->Judge",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge-to-llm1", {
+                "name": "LLM2+Judge->LLM1",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge1", {
+                "name": "LLM1+LLM2->Judge",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge llm2+judge->llm1", {
+                "name": "LLM2+Judge->LLM1",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge-to-llm2", {
+                "name": "LLM1+Judge->LLM2",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge2", {
+                "name": "LLM1+Judge->LLM2",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge llm1+judge->llm2", {
+                "name": "LLM1+Judge->LLM2",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("bridge3", {
+                "name": "LLM2+Judge->LLM1",
+                "icon": "🌉",
+                "color": Colors.YELLOW
+            }),
+            ("llm1", {
+                "name": "LLM1 (Debater A)",
+                "icon": "🤖",
+                "color": Colors.CYAN
+            }),
+            ("llm2", {
+                "name": "LLM2 (Debater B)",
+                "icon": "🤖",
+                "color": Colors.GREEN
+            }),
+            ("judge", {
+                "name": "Judge (Moderator)",
+                "icon": "⚖️ ",
+                "color": Colors.MAGENTA
+            }),
+        ]
+        return debate_entries + common_entries
+
+NODE_CONFIG_ENTRIES = []  # Will be populated dynamically
 
 
 def format_timestamp(ts=None):
@@ -119,7 +208,7 @@ def format_timestamp(ts=None):
 def get_node_config(node_name):
     """Get node configuration or default"""
     lower_name = node_name.lower()
-    for key, config in NODE_CONFIG_ENTRIES:
+    for key, config in get_node_config_entries():
         if key in lower_name:
             return config
     return {"name": node_name, "icon": "📦", "color": Colors.WHITE}
@@ -127,25 +216,31 @@ def get_node_config(node_name):
 
 def get_node_config_from_input_id(input_id):
     """Get node configuration based on input ID (more reliable for MaaS clients)"""
+    display_names = get_participant_display_names()
+
     # Bridge logs: distinguish from LLM logs
     if "bridge" in input_id.lower():
         # Extract bridge number/name from input_id like "bridge3_log"
-        if "bridge1" in input_id or "bridge-to-judge" in input_id:
-            return {"name": "Bridge to Judge", "icon": "🌉", "color": Colors.YELLOW}
-        elif "bridge2" in input_id or "bridge-to-llm2" in input_id:
-            return {"name": "Bridge to LLM2", "icon": "🌉", "color": Colors.YELLOW}
-        elif "bridge3" in input_id or "bridge-to-llm1" in input_id:
-            return {"name": "Bridge to LLM1", "icon": "🌉", "color": Colors.YELLOW}
+        if "bridge1" in input_id or "bridge-to-tutor" in input_id or "bridge-to-judge" in input_id:
+            target = "tutor" if "tutor" in display_names else "judge"
+            target_display = get_display_name(target)
+            return {"name": f"Bridge to {target_display}", "icon": "🌉", "color": Colors.YELLOW}
+        elif "bridge2" in input_id or "bridge-to-student2" in input_id or "bridge-to-llm2" in input_id:
+            source = "student2" if "student2" in display_names else "llm2"
+            source_display = get_display_name(source)
+            return {"name": f"Bridge to {source_display}", "icon": "🌉", "color": Colors.YELLOW}
+        elif "bridge3" in input_id or "bridge-to-student1" in input_id or "bridge-to-llm1" in input_id:
+            source = "student1" if "student1" in display_names else "llm1"
+            source_display = get_display_name(source)
+            return {"name": f"Bridge to {source_display}", "icon": "🌉", "color": Colors.YELLOW}
         else:
             return {"name": "Bridge", "icon": "🌉", "color": Colors.YELLOW}
 
     # LLM logs: distinguish which LLM instance
-    elif "llm1" in input_id.lower():
-        return {"name": "LLM1 (Debater A)", "icon": "🤖", "color": Colors.CYAN}
-    elif "llm2" in input_id.lower():
-        return {"name": "LLM2 (Debater B)", "icon": "🤖", "color": Colors.GREEN}
-    elif "judge" in input_id.lower():
-        return {"name": "Judge (Moderator)", "icon": "⚖️", "color": Colors.MAGENTA}
+    for participant_id in ["student1", "student2", "tutor", "llm1", "llm2", "judge"]:
+        if participant_id in input_id.lower():
+            return {"name": get_display_name(participant_id), "icon": "🤖", "color": Colors.CYAN if participant_id in ["student1", "llm1"] else Colors.GREEN if participant_id in ["student2", "llm2"] else Colors.MAGENTA}
+
     elif "controller" in input_id.lower():
         return {"name": "Controller", "icon": "🎯", "color": Colors.BLUE}
 
@@ -343,16 +438,30 @@ def print_control_command(node_id, control_cmd):
     color = config["color"]
     ts_str = format_timestamp()
 
+    display_names = get_participant_display_names()
+
     # Map control input ID to the actual bridge that receives it
-    if node_id == "control_judge":
-        target_name = "bridge-to-judge"
-        channel_desc = "control_judge input"
-    elif node_id == "control_llm2":
-        target_name = "bridge-to-llm2"
-        channel_desc = "control_llm2 input"
-    elif node_id == "control_llm1":
-        target_name = "bridge-to-llm1"
-        channel_desc = "control_llm1 input"
+    if node_id == "control_judge" or node_id == "control_tutor":
+        if "tutor" in display_names:
+            target_name = "bridge-to-tutor"
+            channel_desc = "control_tutor input"
+        else:
+            target_name = "bridge-to-judge"
+            channel_desc = "control_judge input"
+    elif node_id == "control_llm2" or node_id == "control_student2":
+        if "student2" in display_names:
+            target_name = "bridge-to-student2"
+            channel_desc = "control_student2 input"
+        else:
+            target_name = "bridge-to-llm2"
+            channel_desc = "control_llm2 input"
+    elif node_id == "control_llm1" or node_id == "control_student1":
+        if "student1" in display_names:
+            target_name = "bridge-to-student1"
+            channel_desc = "control_student1 input"
+        else:
+            target_name = "bridge-to-llm1"
+            channel_desc = "control_llm1 input"
     elif node_id == "control":
         target_name = "UNKNOWN_BRIDGE"
         channel_desc = "control input"
@@ -377,10 +486,20 @@ def main():
     """Main viewer loop"""
     node = Node("viewer")
 
+    display_names = get_participant_display_names()
+
+    # Determine mode and set appropriate title
+    if "student1" in display_names:
+        title = f"{Colors.BOLD}📚 Study Session Viewer{Colors.ENDC}"
+        description = "Monitoring study session dataflow logs and events..."
+    else:
+        title = f"{Colors.BOLD}⚖️  LLM Debate Viewer{Colors.ENDC}"
+        description = "Monitoring debate dataflow logs and events..."
+
     print("\n" + "="*80)
-    print(f"{Colors.BOLD}⚖️  LLM Debate Viewer{Colors.ENDC}")
+    print(title)
     print("="*80)
-    print("Monitoring debate dataflow logs and events...\n")
+    print(f"{description}\n")
 
     for event in node:
         if event["type"] == "INPUT":
@@ -441,9 +560,11 @@ def main():
                 )
 
         elif event["type"] == "STOP":
+            display_names = get_participant_display_names()
+            viewer_type = "Study Session" if "student1" in display_names else "Debate"
             print(
                 f"\n{Colors.BOLD}[{format_timestamp()}]{Colors.ENDC} "
-                f"{Colors.YELLOW}🛑 Debate viewer stopped{Colors.ENDC}\n"
+                f"{Colors.YELLOW}🛑 {viewer_type} viewer stopped{Colors.ENDC}\n"
             )
             break
 

@@ -37,16 +37,37 @@ impl LogLevel {
 }
 
 fn get_friendly_node_name(node_id: &str) -> String {
+    // Check if we're in study mode by looking for environment variable
+    let study_mode = std::env::var("DORA_STUDY_MODE")
+        .unwrap_or_default()
+        .to_ascii_lowercase() == "true";
+
     // Convert technical node IDs to user-friendly names
-    match node_id {
-        "bridge-to-judge" => "Bridge to Judge".to_string(),
-        "bridge-to-llm1" => "Bridge to LLM1".to_string(),
-        "bridge-to-llm2" => "Bridge to LLM2".to_string(),
-        _ => {
-            // Fallback: make technical ID more readable
-            node_id.replace("-", " ")
-                .replace("bridge", "Bridge")
-                .replace("llm", "LLM")
+    if study_mode {
+        match node_id {
+            "bridge-to-tutor" => "Bridge to Tutor".to_string(),
+            "bridge-to-student1" => "Bridge to Student1".to_string(),
+            "bridge-to-student2" => "Bridge to Student2".to_string(),
+            _ => {
+                // Fallback: make technical ID more readable
+                node_id.replace("-", " ")
+                    .replace("bridge", "Bridge")
+                    .replace("student", "Student")
+                    .replace("tutor", "Tutor")
+            }
+        }
+    } else {
+        match node_id {
+            "bridge-to-judge" => "Bridge to Judge".to_string(),
+            "bridge-to-llm1" => "Bridge to LLM1".to_string(),
+            "bridge-to-llm2" => "Bridge to LLM2".to_string(),
+            _ => {
+                // Fallback: make technical ID more readable
+                node_id.replace("-", " ")
+                    .replace("bridge", "Bridge")
+                    .replace("llm", "LLM")
+                    .replace("judge", "Judge")
+            }
         }
     }
 }
@@ -570,11 +591,22 @@ impl ConferenceBridge {
                     if matches!(signal_type, SignalType::TechnicalError | SignalType::ContentError) {
                         // If we have an error message template, create and forward the error message
                         if let Some(template) = &self.error_message_template {
-                            // Convert port_name to friendly participant name
-                            let participant_name = port_name
-                                .replace("llm1", "LLM1")
-                                .replace("llm2", "LLM2")
-                                .replace("judge", "Judge");
+                            // Convert port_name to friendly participant name using study mode detection
+                            let study_mode = std::env::var("DORA_STUDY_MODE")
+                                .unwrap_or_default()
+                                .to_ascii_lowercase() == "true";
+
+                            let participant_name = if study_mode {
+                                port_name
+                                    .replace("student1", "Student1")
+                                    .replace("student2", "Student2")
+                                    .replace("tutor", "Tutor")
+                            } else {
+                                port_name
+                                    .replace("llm1", "LLM1")
+                                    .replace("llm2", "LLM2")
+                                    .replace("judge", "Judge")
+                            };
 
                             let error_message = template.replace("{participant}", &participant_name);
                             send_log(

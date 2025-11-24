@@ -86,6 +86,7 @@ struct ConferenceController {
     pattern: String,
     log_level: LogLevel,
     reset_pending: bool,  // Track if reset is in progress - ignore incoming "reset" status
+    participant_name_map: HashMap<String, String>, // Maps role -> participant ID (e.g., "judge" -> "tutor")
 }
 
 impl ConferenceController {
@@ -98,6 +99,37 @@ impl ConferenceController {
         let stats = policy.get_stats();
         send_log(node, LogLevel::Info, log_level, &format!("📊 Policy configuration:\n{}", serde_json::to_string_pretty(&stats).unwrap()));
 
+        // Initialize participant name mapping
+        let participants = policy.get_participants();
+        let mut participant_name_map = HashMap::new();
+
+        // Create mapping from role to participant ID
+        // This allows the controller to work with different naming schemes
+        for participant_id in &participants {
+            match participant_id.as_str() {
+                "llm1" | "student1" => {
+                    participant_name_map.insert("llm1".to_string(), participant_id.clone());
+                    participant_name_map.insert("student1".to_string(), participant_id.clone());
+                },
+                "llm2" | "student2" => {
+                    participant_name_map.insert("llm2".to_string(), participant_id.clone());
+                    participant_name_map.insert("student2".to_string(), participant_id.clone());
+                },
+                "judge" | "tutor" => {
+                    participant_name_map.insert("judge".to_string(), participant_id.clone());
+                    participant_name_map.insert("tutor".to_string(), participant_id.clone());
+                },
+                _ => {
+                    participant_name_map.insert(participant_id.clone(), participant_id.clone());
+                }
+            }
+        }
+
+        send_log(node, LogLevel::Info, log_level, &format!("🔄 Participant name mapping: {:?}", participant_name_map));
+
+        // Log the ready message after all initialization is complete
+        send_log(node, LogLevel::Info, log_level, "🚀 all nodes are ready, starting dataflow");
+
         Ok(Self {
             state: ControllerState::Waiting,
             policy,
@@ -106,6 +138,7 @@ impl ConferenceController {
             pattern,
             log_level,
             reset_pending: false,
+            participant_name_map,
         })
     }
 
@@ -245,14 +278,27 @@ impl ConferenceController {
 
     fn process_next_speaker(&mut self, node: &mut DoraNode) -> Result<()> {
         if let Some(next_speaker) = self.policy.determine_next_speaker() {
+            // Map the participant ID to the correct control output
             let control_output = match next_speaker.as_str() {
-                "judge" => "control_judge",
-                "llm2" => "control_llm2",
-                "llm1" => "control_llm1",
+                participant_id if self.participant_name_map.contains_key("judge") &&
+                                 self.participant_name_map.get("judge") == Some(&next_speaker) => "control_judge",
+                participant_id if self.participant_name_map.contains_key("llm2") &&
+                                 self.participant_name_map.get("llm2") == Some(&next_speaker) => "control_llm2",
+                participant_id if self.participant_name_map.contains_key("llm1") &&
+                                 self.participant_name_map.get("llm1") == Some(&next_speaker) => "control_llm1",
                 _ => {
-                    send_log(node, LogLevel::Warn, self.log_level,
-                        &format!("⚠️ Unknown speaker: {}", next_speaker));
-                    return Ok(());
+                    // Fallback: try to guess based on naming patterns
+                    if next_speaker.contains("judge") || next_speaker.contains("tutor") {
+                        "control_judge"
+                    } else if next_speaker.contains("llm2") || next_speaker.contains("student2") {
+                        "control_llm2"
+                    } else if next_speaker.contains("llm1") || next_speaker.contains("student1") {
+                        "control_llm1"
+                    } else {
+                        send_log(node, LogLevel::Warn, self.log_level,
+                            &format!("⚠️ Unknown speaker: {}, mapping: {:?}", next_speaker, self.participant_name_map));
+                        return Ok(());
+                    }
                 }
             };
 
@@ -281,8 +327,9 @@ impl ConferenceController {
         send_log(node, LogLevel::Info, self.log_level, "🔄 Resetting controller");
         self.reset_pending = true;
 
-        // Send reset to all bridges
-        for output_name in ["control_judge", "control_llm2", "control_llm1"] {
+        // Send reset to all bridges - use dynamic control outputs
+        let control_outputs = vec!["control_judge", "control_llm2", "control_llm1"];
+        for output_name in control_outputs {
             node.send_output(
                 DataId::from(output_name.to_string()),
                 Default::default(),
@@ -290,7 +337,7 @@ impl ConferenceController {
             )?;
         }
 
-        // Send reset to LLMs
+        // Send reset to LLMs and judge
         node.send_output(DataId::from("llm_control".to_string()), Default::default(), StringArray::from(vec!["reset"]))?;
         node.send_output(DataId::from("judge_prompt".to_string()), Default::default(), StringArray::from(vec!["reset"]))?;
 

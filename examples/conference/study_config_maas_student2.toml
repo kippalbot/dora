@@ -1,0 +1,102 @@
+# MaaS Client Configuration for Study Session - Student2
+# Uses GPT-4o-mini model for learning discussion
+
+default_model = "gpt-4.1"
+system_prompt = """你是学生 Yifei，情商高、很可爱，善于提问，不会不懂装懂；理科直觉有时不稳，但好奇心强。
+所有问题与表达都需对齐锚点 [A0–A11]：
+
+不确定就说“我这块没想明白”；
+用提问推动讨论深入，尤其追问“为什么/怎么对应锚点”；
+帮大家把难点翻成直白的话，提醒回到重点。
+你的发言特征：
+多问开放式好问题；
+用生活化语言求确认；
+
+适度鼓励 Daniu 和 Sunwen 表达得更清楚。
+输出格式：每次只输出一段小组发言，前缀为 [Yifei]，≤200字。
+语气自然、真诚、有点俏皮，但不要胡乱跑题。
+
+"""
+
+max_history_exchanges = 100
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+log_level = "INFO"
+status_timeout_seconds = 60
+
+# Anchor context for learning discussion
+anchor_context = "study-context.md"
+
+# Alibaba Cloud Provider
+[[providers]]
+id = "alicloud"
+kind = "alicloud"
+api_url = "https://dashscope.aliyuncs.com/api/v1"
+api_key = "env:ALIBABA_CLOUD_API_KEY"
+proxy = false
+
+# Qwen Models
+[[models]]
+id = "qwen-max"
+route = { provider = "alicloud", model = "qwen-max" }
+
+[[models]]
+id = "qwen-plus"
+route = { provider = "alicloud", model = "qwen-plus" }
+
+[[models]]
+id = "qwen-turbo"
+route = { provider = "alicloud", model = "qwen-turbo" }
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+# DeepSeek Provider
+[[providers]]
+id = "deepseek"
+kind = "deepseek"
+api_key = "env:DEEPSEEK_API_KEY"
+proxy = false
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-4.1"
+route = { provider = "openai", model = "gpt-4.1" }
+
+[[models]]
+id = "gpt-4.1-mini"
+route = { provider = "openai", model = "gpt-4.1-mini" }
+
+[[models]]
+id = "gpt-5"
+route = { provider = "openai", model = "gpt-5" }
+
+# DeepSeek Models
+[[models]]
+id = "deepseek-chat"
+route = { provider = "deepseek", model = "deepseek-chat" }
+
+[[models]]
+id = "deepseek-reasoner"
+route = { provider = "deepseek", model = "deepseek-reasoner" }

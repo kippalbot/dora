@@ -26,13 +26,31 @@ from rich.markdown import Markdown as RichMarkdown
 # Default node name
 NODE_NAME = "debate-monitor"
 
-PARTICIPANT_DISPLAY_NAMES = {
-    "llm1": "LLM1 (Debater A)",
-    "llm2": "LLM2 (Debater B)",
-    "judge": "Judge (Moderator)",
-    "conversation": "Dialogue Bundle",
-    "system": "System",
-}
+def get_participant_display_names():
+    """Dynamically detect participant names from environment or use defaults"""
+    # Check if we're in study mode by looking for study-specific environment variables
+    if os.environ.get("DORA_STUDY_MODE", "").lower() in {"1", "true", "yes"}:
+        return {
+            "student1": "Student1 (Daniu)",
+            "student2": "Student2 (Yifei)",
+            "tutor": "Tutor (Sunwen)",
+            "conversation": "Dialogue Bundle",
+            "system": "System",
+        }
+    else:
+        # Default debate mode
+        return {
+            "llm1": "LLM1 (Debater A)",
+            "llm2": "LLM2 (Debater B)",
+            "judge": "Judge (Moderator)",
+            "conversation": "Dialogue Bundle",
+            "system": "System",
+        }
+
+# Global function to get current display names
+def get_display_name(participant_id):
+    names = get_participant_display_names()
+    return names.get(participant_id, participant_id.upper())
 
 CONVERSATION_INPUT_IDS = {"bundle_text"}
 PROMPT_SUFFIX = "_prompt"
@@ -190,12 +208,16 @@ class StatusBar(Static):
 
     def __init__(self, **kwargs):
         super().__init__("", **kwargs)
-        self.statuses: Dict[str, str] = {
-            "llm1": "idle",
-            "llm2": "idle",
-            "judge": "idle"
-        }
+        # Initialize with dynamic participants
+        self.participants = self._get_participants()
+        self.statuses: Dict[str, str] = {p: "idle" for p in self.participants}
         self.update_display()
+
+    def _get_participants(self):
+        """Get current participant list based on mode"""
+        display_names = get_participant_display_names()
+        # Return participant keys (excluding system entries)
+        return [k for k in display_names.keys() if k not in ["conversation", "system"]]
 
     def set_status(self, participant: str, status: str):
         """Update participant status"""
@@ -204,20 +226,22 @@ class StatusBar(Static):
 
     def update_display(self):
         """Update the status display"""
-        llm1_color = self._get_status_color(self.statuses["llm1"])
-        llm2_color = self._get_status_color(self.statuses["llm2"])
-        judge_color = self._get_status_color(self.statuses["judge"])
+        display_names = get_participant_display_names()
+        status_parts = []
 
-        status_text = Text.assemble(
-            ("LLM1: ", "bold"),
-            (self.statuses["llm1"], llm1_color),
-            (" | ", "dim"),
-            ("Judge: ", "bold"),
-            (self.statuses["judge"], judge_color),
-            (" | ", "dim"),
-            ("LLM2: ", "bold"),
-            (self.statuses["llm2"], llm2_color),
-        )
+        for participant in self.participants:
+            color = self._get_status_color(self.statuses[participant])
+            display_name = display_names.get(participant, participant.upper())
+            # Extract just the main name (e.g., "LLM1" from "LLM1 (Debater A)")
+            short_name = display_name.split(" ")[0] if " " in display_name else display_name
+
+            if status_parts:
+                status_parts.append((" | ", "dim"))
+
+            status_parts.append((f"{short_name}: ", "bold"))
+            status_parts.append((self.statuses[participant], color))
+
+        status_text = Text.assemble(*status_parts)
         self.update(status_text)
 
     def _get_status_color(self, status: str) -> str:
@@ -323,25 +347,46 @@ class DebateMonitorApp(App):
 
     def compose(self) -> ComposeResult:
         """Create the UI layout"""
+        display_names = get_participant_display_names()
         yield Header(show_clock=True)
 
         with Vertical(id="content"):
-            yield ParticipantPanel("judge", "Judge (Moderator)", "magenta", classes="participant-panel", id="panel-judge")
+            # Determine which participant is the moderator/judge role
+            moderator_participant = "judge" if "judge" in display_names else "tutor"
+            moderator_display = display_names.get(moderator_participant, "Moderator")
+            moderator_color = "magenta" if moderator_participant == "judge" else "yellow"
+
+            yield ParticipantPanel(moderator_participant, moderator_display, moderator_color, classes="participant-panel", id=f"panel-{moderator_participant}")
+
             with Horizontal(id="panels-container"):
-                yield ParticipantPanel("llm1", "LLM1 (Debater A)", "cyan", classes="participant-panel", id="panel-llm1")
-                yield ParticipantPanel("llm2", "LLM2 (Debater B)", "green", classes="participant-panel", id="panel-llm2")
+                # Get the other two participants (debaters/students)
+                other_participants = [p for p in display_names.keys() if p not in ["conversation", "system", moderator_participant]]
+                colors = ["cyan", "green"]
+
+                for i, participant in enumerate(other_participants):
+                    color = colors[i % len(colors)]
+                    display_name = display_names.get(participant, participant.upper())
+                    yield ParticipantPanel(participant, display_name, color, classes="participant-panel", id=f"panel-{participant}")
 
         yield StatusBar(id="status-bar")
         with Horizontal(id="controls"):
-            yield Input(placeholder="Send prompt to Judge (control input)...", id="input")
+            placeholder = f"Send prompt to {moderator_display} (control input)..."
+            yield Input(placeholder=placeholder, id="input")
             with Container(id="button-container"):
                 yield Button("Reset Bridges", id="reset-button")
         yield Footer()
 
     def on_mount(self) -> None:
         """Start message processing when app mounts"""
-        self.title = "LLM Debate Monitor"
-        self.sub_title = "Real-time debate visualization"
+        display_names = get_participant_display_names()
+
+        # Determine mode and set appropriate title
+        if "student1" in display_names:
+            self.title = "Study Session Monitor"
+            self.sub_title = "Real-time learning discussion visualization"
+        else:
+            self.title = "LLM Debate Monitor"
+            self.sub_title = "Real-time debate visualization"
 
         # Set focus to input
         self.query_one(Input).focus()
@@ -351,6 +396,9 @@ class DebateMonitorApp(App):
 
     def _request_bridge_reset(self) -> None:
         """Send a reset command to controller (which forwards to bridges and LLMs)"""
+        display_names = get_participant_display_names()
+        moderator_participant = "judge" if "judge" in display_names else "tutor"
+
         # Send reset via control output to controller
         dora_node_queue.put({
             "type": "control",
@@ -364,13 +412,14 @@ class DebateMonitorApp(App):
 
         message_queue.put({
             "type": "text_chunk",
-            "participant": "judge",
-            "content": "[System] Reset requested. Controller notified to reset all bridges and LLMs.",
+            "participant": moderator_participant,
+            "content": "[System] Reset requested. Controller notified to reset all bridges and participants.",
         })
-        message_queue.put({"type": "complete", "participant": "judge"})
+        message_queue.put({"type": "complete", "participant": moderator_participant})
 
         status_bar = self.query_one("#status-bar", StatusBar)
-        for participant in ["llm1", "judge", "llm2"]:
+        participants = [k for k in display_names.keys() if k not in ["conversation", "system"]]
+        for participant in participants:
             status_bar.set_status(participant, "idle")
 
     def process_messages(self) -> None:
@@ -403,7 +452,7 @@ class DebateMonitorApp(App):
                 continue
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle user input - send as control message to judge"""
+        """Handle user input - send as control message to moderator"""
         user_text = event.value.strip()
 
         if not user_text:
@@ -416,23 +465,27 @@ class DebateMonitorApp(App):
         if lower_text in {"reset", "/reset"}:
             self._request_bridge_reset()
             return
+
+        display_names = get_participant_display_names()
+        moderator_participant = "judge" if "judge" in display_names else "tutor"
+
         # Update status
         status_bar = self.query_one("#status-bar", StatusBar)
-        status_bar.set_status("judge", "receiving")
+        status_bar.set_status(moderator_participant, "receiving")
 
-        # Send control message to judge with prompt field
+        # Send control message to moderator with prompt field
         dora_node_queue.put({
             "type": "control",
             "content": json.dumps({"prompt": user_text})
         })
 
-        # Echo control prompt in judge panel
+        # Echo control prompt in moderator panel
         message_queue.put({
             "type": "text_chunk",
-            "participant": "judge",
+            "participant": moderator_participant,
             "content": f"[Control] {user_text}"
         })
-        message_queue.put({"type": "complete", "participant": "judge"})
+        message_queue.put({"type": "complete", "participant": moderator_participant})
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button actions"""
@@ -441,7 +494,9 @@ class DebateMonitorApp(App):
 
     def action_clear(self) -> None:
         """Clear all panels"""
-        for participant in ["llm1", "judge", "llm2"]:
+        display_names = get_participant_display_names()
+        participants = [k for k in display_names.keys() if k not in ["conversation", "system"]]
+        for participant in participants:
             panel_id = f"panel-{participant}"
             panel = self.query_one(f"#{panel_id}", ParticipantPanel)
             panel.remove_children()
@@ -455,18 +510,13 @@ class DebateMonitorApp(App):
 
 def dora_event_loop(node: Node, stop_signal: threading.Event):
     """Process Dora events in background thread"""
-    # Track streaming state for each participant
-    streaming_state = {
-        "llm1": {"content": "", "active": False},
-        "llm2": {"content": "", "active": False},
-        "judge": {"content": "", "active": False}
-    }
+    # Get current participants dynamically
+    display_names = get_participant_display_names()
+    participants = [k for k in display_names.keys() if k not in ["conversation", "system"]]
 
-    last_chunk_time = {
-        "llm1": 0,
-        "llm2": 0,
-        "judge": 0
-    }
+    # Track streaming state for each participant
+    streaming_state = {p: {"content": "", "active": False} for p in participants}
+    last_chunk_time = {p: 0 for p in participants}
     last_bundle_text = ""
 
     while not stop_signal.is_set():
@@ -482,7 +532,7 @@ def dora_event_loop(node: Node, stop_signal: threading.Event):
                     node.send_output("control", pa.array([content]))
                 elif msg_type == "reset_local_state":
                     # Reset local streaming state when reset command is sent
-                    for participant in ["llm1", "llm2", "judge"]:
+                    for participant in participants:
                         streaming_state[participant]["content"] = ""
                         streaming_state[participant]["active"] = False
                         last_chunk_time[participant] = 0
@@ -495,7 +545,8 @@ def dora_event_loop(node: Node, stop_signal: threading.Event):
         if event is None:
             # Check for timeouts (no chunks for 2 seconds)
             current_time = time.time()
-            for participant in ["llm1", "llm2", "judge"]:
+            moderator_participant = "judge" if "judge" in display_names else "tutor"
+            for participant in participants:
                 if streaming_state[participant]["active"]:
                     if last_chunk_time[participant] > 0 and (current_time - last_chunk_time[participant]) > 2.0:
                         final_content = streaming_state[participant]["content"]
@@ -505,7 +556,7 @@ def dora_event_loop(node: Node, stop_signal: threading.Event):
                                 "participant": participant,
                                 "content": final_content
                             })
-                            entry_kind = "moderator" if participant == "judge" else "response"
+                            entry_kind = "moderator" if participant == moderator_participant else "response"
                             message_queue.put({
                                 "type": "conversation_append",
                                 "entry": {
@@ -551,12 +602,10 @@ def dora_event_loop(node: Node, stop_signal: threading.Event):
 
             # Determine participant from input_id
             participant = None
-            if "llm1" in input_id:
-                participant = "llm1"
-            elif "llm2" in input_id:
-                participant = "llm2"
-            elif "judge" in input_id:
-                participant = "judge"
+            for p in participants:
+                if p in input_id:
+                    participant = p
+                    break
 
             if not participant:
                 continue
@@ -691,7 +740,8 @@ def dora_event_loop(node: Node, stop_signal: threading.Event):
                             "participant": participant,
                             "content": final_content
                         })
-                        entry_kind = "moderator" if participant == "judge" else "response"
+                        moderator_participant = "judge" if "judge" in display_names else "tutor"
+                        entry_kind = "moderator" if participant == moderator_participant else "response"
                         message_queue.put({
                             "type": "conversation_append",
                             "entry": {
@@ -736,11 +786,18 @@ def dora_event_loop(node: Node, stop_signal: threading.Event):
 def headless_monitor_loop(stop_signal: threading.Event):
     """Fallback console monitor for non-TTY environments"""
     console = Console()
-    statuses: Dict[str, str] = {"llm1": "idle", "llm2": "idle", "judge": "idle"}
-    latest_text: Dict[str, str] = {"llm1": "", "llm2": "", "judge": ""}
+    display_names = get_participant_display_names()
+    participants = [k for k in display_names.keys() if k not in ["conversation", "system"]]
+    statuses: Dict[str, str] = {p: "idle" for p in participants}
+    latest_text: Dict[str, str] = {p: "" for p in participants}
     conversation_entries: List[Dict[str, str]] = []
 
-    console.print("[bold]LLM Debate Monitor (headless mode)[/bold]")
+    # Determine mode and set appropriate title
+    if "student1" in display_names:
+        title = "[bold]Study Session Monitor (headless mode)[/bold]"
+    else:
+        title = "[bold]LLM Debate Monitor (headless mode)[/bold]"
+    console.print(title)
     console.print("Streaming updates will appear below.\n")
 
     while not stop_signal.is_set() or not message_queue.empty():
@@ -761,7 +818,8 @@ def headless_monitor_loop(stop_signal: threading.Event):
         elif msg_type == "text_chunk" and participant:
             content = msg.get("content", "")
             latest_text[participant] = content
-            preview = content if len(content) < 200 else content[:200] + "..."
+            # Fix 500-character truncation issue - increase limit to 2000 characters
+            preview = content if len(content) < 2000 else content[:2000] + "..."
             console.print(f"[cyan]{participant.upper()}[/cyan]: {preview}", highlight=False)
         elif msg_type == "conversation_append":
             entry = msg.get("entry") or {}
@@ -779,18 +837,19 @@ def headless_monitor_loop(stop_signal: threading.Event):
             entry_participant = normalized_entry["participant"]
             entry_kind = normalized_entry["kind"]
             content_text = normalized_entry["content"]
-            display_name = PARTICIPANT_DISPLAY_NAMES.get(entry_participant, entry_participant.upper() or "CONVERSATION")
+            display_name = get_display_name(entry_participant)
 
             if entry_participant == "conversation" and entry_kind == "bundle":
                 header = "Dialogue bundle"
             elif entry_kind == "prompt":
                 header = f"{display_name} prompt"
-            elif entry_participant == "judge":
-                header = "Judge"
+            elif entry_participant in ["judge", "tutor"]:
+                header = display_name
             else:
                 header = display_name
 
-            preview = content_text if len(content_text) < 200 else content_text[:200] + "..."
+            # Fix 500-character truncation issue - increase limit to 2000 characters
+            preview = content_text if len(content_text) < 2000 else content_text[:2000] + "..."
             console.print(f"[blue]{header}[/blue]: {preview}", highlight=False)
         elif msg_type == "complete" and participant:
             console.print(f"[green]{participant.upper()} complete[/green]", highlight=False)

@@ -1,0 +1,88 @@
+# MaaS Client Configuration for Study Session - Student1
+# Uses DeepSeek Chat model for learning discussion
+
+default_model = "gpt-4.1"
+system_prompt = """你是学生 Daniu，非常聪明理性，逻辑强，但不太懂人情世故、幽默感弱。
+讨论时以锚点 [A0–A11] 为唯一依据：
+先判断问题属于哪些锚点，再给出推理；
+发现不在锚点里的内容要直说“不在上下文里”；
+可以礼貌质疑他人，但用事实与锚点对齐。
+你的发言特征：
+条理清楚、偏概念/机制；
+少玩笑，少情绪，但要尊重他人；
+常用 我理解为… 发言。
+输出格式：每次只输出一段小组发言，前缀为 [Daniu]，≤200字。
+语气像真正的理工学霸讨论，不要“AI腔”。
+"""
+
+max_history_exchanges = 100
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+log_level = "INFO"
+status_timeout_seconds = 60
+
+# Anchor context for learning discussion
+anchor_context = "study-context.md"
+
+# Alibaba Cloud Provider
+[[providers]]
+id = "alicloud"
+kind = "alicloud"
+api_url = "https://dashscope.aliyuncs.com/api/v1"
+api_key = "env:ALIBABA_CLOUD_API_KEY"
+proxy = false
+
+# DeepSeek Provider
+[[providers]]
+id = "deepseek"
+kind = "deepseek"
+api_key = "env:DEEPSEEK_API_KEY"
+proxy = false
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+# Qwen Models
+[[models]]
+id = "qwen-max"
+route = { provider = "alicloud", model = "qwen-max" }
+
+[[models]]
+id = "qwen-plus"
+route = { provider = "alicloud", model = "qwen-plus" }
+
+[[models]]
+id = "qwen-turbo"
+route = { provider = "alicloud", model = "qwen-turbo" }
+
+# DeepSeek Models
+[[models]]
+id = "deepseek-chat"
+route = { provider = "deepseek", model = "deepseek-chat" }
+
+[[models]]
+id = "deepseek-reasoner"
+route = { provider = "deepseek", model = "deepseek-reasoner" }
+
+# OpenAI Models
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-4.1"
+route = { provider = "openai", model = "gpt-4.1" }
+
+[[models]]
+id = "gpt-4.1-mini"
+route = { provider = "openai", model = "gpt-4.1-mini" }

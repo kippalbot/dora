@@ -44,7 +44,7 @@ mod segmenter;
 mod streaming;
 mod tool;
 
-use config::Config;
+use config::{Config, load_anchor_context, format_anchor_context};
 use segmenter::StreamSegmenter;
 use tool::ToolSet;
 
@@ -133,7 +133,17 @@ impl RequestCancellationManager {
             }
         }
 
-        eprintln!("[CANCELLATION] Cancelled {} requests for session: {}", cancelled_count, session_id);
+        // Only show cancellation message if there were actual requests to cancel
+        if cancelled_count > 0 {
+            eprintln!("[CANCELLATION] Cancelled {} requests for session: {}", cancelled_count, session_id);
+        } else {
+            // During startup, show a more informative message
+            if session_id == "default" {
+                eprintln!("[INFO] node ready - starting dataflow");
+            } else {
+                eprintln!("[INFO] {} ready - no active requests to cancel", session_id);
+            }
+        }
         cancelled_count
     }
 
@@ -160,10 +170,17 @@ struct ChatSession {
 }
 
 impl ChatSession {
-    fn new(system_prompt: String) -> Self {
+    fn new(system_prompt: String, anchor_context: Option<String>) -> Self {
+        // Combine system prompt with anchor context if provided
+        let combined_prompt = if let Some(context) = anchor_context {
+            format!("{}\n\n{}", context, system_prompt)
+        } else {
+            system_prompt
+        };
+
         let system_message =
             ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
-                content: PartibleTextContent::Text(system_prompt),
+                content: PartibleTextContent::Text(combined_prompt),
                 name: None,
             });
 
@@ -271,6 +288,26 @@ impl ChatSession {
     }
 }
 
+/// Load and format anchor context for a given configuration
+fn load_anchor_context_for_session(config: &Config) -> Option<String> {
+    if let Some(ref context_path) = config.anchor_context {
+        match load_anchor_context(context_path) {
+            Ok(context_content) => {
+                let formatted = format_anchor_context(&context_content);
+                eprintln!("✅ Loaded anchor context from: {}", context_path);
+                Some(formatted)
+            }
+            Err(e) => {
+                eprintln!("⚠️ Warning: Failed to load anchor context from '{}': {}", context_path, e);
+                eprintln!("⚠️ Proceeding without anchor context");
+                None
+            }
+        }
+    } else {
+        None
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Check if running as dynamic node with --name argument
@@ -286,6 +323,9 @@ async fn main() -> Result<()> {
 
     // Log level is available for future use
     let _log_level = &config.log_level;
+
+    // Load anchor context if configured
+    let anchor_context = load_anchor_context_for_session(&config);
 
     // Initialize MCP tools if enabled
     let tool_set = if config.enable_tools {
@@ -382,7 +422,7 @@ async fn main() -> Result<()> {
 
                         // Get or create session
                         let session = sessions.entry(session_id.clone()).or_insert_with(|| {
-                            let mut session = ChatSession::new(config.system_prompt.clone());
+                            let mut session = ChatSession::new(config.system_prompt.clone(), anchor_context.clone());
                             if let Some(ref ts) = tool_set {
                                 session.set_tool_set(ts.clone());
                             }
@@ -1364,7 +1404,7 @@ async fn main() -> Result<()> {
 
                             // Get or create session
                             let session = sessions.entry(session_id.clone()).or_insert_with(|| {
-                                let mut session = ChatSession::new(config.system_prompt.clone());
+                                let mut session = ChatSession::new(config.system_prompt.clone(), anchor_context.clone());
                                 if let Some(ref ts) = tool_set {
                                     session.set_tool_set(ts.clone());
                                 }

@@ -23,19 +23,27 @@
 
 The Conference Bridge & Controller system implements a multi-participant real-time conversation framework using Dora's dataflow architecture. It enables structured debates, discussions, or any turn-based conversation between multiple LLM participants with a policy-driven speaking order.
 
+**Supported Scenarios:**
+- **Debate Mode**: 3-person debate (llm1, llm2, judge) with competitive dialogue
+- **Study Mode**: Interactive learning session (student1, student2, tutor) with anchor-based context
+
 **Key Components:**
 - **Conference Controller**: The "brain" that determines who speaks next based on configurable policies
 - **Conference Bridge**: The "switch" that buffers and forwards messages to participants based on controller commands
-- **LLM Participants**: AI models that engage in the conversation (e.g., debaters, judge)
+- **LLM Participants**: AI models that engage in the conversation (e.g., debaters, judge, students, tutor)
 
 ### 中文
 
 会议桥接器与控制器系统使用 Dora 数据流架构实现了多参与者实时对话框架。它支持多个 LLM 参与者之间的结构化辩论、讨论或任何基于轮次的对话，并通过策略驱动的发言顺序进行控制。
 
+**支持的场景：**
+- **辩论模式**：三人辩论（正方、反方、裁判），竞争性对话
+- **学习模式**：互动学习研讨（学生1、学生2、导师），基于锚点的上下文学习
+
 **核心组件：**
 - **会议控制器 (Conference Controller)**：决定下一个发言者的"大脑"，基于可配置的策略
 - **会议桥接器 (Conference Bridge)**：根据控制器命令缓冲和转发消息的"交换机"
-- **LLM 参与者**：参与对话的 AI 模型（如辩论者、裁判）
+- **LLM 参与者**：参与对话的 AI 模型（如辩论者、裁判、学生、导师）
 
 ---
 
@@ -317,6 +325,20 @@ env:
   ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties.]"
 ```
 
+**Dual Reset Handling**:
+```rust
+// CRITICAL: Global reset detection - ANY reset signal clears ALL bridge state
+let is_reset_signal = parameters
+    .get("session_status")
+    .map_or(false, |status| status == "reset");
+
+if is_reset_signal {
+    println!("🔄 RESET SIGNAL - discarding ALL queued inputs from old debate");
+    bridge.reset_state(&mut node)?;  // Complete state clearing
+    continue;  // Wait for new debate
+}
+```
+
 #### 中文
 
 **决策**：按类型分类传入信号，以优雅地处理重置、取消和错误场景。
@@ -340,6 +362,20 @@ enum SignalType {
 | `TechnicalError` | 转发模板 | 通知其他参与者 |
 | `ContentError` | 转发模板 | 通知其他参与者 |
 | `NormalContent` | 原样转发 | 正常对话内容 |
+
+**双重重置处理**：
+```rust
+// 关键：全局重置检测 - 任何重置信号都会清除所有桥接器状态
+let is_reset_signal = parameters
+    .get("session_status")
+    .map_or(false, |status| status == "reset");
+
+if is_reset_signal {
+    println!("🔄 重置信号 - 丢弃旧辩论的所有排队输入");
+    bridge.reset_state(&mut node)?;  // 完全状态清除
+    continue;  // 等待新辩论
+}
+```
 
 ### 5. Reset Handling with State Recovery / 重置处理与状态恢复
 
@@ -971,6 +1007,459 @@ println!("[BRIDGE-STDOUT] 🚀 FORWARDING: {} ready inputs", ready_inputs.len())
 | 2.3 | 2024-11 | Signal classification system (Reset/Cancelled/Error handling) |
 | 2.4 | 2024-11 | Reset state recovery fix - detect `session_status: "started"` |
 | 2.5 | 2024-11 | Error message template support for participant failures |
+| 2.6 | 2024-11 | Global reset signal handling - ANY reset clears ALL bridge state |
+| 2.7 | 2024-11 | Enhanced MaaS client with DeepSeek API integration |
+| 2.8 | 2024-11 | Advanced cancellation system with RequestCancellationManager |
+| 2.9 | 2024-11 | Enhanced tool calling with immediate execution and MCP support |
+| 3.0 | 2024-11 | Study mode with anchor context support |
+| 3.1 | 2024-11 | Logging cleanup - removed verbose println, use send_log for key events |
+
+---
+
+## Study Mode / 学习模式
+
+### Overview / 概述
+
+#### English
+
+Study mode transforms the conference system from a competitive debate into a collaborative learning session. Three participants - two students and one tutor - discuss a topic using anchor-based context from a markdown file.
+
+**Key Differences from Debate Mode:**
+
+| Aspect | Debate Mode | Study Mode |
+|--------|-------------|------------|
+| Participants | llm1, llm2, judge | student1, student2, tutor |
+| Speaking Order | `[llm1 → llm2 → judge]` | `[student2 → student1 → tutor]` |
+| Interaction Style | Competitive, adversarial | Collaborative, Socratic |
+| Context | No external context | Anchor-based markdown context |
+| Environment | `DORA_STUDY_MODE: false` | `DORA_STUDY_MODE: true` |
+
+#### 中文
+
+学习模式将会议系统从竞争性辩论转变为协作式学习研讨。三位参与者——两名学生和一位导师——使用基于锚点的上下文来讨论主题。
+
+**与辩论模式的关键区别：**
+
+| 方面 | 辩论模式 | 学习模式 |
+|-----|---------|---------|
+| 参与者 | 正方、反方、裁判 | 学生1、学生2、导师 |
+| 发言顺序 | `[llm1 → llm2 → judge]` | `[student2 → student1 → tutor]` |
+| 互动风格 | 竞争性、对抗性 | 协作性、苏格拉底式 |
+| 上下文 | 无外部上下文 | 基于锚点的 Markdown 上下文 |
+| 环境变量 | `DORA_STUDY_MODE: false` | `DORA_STUDY_MODE: true` |
+
+### Anchor Context System / 锚点上下文系统
+
+#### English
+
+The anchor context system allows participants to reference specific sections of a learning document using anchor tags `[A0]`, `[A1]`, etc.
+
+**Configuration:**
+```toml
+# In study_config_maas_*.toml
+anchor_context = "study-context.md"
+```
+
+**Context File Format:**
+```markdown
+[A0] Introduction: Why Interdisciplinary Approach is Necessary
+Schrödinger clearly understood: a physicist writing about biology is "crossing boundaries"...
+
+[A1] Classical Physicist's Perspective: Statistical Laws
+Why ask "why are atoms so small?" He explains: this isn't about atoms, but why living bodies must be so many orders of magnitude larger...
+
+[A2] Genetic Mechanism: Chromosome "Code Script"
+...
+```
+
+**How Participants Use Anchors:**
+- **Student (Daniu)**: "According to [A1], statistical laws require large numbers of atoms..."
+- **Student (Yifei)**: "I'm confused about the relationship between [A4] and [A5]..."
+- **Tutor (Sunwen)**: "Good observation! This connects to [A3] where we discussed..."
+
+#### 中文
+
+锚点上下文系统允许参与者使用锚点标签 `[A0]`、`[A1]` 等引用学习文档的特定部分。
+
+**配置：**
+```toml
+# 在 study_config_maas_*.toml 中
+anchor_context = "study-context.md"
+```
+
+**上下文文件格式：**
+```markdown
+[A0] 导言：跨学科的必要性与核心问题
+薛定谔在写作一开始就非常清醒：一个物理学家写生物学，按传统是"越界"...
+
+[A1] 经典物理学家的入门视角：统计律
+为什么从"原子为什么这么小"问起？他的解释是：这其实不是在问原子...
+
+[A2] 遗传机制：染色体"密码脚本"
+...
+```
+
+**参与者如何使用锚点：**
+- **学生（大牛）**："根据 [A1]，统计律需要大量原子..."
+- **学生（亦菲）**："我对 [A4] 和 [A5] 之间的关系感到困惑..."
+- **导师（孙文）**："观察得很好！这与我们在 [A3] 讨论的内容有关..."
+
+### Study Mode Dataflow / 学习模式数据流
+
+```mermaid
+flowchart TB
+    subgraph Participants["Study Participants / 学习参与者"]
+        S1[("student1<br/>Daniu<br/>理性学霸")]
+        S2[("student2<br/>Yifei<br/>感性学生")]
+        TUTOR[("tutor<br/>Sunwen<br/>苏格拉底导师")]
+    end
+
+    subgraph Controller["Conference Controller / 会议控制器"]
+        POLICY["Policy: [student2 → student1 → tutor]"]
+        CTRL["Control Logic"]
+    end
+
+    subgraph Bridges["Conference Bridges / 会议桥接器"]
+        B1["bridge-to-student1"]
+        B2["bridge-to-student2"]
+        B3["bridge-to-tutor"]
+    end
+
+    subgraph Context["Anchor Context / 锚点上下文"]
+        MD["study-context.md<br/>[A0]-[A11]"]
+    end
+
+    %% Context to participants
+    MD -.->|system prompt| S1
+    MD -.->|system prompt| S2
+    MD -.->|system prompt| TUTOR
+
+    %% Participant outputs to Controller
+    S1 -->|text| CTRL
+    S2 -->|text| CTRL
+    TUTOR -->|text| CTRL
+
+    %% Participant outputs to Bridges
+    S2 -->|text| B1
+    TUTOR -->|text| B1
+    S1 -->|text| B2
+    TUTOR -->|text| B2
+    S1 -->|text| B3
+    S2 -->|text| B3
+
+    %% Controller to Bridges
+    CTRL -->|control_llm1<br/>resume| B1
+    CTRL -->|control_llm2<br/>resume| B2
+    CTRL -->|control_judge<br/>resume| B3
+
+    %% Bridges to Participants
+    B1 -->|text| S1
+    B2 -->|text| S2
+    B3 -->|text| TUTOR
+
+    style Controller fill:#e1f5fe
+    style Bridges fill:#fff3e0
+    style Participants fill:#e8f5e9
+    style Context fill:#f3e5f5
+```
+
+### Study Mode Configuration / 学习模式配置
+
+#### Participant Personalities / 参与者个性
+
+**Student1 (Daniu) - 理性学霸:**
+```toml
+system_prompt = """你是学生 Daniu，非常聪明理性，逻辑强，但不太懂人情世故、幽默感弱。
+讨论时以锚点 [A0–A11] 为唯一依据：
+- 先判断问题属于哪些锚点，再给出推理
+- 发现不在锚点里的内容要直说"不在上下文里"
+- 可以礼貌质疑他人，但用事实与锚点对齐
+输出格式：每次只输出一段小组发言，前缀为 [Daniu]，≤200字。
+"""
+```
+
+**Student2 (Yifei) - 感性学生:**
+```toml
+system_prompt = """你是学生 Yifei，感性、好奇心强，经常提问。
+讨论时同样以锚点 [A0–A11] 为依据，但更注重直觉理解...
+输出格式：每次只输出一段小组发言，前缀为 [Yifei]，≤200字。
+"""
+```
+
+**Tutor (Sunwen) - 苏格拉底导师:**
+```toml
+system_prompt = """你是小组讨论的引导者 Sunwen，一位中年男性物理老师，
+幽默风趣，擅长苏格拉底式"接生婆"学习法。
+你的目标：
+- 用问题引导学生自己说出关键点
+- 把发散话题温柔拉回锚点
+- 适度抛出生活化类比与小笑点
+- 总结时给出"核心一句话 + 下一步要读的锚点"
+输出格式：每次只输出一段小组发言，前缀为 [Sunwen]，≤200字。
+"""
+```
+
+#### Environment Variables / 环境变量
+
+```yaml
+# Bridge environment for study mode
+env:
+  DORA_STUDY_MODE: "true"
+  STREAMING_PORTS: student1,tutor,student2
+  ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties.]"
+
+# Controller environment
+env:
+  DORA_POLICY_PATTERN: "[student2 → student1 → tutor]"
+```
+
+---
+
+## Enhanced MaaS Client / 增强的MaaS客户端
+
+### DeepSeek API Integration / DeepSeek API集成
+
+#### English
+
+**New Provider Support**: Added complete DeepSeek API integration with OpenAI-compatible format.
+
+**Configuration**:
+```toml
+# Provider configuration
+[[providers]]
+id = "deepseek"
+kind = "deepseek"
+api_key = "env:DEEPSEEK_API_KEY"
+api_url = "https://api.deepseek.com/v1"
+
+# Model routing
+[[models]]
+id = "deepseek-chat"
+route = { provider = "deepseek", model = "deepseek-chat" }
+
+[[models]]
+id = "deepseek-reasoner"
+route = { provider = "deepseek", model = "deepseek-reasoner" }
+```
+
+**Features**:
+- OpenAI-compatible API format
+- Automatic environment variable resolution (`env:DEEPSEEK_API_KEY`)
+- Configurable API endpoints with sensible defaults
+- Multi-model support (chat and reasoner variants)
+
+#### 中文
+
+**新提供商支持**：添加了完整的 DeepSeek API 集成，使用 OpenAI 兼容格式。
+
+**配置**：
+```toml
+# 提供商配置
+[[providers]]
+id = "deepseek"
+kind = "deepseek"
+api_key = "env:DEEPSEEK_API_KEY"
+api_url = "https://api.deepseek.com/v1"
+
+# 模型路由
+[[models]]
+id = "deepseek-chat"
+route = { provider = "deepseek", model = "deepseek-chat" }
+
+[[models]]
+id = "deepseek-reasoner"
+route = { provider = "deepseek", model = "deepseek-reasoner" }
+```
+
+**特性**：
+- OpenAI 兼容的 API 格式
+- 自动环境变量解析（`env:DEEPSEEK_API_KEY`）
+- 可配置的 API 端点，具有合理默认值
+- 多模型支持（聊天和推理器变体）
+
+### Advanced Cancellation System / 高级取消系统
+
+#### English
+
+**RequestCancellationManager**: Token-based cancellation system for efficient request management.
+
+**Key Features**:
+```rust
+pub struct RequestCancellationManager {
+    tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
+}
+
+impl RequestCancellationManager {
+    // Cancel all requests for a session atomically
+    pub fn cancel_session(&self, session_id: &str) {
+        if let Some(token) = self.tokens.write().unwrap().remove(session_id) {
+            token.cancel();
+        }
+    }
+
+    // Create new cancellation token for request
+    pub fn create_token(&self, session_id: &str, request_id: &str) -> CancellationToken {
+        let token = CancellationToken::new();
+        self.tokens.write().unwrap().insert(session_id.to_string(), token.clone());
+        token
+    }
+}
+```
+
+**Benefits**:
+- Session-level atomic cancellation
+- Automatic token cleanup after request completion
+- Efficient memory management with Arc<RwLock>
+- Thread-safe concurrent operations
+
+#### 中文
+
+**RequestCancellationManager**：基于令牌的取消系统，用于高效的请求管理。
+
+**关键特性**：
+```rust
+pub struct RequestCancellationManager {
+    tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
+}
+
+impl RequestCancellationManager {
+    // 为会话原子地取消所有请求
+    pub fn cancel_session(&self, session_id: &str) {
+        if let Some(token) = self.tokens.write().unwrap().remove(session_id) {
+            token.cancel();
+        }
+    }
+
+    // 为请求创建新的取消令牌
+    pub fn create_token(&self, session_id: &str, request_id: &str) -> CancellationToken {
+        let token = CancellationToken::new();
+        self.tokens.write().unwrap().insert(session_id.to_string(), token.clone());
+        token
+    }
+}
+```
+
+**优势**：
+- 会话级别的原子取消
+- 请求完成后自动令牌清理
+- 使用 Arc<RwLock> 的高效内存管理
+- 线程安全的并发操作
+
+### Enhanced Tool Calling / 增强的工具调用
+
+#### English
+
+**Immediate Tool Execution**: Fixed tool calling to execute immediately and continue conversation.
+
+**Flow**:
+```rust
+// Loop-based tool execution
+loop {
+    let response = call_llm_with_tools().await?;
+
+    if let Some(tool_calls) = response.tool_calls {
+        // Execute tools immediately
+        for tool_call in tool_calls {
+            let result = execute_tool(tool_call).await?;
+            tool_results.push(result);
+        }
+
+        // Continue conversation with tool results
+        messages.extend(tool_results);
+        continue;  // Next LLM call with tool results
+    } else {
+        // No more tools - final response
+        break;
+    }
+}
+```
+
+**Local MCP Support**: Enhanced Model Context Protocol integration:
+```rust
+enable_local_mcp: bool  // Enable/disable local MCP servers
+```
+
+**Benefits**:
+- Immediate tool execution without waiting
+- Proper tool result handling and conversation continuation
+- Configurable MCP server support
+- Better error handling for tool failures
+
+#### 中文
+
+**立即工具执行**：修复工具调用以立即执行并继续对话。
+
+**流程**：
+```rust
+// 基于循环的工具执行
+loop {
+    let response = call_llm_with_tools().await?;
+
+    if let Some(tool_calls) = response.tool_calls {
+        // 立即执行工具
+        for tool_call in tool_calls {
+            let result = execute_tool(tool_call).await?;
+            tool_results.push(result);
+        }
+
+        // 使用工具结果继续对话
+        messages.extend(tool_results);
+        continue;  // 使用工具结果进行下一次 LLM 调用
+    } else {
+        // 没有更多工具 - 最终响应
+        break;
+    }
+}
+```
+
+**本地 MCP 支持**：增强的模型上下文协议集成：
+```rust
+enable_local_mcp: bool  // 启用/禁用本地 MCP 服务器
+```
+
+**优势**：
+- 立即工具执行，无需等待
+- 正确的工具结果处理和对话继续
+- 可配置的 MCP 服务器支持
+- 更好的工具失败错误处理
+
+### Enhanced Error Classification / 增强的错误分类
+
+#### English
+
+**Rich Error Metadata**: Comprehensive error context with session status and debugging information.
+
+```rust
+// Error metadata structure
+let mut error_metadata = Metadata::new();
+error_metadata.insert("session_status", Parameter::String("error".to_string()));
+error_metadata.insert("error_type", Parameter::String("timeout".to_string()));
+error_metadata.insert("error_message", Parameter::String(error_msg.to_string()));
+```
+
+**Error Types**:
+- `session_status: "cancelled"` - User-initiated cancellation
+- `session_status: "reset"` - System reset command
+- `session_status: "error"` - Technical error (timeout, network, etc.)
+- Text-based errors starting with "Error:" - Content processing errors
+
+#### 中文
+
+**丰富错误元数据**：包含会话状态和调试信息的全面错误上下文。
+
+```rust
+// 错误元数据结构
+let mut error_metadata = Metadata::new();
+error_metadata.insert("session_status", Parameter::String("error".to_string()));
+error_metadata.insert("error_type", Parameter::String("timeout".to_string()));
+error_metadata.insert("error_message", Parameter::String(error_msg.to_string()));
+```
+
+**错误类型**：
+- `session_status: "cancelled"` - 用户发起的取消
+- `session_status: "reset"` - 系统重置命令
+- `session_status: "error"` - 技术错误（超时、网络等）
+- 以 "Error:" 开头的基于文本的错误 - 内容处理错误
 
 ---
 
@@ -979,4 +1468,9 @@ println!("[BRIDGE-STDOUT] 🚀 FORWARDING: {} ready inputs", ready_inputs.len())
 - Dora Framework Documentation: https://dora.carsmos.ai/
 - Conference Bridge Source: `node-hub/dora-conference-bridge/src/main.rs`
 - Conference Controller Source: `node-hub/dora-conference-controller/src/main.rs`
-- Example Dataflow: `examples/conference/dataflow-debate-sequential.yml`
+- MaaS Client Source: `node-hub/dora-maas-client/src/main.rs`
+- MaaS Config: `node-hub/dora-maas-client/src/config.rs`
+- Debate Dataflow: `examples/conference/dataflow-debate-sequential.yml`
+- Study Dataflow: `examples/conference/dataflow-study-sequential.yml`
+- Study Context: `examples/conference/study-context.md`
+- Quick Start Guide: `examples/conference/QUICKSTART.md`

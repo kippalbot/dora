@@ -39,6 +39,8 @@ pub struct Config {
     pub stream_timeout_secs: u64,
     #[serde(default = "default_enable_cancellation")]
     pub enable_cancellation: bool,
+    // Anchor context settings
+    pub anchor_context: Option<String>, // Path to anchor context markdown file
 }
 
 fn default_log_level() -> String {
@@ -374,4 +376,54 @@ pub fn get_env_or_value(value: &str) -> String {
     } else {
         value.to_string()
     }
+}
+
+/// Load anchor context from a markdown file.
+///
+/// Reads the file content and validates it contains anchor points [A0]-[A11].
+/// Returns the formatted context string for inclusion in developer role.
+///
+/// # Arguments
+/// * `file_path` - Path to the anchor context markdown file
+///
+/// # Returns
+/// * `Ok(String)` - Formatted context content
+/// * `Err(eyre::Error)` - If file cannot be read or is invalid
+pub fn load_anchor_context(file_path: &str) -> eyre::Result<String> {
+    use std::fs;
+    use std::path::Path;
+
+    // Check if file exists
+    if !Path::new(file_path).exists() {
+        return Err(eyre::eyre!("Anchor context file not found: {}", file_path));
+    }
+
+    // Read file content
+    let content = fs::read_to_string(file_path)
+        .map_err(|e| eyre::eyre!("Failed to read anchor context file {}: {}", file_path, e))?;
+
+    // Validate that content contains anchor points
+    if !content.contains("[A0") {
+        return Err(eyre::eyre!("Invalid anchor context file: missing anchor points [A0]-[A11] in {}", file_path));
+    }
+
+    // Trim whitespace and return
+    Ok(content.trim().to_string())
+}
+
+/// Format anchor context for inclusion in developer role message.
+///
+/// Wraps the context content with the required format:
+/// CONTEXT:\n<<<BEGIN ANCHOR CONTEXT\n[content]\nEND ANCHOR CONTEXT>>>
+///
+/// # Arguments
+/// * `context_content` - Raw context content from file
+///
+/// # Returns
+/// Formatted string ready for developer role
+pub fn format_anchor_context(context_content: &str) -> String {
+    format!(
+        "CONTEXT:\n<<<BEGIN ANCHOR CONTEXT\n{}\nEND ANCHOR CONTEXT>>>",
+        context_content
+    )
 }
