@@ -17,7 +17,7 @@ import pyarrow as pa
 from dora import Node
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer, Container
-from textual.widgets import Header, Footer, Input, Static, Button
+from textual.widgets import Header, Footer, Input, Static, Button, TextArea
 from textual.binding import Binding
 from rich.text import Text
 from rich.console import Group, Console
@@ -319,31 +319,46 @@ class DebateMonitorApp(App):
 
     #controls {
         dock: bottom;
-        height: 3;
+        height: 8;
         background: $panel;
     }
 
     #input {
         width: 1fr;
+        height: 100%;
         margin: 0 1;
     }
 
     #button-container {
-        width: 22;
-        min-width: 22;
-        max-width: 22;
+        width: 14;
+        min-width: 14;
+        max-width: 14;
+        height: 100%;
+        layout: vertical;
+    }
+
+    #send-button {
+        width: 100%;
+        height: 3;
+        margin-left: -1;
     }
 
     #reset-button {
         width: 100%;
-        margin: 0 1 0 0;
+        height: 3;
+        margin-left: -1;
     }
     """
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", priority=True),
         Binding("ctrl+l", "clear", "Clear"),
+        Binding("ctrl+enter", "send_prompt", "Send", priority=True),
     ]
+
+    def action_send_prompt(self) -> None:
+        """Action to send prompt via Ctrl+Enter"""
+        self._send_prompt()
 
     def compose(self) -> ComposeResult:
         """Create the UI layout"""
@@ -370,10 +385,11 @@ class DebateMonitorApp(App):
 
         yield StatusBar(id="status-bar")
         with Horizontal(id="controls"):
-            placeholder = f"Send prompt to {moderator_display} (control input)..."
-            yield Input(placeholder=placeholder, id="input")
+            # Use TextArea instead of Input for multi-line paste support
+            yield TextArea(id="input")
             with Container(id="button-container"):
-                yield Button("Reset Bridges", id="reset-button")
+                yield Button("Send", id="send-button", variant="primary")
+                yield Button("Reset", id="reset-button", variant="warning")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -388,8 +404,8 @@ class DebateMonitorApp(App):
             self.title = "LLM Debate Monitor"
             self.sub_title = "Real-time debate visualization"
 
-        # Set focus to input
-        self.query_one(Input).focus()
+        # Set focus to input (TextArea)
+        self.query_one("#input", TextArea).focus()
 
         # Start processing messages from queue
         self.set_interval(0.1, self.process_messages)
@@ -451,15 +467,22 @@ class DebateMonitorApp(App):
                 # Conversation history is not rendered in the Textual UI; ignore.
                 continue
 
-    async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle user input - send as control message to moderator"""
-        user_text = event.value.strip()
+    def _send_prompt(self) -> None:
+        """Send the current text area content as a prompt to moderator"""
+        text_area = self.query_one("#input", TextArea)
+        user_text = text_area.text.strip()
+
+        # Debug: log received text length
+        print(f"[debate-monitor] Input received: {len(user_text)} chars", file=sys.stderr)
+        if len(user_text) > 100:
+            print(f"[debate-monitor] First 100 chars: {user_text[:100]}", file=sys.stderr)
+            print(f"[debate-monitor] Last 100 chars: {user_text[-100:]}", file=sys.stderr)
 
         if not user_text:
             return
 
         # Clear input
-        event.input.value = ""
+        text_area.clear()
 
         lower_text = user_text.lower()
         if lower_text in {"reset", "/reset"}:
@@ -474,9 +497,11 @@ class DebateMonitorApp(App):
         status_bar.set_status(moderator_participant, "receiving")
 
         # Send control message to moderator with prompt field
+        json_content = json.dumps({"prompt": user_text})
+        print(f"[debate-monitor] Sending JSON: {len(json_content)} chars", file=sys.stderr)
         dora_node_queue.put({
             "type": "control",
-            "content": json.dumps({"prompt": user_text})
+            "content": json_content
         })
 
         # Echo control prompt in moderator panel
@@ -489,7 +514,9 @@ class DebateMonitorApp(App):
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button actions"""
-        if event.button.id == "reset-button":
+        if event.button.id == "send-button":
+            self._send_prompt()
+        elif event.button.id == "reset-button":
             self._request_bridge_reset()
 
     def action_clear(self) -> None:
@@ -529,6 +556,7 @@ def dora_event_loop(node: Node, stop_signal: threading.Event):
             try:
                 if msg_type == "control":
                     # Send control message to controller
+                    print(f"[debate-monitor] node.send_output 'control': {len(content)} chars", file=sys.stderr)
                     node.send_output("control", pa.array([content]))
                 elif msg_type == "reset_local_state":
                     # Reset local streaming state when reset command is sent
