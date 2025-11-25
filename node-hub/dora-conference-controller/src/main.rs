@@ -3,7 +3,7 @@ use dora_node_api::arrow::array::{StringArray, AsArray};
 use dora_conference_controller::policies::{Policy, UnifiedRatioPolicy};
 use dora_core::config::DataId;
 use eyre::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::env;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +87,8 @@ struct ConferenceController {
     log_level: LogLevel,
     reset_pending: bool,  // Track if reset is in progress - ignore incoming "reset" status
     participant_name_map: HashMap<String, String>, // Maps role -> participant ID (e.g., "judge" -> "tutor")
+    current_question_id: u32,  // Track current conversation question ID
+    round_completed: bool,       // Track if current round is complete
 }
 
 impl ConferenceController {
@@ -127,6 +129,15 @@ impl ConferenceController {
 
         send_log(node, LogLevel::Info, log_level, &format!("🔄 Participant name mapping: {:?}", participant_name_map));
 
+        // Initialize question_id
+        let initial_question_id = env::var("INITIAL_QUESTION_ID")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(1); // Default: start at 1
+
+        send_log(node, LogLevel::Info, log_level,
+            &format!("🏷️ Starting conversation with question_id: {}", initial_question_id));
+
         // Log the ready message after all initialization is complete
         send_log(node, LogLevel::Info, log_level, "🚀 all nodes are ready, starting dataflow");
 
@@ -139,6 +150,8 @@ impl ConferenceController {
             log_level,
             reset_pending: false,
             participant_name_map,
+            current_question_id: initial_question_id,
+            round_completed: false,
         })
     }
 
@@ -270,10 +283,45 @@ impl ConferenceController {
         if is_complete {
             send_log(node, LogLevel::Info, self.log_level,
                 &format!("📥 {} completed ({} words)", participant_id, word_count));
+
+            // Check if this completes a round (all participants have spoken)
+            self.check_round_completion(node);
+
             self.process_next_speaker(node)?;
         }
 
         Ok(())
+    }
+
+    /// Generate new question_id for next conversation round
+    fn generate_new_question_id(&mut self, node: &mut DoraNode) -> u32 {
+        self.current_question_id += 1;
+        send_log(node, LogLevel::Info, self.log_level,
+            &format!("🏷️ New conversation round - question_id: {}", self.current_question_id));
+        self.current_question_id
+    }
+
+    /// Check if current round is completed and prepare for next round
+    fn check_round_completion(&mut self, node: &mut DoraNode) {
+        // Check if all participants have completed in this round
+        if self.policy.all_participants_completed() {
+            if !self.round_completed {
+                send_log(node, LogLevel::Info, self.log_level,
+                    "📋 All participants completed - round finished");
+                self.round_completed = true;
+
+                // Increment cycle counter
+                self.policy.increment_cycle();
+                let current_cycle = self.policy.get_current_cycle();
+                send_log(node, LogLevel::Info, self.log_level,
+                    &format!("🔄 Advanced to cycle: {}", current_cycle));
+
+                // Generate new question_id for NEXT round
+                let next_question_id = self.current_question_id + 1;
+                send_log(node, LogLevel::Info, self.log_level,
+                    &format!("🏷️ Next round will use question_id: {}", next_question_id));
+            }
+        }
     }
 
     fn process_next_speaker(&mut self, node: &mut DoraNode) -> Result<()> {
@@ -302,11 +350,28 @@ impl ConferenceController {
                 }
             };
 
+            // If starting a new round, increment question_id
+            if self.round_completed {
+                self.generate_new_question_id(node);
+                self.round_completed = false;
+                // Reset round tracking for the new round
+                self.policy.reset_round_tracking();
+            }
+
+            // Prepare metadata with current question_id
+            let mut metadata = std::collections::BTreeMap::new();
+            metadata.insert("question_id".to_string(),
+                dora_node_api::Parameter::String(self.current_question_id.to_string()));
+
             send_log(node, LogLevel::Info, self.log_level,
-                &format!("🎯 Next: {} → {}", next_speaker, control_output));
+                &format!("🎯 {}: {} → {} (question_id: {})",
+                    if self.round_completed { "New Round" } else { "Continue Round" },
+                    next_speaker, control_output, self.current_question_id));
+
+            // Send resume WITH controller's question_id
             node.send_output(
                 DataId::from(control_output.to_string()),
-                Default::default(),
+                metadata,
                 StringArray::from(vec!["resume"]),
             )?;
         } else {
@@ -324,8 +389,12 @@ impl ConferenceController {
     }
 
     fn reset(&mut self, node: &mut DoraNode) -> Result<()> {
+        // Generate new question_id for fresh conversation
+        self.generate_new_question_id(node);
+
         send_log(node, LogLevel::Info, self.log_level, "🔄 Resetting controller");
         self.reset_pending = true;
+        self.round_completed = false;
 
         // Send reset to all bridges - use dynamic control outputs
         let control_outputs = vec!["control_judge", "control_llm2", "control_llm1"];
@@ -345,6 +414,7 @@ impl ConferenceController {
         self.participant_inputs.clear();
         self.streaming_accumulators.clear();
         self.policy.reset_counts();
+        self.policy.reset_round_tracking();  // Reset round tracking
         self.state = ControllerState::Waiting;
 
         send_log(node, LogLevel::Info, self.log_level, "✅ Reset complete");

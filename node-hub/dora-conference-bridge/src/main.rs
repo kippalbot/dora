@@ -392,7 +392,8 @@ struct ConferenceBridge {
     log_level: LogLevel,
     arrival_queue: VecDeque<String>,
     current_question_id: u32,
-    increment_question_id: bool,
+    controller_question_id: Option<u32>,  // Track controller's question_id
+    has_controller_input: bool,           // Flag if controller provided question_id
     last_status: String,  // Track last status to avoid duplicate logs
     resume_mode: bool,     // Track if bridge is in resume mode
     error_message_template: Option<String>,  // Template for error messages, {participant} will be replaced
@@ -403,7 +404,7 @@ impl ConferenceBridge {
         streaming_ports: HashSet<String>,
         expected_ports: HashSet<String>,
         log_level: LogLevel,
-        increment_question_id: bool,
+        _increment_question_id: bool,  // Parameter kept for compatibility but ignored
         error_message_template: Option<String>,
     ) -> Self {
         let mut bridge = Self {
@@ -413,7 +414,8 @@ impl ConferenceBridge {
             log_level,
             arrival_queue: VecDeque::new(),
             current_question_id: 0,
-            increment_question_id,
+            controller_question_id: None,
+            has_controller_input: false,
             last_status: String::new(),
             resume_mode: false,  // Start in paused mode
             error_message_template,
@@ -437,6 +439,39 @@ impl ConferenceBridge {
             let is_streaming = self.streaming_ports.contains(&port_name);
             self.inputs.insert(port_name.clone(), InputPort::new(port_name, is_streaming));
         }
+    }
+
+    /// Handle control input from conference controller
+    fn handle_control_input(&mut self, node: &mut DoraNode,
+                           control_text: &str, metadata: &dora_node_api::Metadata) -> Result<()> {
+
+        if control_text == "resume" {
+            // Extract question_id from controller's resume command
+            if let Some(dora_node_api::Parameter::String(qid_str)) = metadata.parameters.get("question_id") {
+                if let Ok(qid) = qid_str.parse::<u32>() {
+                    self.controller_question_id = Some(qid);
+                    self.has_controller_input = true;
+                    self.resume_mode = true;
+
+                    send_log(node, LogLevel::Info, self.log_level,
+                        &format!("▶️ Bridge using controller question_id: {}", qid));
+                } else {
+                    send_log(node, LogLevel::Warn, self.log_level,
+                        &format!("⚠️ Invalid question_id format: {}", qid_str));
+                }
+            } else {
+                send_log(node, LogLevel::Warn, self.log_level,
+                    "⚠️ Resume command without question_id - using default behavior");
+                self.has_controller_input = false;
+            }
+        } else if control_text == "reset" {
+            // Reset doesn't affect question_id - controller will provide new one in next resume
+            self.controller_question_id = None;
+            self.has_controller_input = false;
+            self.resume_mode = false;
+        }
+
+        Ok(())
     }
 
     /// Send status output, but only if it has changed from last time (deduplication)
@@ -674,11 +709,11 @@ impl ConferenceBridge {
             input.reset();
         }
 
-        // Prepare question_id metadata
-        let output_question_id = if self.increment_question_id {
-            self.current_question_id + 1
+        // Use controller's question_id if provided, otherwise generate default
+        let output_question_id = if let Some(controller_qid) = self.controller_question_id {
+            controller_qid  // Use controller's question_id
         } else {
-            self.current_question_id
+            1  // Simple fallback for standalone usage
         };
 
         let mut output_metadata = BTreeMap::new();
@@ -686,6 +721,11 @@ impl ConferenceBridge {
             "question_id".to_string(),
             Parameter::String(output_question_id.to_string()),
         );
+
+        send_log(node, LogLevel::Info, self.log_level,
+            &format!("📤 Forwarding with question_id: {} ({})",
+                output_question_id,
+                if self.has_controller_input { "controller" } else { "fallback" }));
 
         send_log(node, LogLevel::Info, self.log_level,
             &format!("📤 Sending {} chars from {} inputs", concatenated_content.len(), forwarded_count));
@@ -706,8 +746,12 @@ impl ConferenceBridge {
         );
 
         // Step 4: Update state
-        if self.increment_question_id {
-            self.current_question_id = output_question_id;
+        // No longer auto-incrementing question_id - controller manages it
+        if self.has_controller_input {
+            // Update stored question_id to match controller's latest
+            if let Some(controller_qid) = self.controller_question_id {
+                self.current_question_id = controller_qid;
+            }
         }
 
         self.finalize_cycle(node, "forwarded")
@@ -727,9 +771,10 @@ fn main() -> Result<()> {
         .and_then(|s| LogLevel::parse(&s))
         .unwrap_or(LogLevel::Info);
 
+    // INC_QUESTION_ID is no longer used - controller manages question_id
     let increment_question_id = env::var("INC_QUESTION_ID").ok()
         .and_then(|s| s.parse::<bool>().ok())
-        .unwrap_or(false);
+        .unwrap_or(false); // Kept for compatibility but ignored
     let (mut node, mut events) =
         DoraNode::init_from_env().context("Failed to initialize Dora node from environment")?;
 
@@ -816,12 +861,20 @@ fn main() -> Result<()> {
 
                     match command.as_deref() {
                         Some("reset") => {
+                            // Handle controller's reset command
+                            if let Err(e) = bridge.handle_control_input(&mut node, "reset", &metadata) {
+                                send_log(&mut node, LogLevel::Error, log_level,
+                                    &format!("❌ Error handling control input: {}", e));
+                            }
                             bridge.reset_state(&mut node)?;
                             send_log(&mut node, LogLevel::Info, log_level, "🔄 Reset command received");
                         }
                         Some("resume") => {
-                            bridge.resume_mode = true;
-                            send_log(&mut node, LogLevel::Info, log_level, "🚀 Resume command received");
+                            // Handle controller's resume command with question_id
+                            if let Err(e) = bridge.handle_control_input(&mut node, "resume", &metadata) {
+                                send_log(&mut node, LogLevel::Error, log_level,
+                                    &format!("❌ Error handling control input: {}", e));
+                            }
 
                             let any_streaming = bridge.inputs.values().any(|input| input.is_streaming_active());
                             let ready_inputs = bridge.get_ready_inputs();

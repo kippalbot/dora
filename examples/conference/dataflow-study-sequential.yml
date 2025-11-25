@@ -145,7 +145,8 @@ nodes:
     path: ../../target/release/dora-conference-controller
     env:
       # 🎯 Sequential policy: fixed speaking order
-      DORA_POLICY_PATTERN: "[student2 → student1 → tutor]"
+      #DORA_POLICY_PATTERN: "[student2 → student1 → tutor]"
+      DORA_POLICY_PATTERN: "[(tutor, *), (student2, 2), (student1, 1)]"
     inputs:
       # When any participant speaks, controller updates policy
       student1: student1/text

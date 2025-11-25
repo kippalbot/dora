@@ -241,20 +241,19 @@ def get_node_config_from_input_id(input_id):
         if participant_id in input_id.lower():
             return {"name": get_display_name(participant_id), "icon": "🤖", "color": Colors.CYAN if participant_id in ["student1", "llm1"] else Colors.GREEN if participant_id in ["student2", "llm2"] else Colors.MAGENTA}
 
-    elif "controller" in input_id.lower():
+    if "controller" in input_id.lower():
         return {"name": "Controller", "icon": "🎯", "color": Colors.BLUE}
 
     # Fallback to original logic
+    # Extract base node name from input_id (remove suffix like _log, _status, _text)
+    if "_" in input_id:
+        node_name = input_id.rsplit("_", 1)[0]
+    elif "/" in input_id:
+        node_name = input_id.split("/")[0]
     else:
-        # Extract base node name from input_id (remove suffix like _log, _status, _text)
-        if "_" in input_id:
-            node_name = input_id.rsplit("_", 1)[0]
-        elif "/" in input_id:
-            node_name = input_id.split("/")[0]
-        else:
-            node_name = input_id
+        node_name = input_id
 
-        return get_node_config(node_name)
+    return get_node_config(node_name)
 
 
 def get_level_color(level):

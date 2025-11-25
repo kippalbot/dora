@@ -21,6 +21,26 @@ pub trait Policy: Send + Sync {
     /// Returns the name of the participant who should speak next,
     /// or None if no participant is available
     fn determine_next_speaker(&mut self) -> Option<String>;
+
+    /// Check if all participants have completed in the current round
+    ///
+    /// Returns true if all participants have spoken in the current cycle
+    fn all_participants_completed(&self) -> bool;
+
+    /// Reset round completion tracking
+    ///
+    /// Called when starting a new conversation round
+    fn reset_round_tracking(&mut self);
+
+    /// Increment cycle counter
+    ///
+    /// Called when all participants complete a round
+    fn increment_cycle(&mut self);
+
+    /// Get current cycle number
+    ///
+    /// Returns the current cycle based on policy mode
+    fn get_current_cycle(&self) -> usize;
 }
 
 #[cfg(test)]

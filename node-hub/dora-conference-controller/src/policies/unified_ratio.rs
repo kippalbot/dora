@@ -165,6 +165,8 @@ pub struct UnifiedRatioPolicy {
     word_counts: HashMap<String, usize>,
     last_speaker: Option<String>,
     sequential_cycle: usize,
+    ratio_priority_cycle: usize,  // Track cycles for ratio/priority mode
+    round_speakers: Vec<String>,  // Track speakers in current round
 }
 
 impl UnifiedRatioPolicy {
@@ -178,6 +180,8 @@ impl UnifiedRatioPolicy {
             word_counts: HashMap::new(),
             last_speaker: None,
             sequential_cycle: 0,
+            ratio_priority_cycle: 0,
+            round_speakers: Vec::new(),
         }
     }
 
@@ -189,6 +193,7 @@ impl UnifiedRatioPolicy {
         self.word_counts.clear();
         self.last_speaker = None;
         self.sequential_cycle = 0;
+        self.ratio_priority_cycle = 0;
         match &pattern {
             PolicyPattern::RatioPriority { participants, .. } | PolicyPattern::Sequential { participants, .. } => {
                 for participant in participants {
@@ -213,6 +218,7 @@ impl UnifiedRatioPolicy {
         self.position = 0;
         self.last_speaker = None;
         self.sequential_cycle = 0;
+        self.ratio_priority_cycle = 0;
     }
 
     /// Get statistics
@@ -245,7 +251,7 @@ impl UnifiedRatioPolicy {
                 stats.insert("next_speaker".to_string(), serde_json::Value::String(next_speaker.clone()));
             }
         }
-        stats.insert("cycle".to_string(), serde_json::Value::Number(self.sequential_cycle.into()));
+        stats.insert("cycle".to_string(), serde_json::Value::Number(self.get_current_cycle().into()));
         if let Some(last) = &self.last_speaker { stats.insert("current_speaker".to_string(), serde_json::Value::String(last.clone())); }
         serde_json::Value::Object(stats)
     }
@@ -254,6 +260,13 @@ impl UnifiedRatioPolicy {
 impl Policy for UnifiedRatioPolicy {
     fn update_word_count(&mut self, speaker: &str, word_count: usize) {
         if let Some(count) = self.word_counts.get_mut(speaker) { *count += word_count; }
+        // Update last_speaker when we receive input - this is who just spoke
+        self.last_speaker = Some(speaker.to_string());
+
+        // Track speaker in current round (avoid duplicates)
+        if !self.round_speakers.contains(&speaker.to_string()) {
+            self.round_speakers.push(speaker.to_string());
+        }
     }
 
     fn determine_next_speaker(&mut self) -> Option<String> {
@@ -269,6 +282,34 @@ impl Policy for UnifiedRatioPolicy {
             },
         }
     }
+
+    fn all_participants_completed(&self) -> bool {
+        let participants = self.get_participants();
+        // All participants have completed if each has spoken at least once in current round
+        participants.iter().all(|p| self.round_speakers.contains(p))
+    }
+
+    fn increment_cycle(&mut self) {
+        match &self.pattern {
+            PolicyPattern::RatioPriority { .. } => {
+                self.ratio_priority_cycle += 1;
+            },
+            PolicyPattern::Sequential { .. } => {
+                // Sequential cycle is already incremented in determine_sequential_speaker
+            },
+        }
+    }
+
+    fn get_current_cycle(&self) -> usize {
+        match &self.pattern {
+            PolicyPattern::RatioPriority { .. } => self.ratio_priority_cycle,
+            PolicyPattern::Sequential { .. } => self.sequential_cycle,
+        }
+    }
+
+    fn reset_round_tracking(&mut self) {
+        self.round_speakers.clear();
+    }
 }
 
 impl UnifiedRatioPolicy {
@@ -283,7 +324,13 @@ impl UnifiedRatioPolicy {
                 Weight::Ratio(_) => { non_priority_participants.push(participant.clone()); non_priority_weights.push(weights[i].clone()); }
             }
         }
-        if !priority_candidates.is_empty() {
+
+        // Cold start detection: if no one has spoken yet, start with first non-priority participant
+        let total_words: usize = self.word_counts.values().sum();
+        let is_cold_start = total_words == 0 && self.last_speaker.is_none();
+
+        // On cold start, skip priority participants - let a non-priority participant speak first
+        if !priority_candidates.is_empty() && !is_cold_start {
             let (_idx, speaker) = &priority_candidates[self.position % priority_candidates.len()];
             self.position = (self.position + 1) % priority_candidates.len();
             self.last_speaker = Some(speaker.clone());

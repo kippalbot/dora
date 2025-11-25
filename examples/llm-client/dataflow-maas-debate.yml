@@ -60,7 +60,7 @@ nodes:
     env:
       STREAMING_PORTS: "llm1,llm2" # Both LLMs send streaming responses
       COLD_START: "false" # Wait for both inputs
-      INC_QUESTION_ID: "true" # Don't increment question_id
+      # INC_QUESTION_ID is no longer needed - controller manages question_id
       LOG_LEVEL: INFO
       DORA_NODE_NAME: Bridge LLM1+LLM2->Judge
 
@@ -79,7 +79,7 @@ nodes:
     env:
       STREAMING_PORTS: "llm1,judge" # LLM1 and judge send streaming responses
       COLD_START: "false" # Forward judge's initial prompt immediately
-      INC_QUESTION_ID: "false" # Increment question_id for next round
+      # INC_QUESTION_ID is no longer needed - controller manages question_id
       LOG_LEVEL: INFO
       DORA_NODE_NAME: Bridge LLM1+Judge->LLM2
 
@@ -98,7 +98,7 @@ nodes:
     env:
       STREAMING_PORTS: "llm2,judge" # LLM2 and judge send streaming responses
       COLD_START: "true" # Forward judge's initial prompt immediately
-      INC_QUESTION_ID: "false" # Increment question_id for next round
+      # INC_QUESTION_ID is no longer needed - controller manages question_id
       LOG_LEVEL: INFO
       DORA_NODE_NAME: Bridge LLM2+Judge->LLM1
 
