@@ -50,6 +50,34 @@ def parse_int_env(name: str, default: int) -> int:
         return default
 
 
+def remove_speaker_id(text, node=None, log_level="INFO"):
+    """Remove speaker names enclosed in square brackets like [Student1], [Tutor], [孙老师], etc.
+
+    Args:
+        text: Input text that may contain speaker IDs
+        node: Dora node for logging (optional)
+        log_level: Log level for filtering
+
+    Returns:
+        Text with speaker IDs removed
+    """
+    # Pattern: [any text] ONLY at the beginning of the string
+    # Examples: [Student1], [Tutor], [孙老师], [亦菲], etc.
+    # ^: match at start of string
+    # \[: literal opening bracket
+    # [^\]]+: one or more non-bracket characters
+    # \]: literal closing bracket
+    # \s*: optional whitespace after bracket
+    pattern = r'^\[[^\]]+\]\s*'
+
+    cleaned_text = re.sub(pattern, '', text)
+
+    if node and cleaned_text != text:
+        send_log(node, "DEBUG", f"Removed speaker ID: '{text}' → '{cleaned_text}'", log_level)
+
+    return cleaned_text
+
+
 def should_skip_segment(text, punctuation_marks="。！？.!?", node=None, log_level="INFO"):
     """Check if segment should be skipped (only punctuation or numbers)
 
@@ -260,6 +288,7 @@ def main():
     min_segment_length = max(1, parse_int_env("MIN_SEGMENT_LENGTH", 5))
     max_segment_length = parse_int_env("MAX_SEGMENT_LENGTH", 100)
     enable_backpressure = os.getenv("ENABLE_BACKPRESSURE", "true").lower() not in {"0", "false", "no"}
+    remove_speaker_id_enabled = os.getenv("REMOVE_SPEAKER_ID", "false").lower() in {"1", "true", "yes"}
 
     fallback_split_marks = {"，", ",", "、", "；", ";", "：", ":"}
 
@@ -273,13 +302,14 @@ def main():
         node,
         "INFO",
         (
-            "Configured segmentation — mode: %s, min: %d, max: %s, punctuation: '%s', backpressure: %s"
+            "Configured segmentation — mode: %s, min: %d, max: %s, punctuation: '%s', backpressure: %s, remove_speaker_id: %s"
             % (
                 segment_mode,
                 min_segment_length,
                 "∞" if max_segment_length <= 0 else str(max_segment_length),
                 punctuation_marks,
                 str(enable_backpressure),
+                str(remove_speaker_id_enabled),
             )
         ),
         log_level,
@@ -307,7 +337,14 @@ def main():
                 text = event["value"][0].as_py()
                 metadata = event.get("metadata", {})
 
-                send_log(node, "DEBUG", f"Received from LLM: '{text}' (len={len(text)})", log_level)
+                send_log(node, "INFO", f"🔵 RAW LLM INPUT: '{text}' (len={len(text)})", log_level)
+
+                # Remove speaker ID if enabled
+                if remove_speaker_id_enabled:
+                    original_text = text
+                    text = remove_speaker_id(text, node, log_level)
+                    if original_text != text:
+                        send_log(node, "INFO", f"🔵 AFTER SPEAKER REMOVAL: '{text}' (len={len(text)})", log_level)
 
                 # Extract question_id from metadata (passed from ASR via LLM)
                 question_id = metadata.get("question_id", None)
@@ -323,6 +360,8 @@ def main():
                     send_log(node, "DEBUG", f"Combined buffered '{text_buffer}' + new '{text}' = '{combined_text}'", log_level)
 
                 # Segment the combined text by punctuation
+                send_log(node, "INFO", f"🟡 COMBINED TEXT (buffer + new): '{combined_text}' (len={len(combined_text)})", log_level)
+
                 complete_segments, incomplete_text, keep_incomplete = segment_by_punctuation(
                     combined_text,
                     punctuation_marks,
@@ -332,6 +371,10 @@ def main():
                     node,
                     log_level,
                 )
+
+                send_log(node, "INFO", f"🟢 SEGMENTATION OUTPUT: {len(complete_segments)} segments, incomplete: '{incomplete_text}' (len={len(incomplete_text)})", log_level)
+                for i, seg in enumerate(complete_segments):
+                    send_log(node, "INFO", f"🟢   Segment {i}: '{seg}' (len={len(seg)})", log_level)
 
                 # Handle standalone punctuation in buffer
                 # If incomplete_text is ONLY punctuation/whitespace, don't buffer it
@@ -423,6 +466,14 @@ def main():
 
             elif event["id"] == "reset":
                 # Reset signal - clear only segments from OLD questions (different question_id)
+                # Ignore "resume" commands - only process actual reset commands
+                command = event["value"][0].as_py() if event.get("value") else None
+
+                # Ignore "resume" commands - these are for bridges, not segmenter
+                if command == "resume":
+                    send_log(node, "DEBUG", f"Ignoring 'resume' command on reset input", log_level)
+                    continue
+
                 metadata = event.get("metadata", {})
                 incoming_question_id = metadata.get("question_id", None)
 
@@ -457,10 +508,12 @@ def main():
                     segment_queue = new_queue
                     segment_counter = len(segment_queue)
 
-                    # Clear text buffer on new question
-                    # (buffer content is from previous question and should not be combined with new question)
-                    buffer_was_cleared = len(text_buffer) > 0
-                    text_buffer = ""
+                    # Clear text buffer ONLY when question_id changes
+                    # Keep buffer for same question_id to avoid losing incomplete text
+                    buffer_was_cleared = False
+                    if current_question_id != incoming_question_id:
+                        buffer_was_cleared = len(text_buffer) > 0
+                        text_buffer = ""
 
                     # Update current_question_id to the new question
                     current_question_id = incoming_question_id

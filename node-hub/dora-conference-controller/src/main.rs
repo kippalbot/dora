@@ -1,5 +1,6 @@
 use dora_node_api::{self, DoraNode, Event, Parameter};
 use dora_node_api::arrow::array::{StringArray, AsArray};
+use dora_node_api::arrow::datatypes::Float64Type;
 use dora_conference_controller::policies::{Policy, UnifiedRatioPolicy};
 use dora_core::config::DataId;
 use eyre::Result;
@@ -89,6 +90,11 @@ struct ConferenceController {
     participant_name_map: HashMap<String, String>, // Maps role -> participant ID (e.g., "judge" -> "tutor")
     current_question_id: u32,  // Track current conversation question ID
     round_completed: bool,       // Track if current round is complete
+    // 🎵 Audio buffer backpressure control
+    audio_buffer_paused: bool,  // Whether audio playback is paused due to buffer overflow
+    audio_buffer_threshold: f64,  // Pause when buffer > this percentage
+    audio_buffer_resume_threshold: f64,  // Resume when buffer < this percentage
+    pending_tutor_activation: Option<String>,  // Track deferred tutor turn (control_output name)
 }
 
 impl ConferenceController {
@@ -141,6 +147,21 @@ impl ConferenceController {
         // Log the ready message after all initialization is complete
         send_log(node, LogLevel::Info, log_level, "🚀 all nodes are ready, starting dataflow");
 
+        // 🎵 Load audio buffer thresholds from environment
+        let audio_buffer_threshold = env::var("AUDIO_BUFFER_THRESHOLD")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(80.0); // Default: pause at 80% buffer
+
+        let audio_buffer_resume_threshold = env::var("AUDIO_BUFFER_RESUME_THRESHOLD")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(30.0); // Default: resume at 30% buffer
+
+        send_log(node, LogLevel::Info, log_level,
+            &format!("🎵 Audio buffer thresholds: pause > {:.1}%, resume < {:.1}%",
+                audio_buffer_threshold, audio_buffer_resume_threshold));
+
         Ok(Self {
             state: ControllerState::Waiting,
             policy,
@@ -152,6 +173,10 @@ impl ConferenceController {
             participant_name_map,
             current_question_id: initial_question_id,
             round_completed: false,
+            audio_buffer_paused: false,
+            audio_buffer_threshold,
+            audio_buffer_resume_threshold,
+            pending_tutor_activation: None,
         })
     }
 
@@ -363,6 +388,29 @@ impl ConferenceController {
             metadata.insert("question_id".to_string(),
                 dora_node_api::Parameter::String(self.current_question_id.to_string()));
 
+            // 🎵 Check audio buffer backpressure for tutor
+            let is_tutor = control_output == "control_judge" || next_speaker.contains("tutor") || next_speaker.contains("judge");
+
+            if is_tutor && self.should_pause_tutor_output() {
+                // Audio buffer is full - defer tutor activation for retry when buffer drains
+                self.pending_tutor_activation = Some(control_output.to_string());
+
+                send_log(node, LogLevel::Info, self.log_level,
+                    &format!("🎵 🛑 DEFERRED BRIDGE {}: Audio buffer backpressure (threshold: {:.1}%), will retry when buffer < {:.1}% (question_id: {})",
+                        control_output, self.audio_buffer_threshold, self.audio_buffer_resume_threshold, self.current_question_id));
+
+                // Don't send resume yet - wait for buffer to drain
+                return Ok(());
+            }
+
+            // Clear pending activation when successfully sending resume
+            if is_tutor {
+                self.pending_tutor_activation = None;
+                send_log(node, LogLevel::Info, self.log_level,
+                    &format!("🎵 ✅ RESUME BRIDGE {}: Audio buffer safe (question_id: {})",
+                        control_output, self.current_question_id));
+            }
+
             send_log(node, LogLevel::Info, self.log_level,
                 &format!("🎯 {}: {} → {} (question_id: {})",
                     if self.round_completed { "New Round" } else { "Continue Round" },
@@ -416,6 +464,7 @@ impl ConferenceController {
         self.policy.reset_counts();
         self.policy.reset_round_tracking();  // Reset round tracking
         self.state = ControllerState::Waiting;
+        self.pending_tutor_activation = None;  // Clear any pending activation
 
         send_log(node, LogLevel::Info, self.log_level, "✅ Reset complete");
         Ok(())
@@ -433,6 +482,67 @@ impl ConferenceController {
         }
 
         stats
+    }
+
+    /// Handle audio buffer status for backpressure control
+    fn handle_audio_buffer_status(&mut self, buffer_percentage: f64, node: &mut DoraNode, log_level: LogLevel) -> Result<()> {
+        let was_paused = self.audio_buffer_paused;
+
+        // Check if buffer exceeded threshold (need to pause)
+        if buffer_percentage > self.audio_buffer_threshold && !self.audio_buffer_paused {
+            self.audio_buffer_paused = true;
+            send_log(node, LogLevel::Info, log_level,
+                &format!("🎵 Audio buffer {:.1}% > {:.1}%: PAUSING tutor output to prevent overflow",
+                    buffer_percentage, self.audio_buffer_threshold));
+        }
+        // Check if buffer dropped below resume threshold (can resume)
+        else if buffer_percentage < self.audio_buffer_resume_threshold && self.audio_buffer_paused {
+            self.audio_buffer_paused = false;
+            send_log(node, LogLevel::Info, log_level,
+                &format!("🎵 Audio buffer {:.1}% < {:.1}%: RESUMING tutor output",
+                    buffer_percentage, self.audio_buffer_resume_threshold));
+
+            // ✅ Retry pending tutor activation that was deferred due to backpressure
+            if let Some(control_output) = &self.pending_tutor_activation {
+                let control_output = control_output.clone();
+                self.pending_tutor_activation = None;  // Clear before retry
+
+                send_log(node, LogLevel::Info, log_level,
+                    &format!("🎵 ✅ RETRY DEFERRED BRIDGE {}: Sending resume (buffer: {:.1}%, question_id: {})",
+                        control_output, buffer_percentage, self.current_question_id));
+
+                // Prepare metadata with current question_id
+                let mut metadata = std::collections::BTreeMap::new();
+                metadata.insert("question_id".to_string(),
+                    dora_node_api::Parameter::String(self.current_question_id.to_string()));
+
+                // Send resume signal
+                if let Err(e) = node.send_output(
+                    DataId::from(control_output.clone()),
+                    metadata,
+                    StringArray::from(vec!["resume"]),
+                ) {
+                    send_log(node, LogLevel::Error, log_level,
+                        &format!("❌ Failed to send deferred resume to {}: {}", control_output, e));
+                }
+            }
+        }
+
+        // Log status changes for debugging
+        if was_paused != self.audio_buffer_paused {
+            send_log(node, LogLevel::Info, log_level,
+                &format!("🎵 Audio backpressure status changed: {} -> {} (buffer: {:.1}%)",
+                    if was_paused { "PAUSED" } else { "ACTIVE" },
+                    if self.audio_buffer_paused { "PAUSED" } else { "ACTIVE" },
+                    buffer_percentage));
+        }
+
+        Ok(())
+    }
+
+    /// Check if audio buffer backpressure is preventing tutor output
+    fn should_pause_tutor_output(&self) -> bool {
+        self.audio_buffer_paused
     }
 }
 
@@ -456,6 +566,7 @@ fn main() -> Result<()> {
         .unwrap_or(LogLevel::Info);
 
     send_log(&mut node, LogLevel::Info, log_level, &format!("🚀 Controller started with pattern: {}", pattern));
+    send_log(&mut node, LogLevel::Info, log_level, "🎵 Audio buffer backpressure control enabled - expecting buffer_status input");
     let mut controller = ConferenceController::new(pattern, &mut node, log_level)?;
 
     let mut events = dora_node_api::futures::executor::block_on_stream(events);
@@ -469,6 +580,9 @@ fn main() -> Result<()> {
                 data,
                 ..
             }) => {
+                // Debug: Log all incoming event IDs
+                send_log(&mut node, LogLevel::Debug, log_level, &format!("📨 Received event from input: '{}'", id.as_str()));
+
                 if id.as_str() == "control" {
                     // Extract text from control input
                     let control_array = data.as_string::<i32>();
@@ -562,6 +676,37 @@ fn main() -> Result<()> {
                             }
                         }
                     }
+                } else if id.as_str() == "buffer_status" {
+                    // Handle audio buffer status for backpressure control
+                    send_log(&mut node, LogLevel::Info, log_level, "🎵 Received buffer_status input from audio-player");
+
+                    // Audio player sends buffer percentage as a float array with metadata
+                    let mut buffer_percentage = 0.0;
+
+                    // Try to get buffer percentage from metadata first (more reliable)
+                    if let Some(buffer_val) = metadata.parameters.get("buffer_percentage") {
+                        send_log(&mut node, LogLevel::Debug, log_level, &format!("🎵 Found buffer_percentage in metadata: {:?}", buffer_val));
+                        if let dora_node_api::Parameter::Float(val) = buffer_val {
+                            buffer_percentage = *val;
+                        }
+                    }
+
+                    // If metadata doesn't have it, try to parse from the data array
+                    if buffer_percentage == 0.0 {
+                        // The audio player sends a float array: pa.array([buffer_percentage])
+                        send_log(&mut node, LogLevel::Debug, log_level, "🎵 Trying to parse buffer from data array");
+                        if let Some(buffer_array) = data.as_primitive_opt::<Float64Type>() {
+                            if buffer_array.len() > 0 {
+                                buffer_percentage = buffer_array.value(0) as f64;
+                                send_log(&mut node, LogLevel::Debug, log_level, &format!("🎵 Parsed buffer from array: {}", buffer_percentage));
+                            }
+                        } else {
+                            send_log(&mut node, LogLevel::Warn, log_level, "🎵 Failed to parse float array from audio_buffer_status");
+                        }
+                    }
+
+                    send_log(&mut node, LogLevel::Info, log_level, &format!("🎵 Audio buffer status: {:.1}%", buffer_percentage));
+                    controller.handle_audio_buffer_status(buffer_percentage, &mut node, log_level)?;
                 } else {
                     // Participant input - extract text
                     let text_array = data.as_string::<i32>();

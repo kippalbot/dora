@@ -201,6 +201,9 @@ NODE_CONFIG_ENTRIES = []  # Will be populated dynamically
 def format_timestamp(ts=None):
     """Format timestamp for display"""
     if ts:
+        # Handle both seconds and milliseconds (controller sends milliseconds)
+        if ts > 1e10:  # If timestamp is in milliseconds (> year 2286 in seconds)
+            ts = ts / 1000.0
         return datetime.fromtimestamp(ts).strftime("%H:%M:%S.%f")[:-3]
     return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 

@@ -59,6 +59,13 @@ try:
         sys.path.insert(0, str(local_moyoyo_path))
         logger.debug(f"Using local moyoyo_tts from: {local_moyoyo_path}")
 
+    # CRITICAL: Add moyoyo_tts subdirectory to sys.path so that "import text.chinese2" works
+    # The text module imports use absolute paths like "text.chinese2"
+    moyoyo_tts_dir = local_moyoyo_path / "moyoyo_tts"
+    if moyoyo_tts_dir.exists() and str(moyoyo_tts_dir) not in sys.path:
+        sys.path.insert(0, str(moyoyo_tts_dir))
+        logger.debug(f"Added moyoyo_tts subdirectory to path: {moyoyo_tts_dir}")
+
     # Ensure LangSegment compatibility across versions
     _ensure_langsegment_compatibility()
 
