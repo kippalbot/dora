@@ -594,7 +594,7 @@ impl ConferenceBridge {
     fn forward_bundle(&mut self, node: &mut DoraNode) -> Result<()> {
         send_log(
             node,
-            LogLevel::Info,
+            LogLevel::Debug,
             self.log_level,
             &format!("🚀 FORWARDING BUNDLE - queue: {:?}, {} ready inputs", self.arrival_queue, self.get_ready_inputs().len()),
         );
@@ -722,12 +722,12 @@ impl ConferenceBridge {
             Parameter::String(output_question_id.to_string()),
         );
 
-        send_log(node, LogLevel::Info, self.log_level,
+        send_log(node, LogLevel::Debug, self.log_level,
             &format!("📤 Forwarding with question_id: {} ({})",
                 output_question_id,
                 if self.has_controller_input { "controller" } else { "fallback" }));
 
-        send_log(node, LogLevel::Info, self.log_level,
+        send_log(node, LogLevel::Debug, self.log_level,
             &format!("📤 Sending {} chars from {} inputs", concatenated_content.len(), forwarded_count));
 
         // Step 3: Send concatenated output with metadata
@@ -740,7 +740,7 @@ impl ConferenceBridge {
 
         send_log(
             node,
-            LogLevel::Info,
+            LogLevel::Debug,
             self.log_level,
             &format!("✅ SENT: Successfully sent {} chars to text output", concatenated_content.len()),
         );
@@ -886,7 +886,7 @@ fn main() -> Result<()> {
                                 match bridge.forward_bundle(&mut node) {
                                     Ok(_) => {
                                         bridge.resume_mode = false;
-                                        send_log(&mut node, LogLevel::Info, log_level, "✅ Forward complete");
+                                        send_log(&mut node, LogLevel::Debug, log_level, "✅ Forward complete");
                                     }
                                     Err(e) => {
                                         send_log(&mut node, LogLevel::Error, log_level,
@@ -978,7 +978,7 @@ fn main() -> Result<()> {
                         match bridge.forward_bundle(&mut node) {
                             Ok(_) => {
                                 bridge.resume_mode = false;
-                                send_log(&mut node, LogLevel::Info, log_level, "✅ Forward complete");
+                                send_log(&mut node, LogLevel::Debug, log_level, "✅ Forward complete");
                             }
                             Err(e) => {
                                 send_log(&mut node, LogLevel::Error, log_level,

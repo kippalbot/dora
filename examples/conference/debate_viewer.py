@@ -5,6 +5,8 @@ Tracks LLM1, LLM2, Judge, and Bridge nodes
 """
 import json
 import os
+import sys
+import argparse
 from datetime import datetime
 import pyarrow as pa
 from dora import Node
@@ -25,6 +27,11 @@ class Colors:
 
 
 STREAM_BUFFERS = {}
+
+# Log level configuration
+LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+# Will be set by parse_args() or default to env variable
+VIEWER_LOG_THRESHOLD = 20  # Default to INFO
 
 def get_participant_display_names():
     """Dynamically detect participant names from environment or use defaults"""
@@ -281,6 +288,11 @@ def print_log(log_data, input_id=None):
         level = data.get("level", "INFO")
         message = data.get("message", "")
         timestamp = data.get("timestamp", None)
+
+        # Filter by log level threshold
+        log_level_value = LOG_LEVELS.get(level, 20)
+        if log_level_value < VIEWER_LOG_THRESHOLD:
+            return
 
         # Filter out overly verbose DEBUG logs
         if level == "DEBUG":
@@ -571,5 +583,32 @@ def main():
             break
 
 
-if __name__ == "__main__":
+def set_log_level_and_run():
+    """Parse arguments, set log level, and run main."""
+    global VIEWER_LOG_THRESHOLD
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Debate/Study Session Viewer - Monitor dataflow logs and events",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        help="Set the minimum log level to display (default: INFO or from LOG_LEVEL env var)"
+    )
+
+    args = parser.parse_args()
+
+    # Set global log threshold based on argument
+    VIEWER_LOG_THRESHOLD = LOG_LEVELS.get(args.log_level, 20)
+
+    print(f"{Colors.DIM}[Viewer] Log level set to: {args.log_level} (threshold: {VIEWER_LOG_THRESHOLD}){Colors.ENDC}")
+
     main()
+
+
+if __name__ == "__main__":
+    set_log_level_and_run()

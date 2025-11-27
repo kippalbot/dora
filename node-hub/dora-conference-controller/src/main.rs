@@ -678,7 +678,7 @@ fn main() -> Result<()> {
                     }
                 } else if id.as_str() == "buffer_status" {
                     // Handle audio buffer status for backpressure control
-                    send_log(&mut node, LogLevel::Info, log_level, "🎵 Received buffer_status input from audio-player");
+                    send_log(&mut node, LogLevel::Debug, log_level, "🎵 Received buffer_status input from audio-player");
 
                     // Audio player sends buffer percentage as a float array with metadata
                     let mut buffer_percentage = 0.0;
@@ -705,7 +705,7 @@ fn main() -> Result<()> {
                         }
                     }
 
-                    send_log(&mut node, LogLevel::Info, log_level, &format!("🎵 Audio buffer status: {:.1}%", buffer_percentage));
+                    send_log(&mut node, LogLevel::Debug, log_level, &format!("🎵 Audio buffer status: {:.1}%", buffer_percentage));
                     controller.handle_audio_buffer_status(buffer_percentage, &mut node, log_level)?;
                 } else {
                     // Participant input - extract text

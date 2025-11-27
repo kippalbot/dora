@@ -271,7 +271,7 @@ def main():
                 # DEBUG: Log what we received
                 send_log(node, "DEBUG", f"RECEIVED text: '{text}' (len={len(text)}, repr={repr(text)}, type={type(text).__name__})", config.LOG_LEVEL)
 
-                segment_index = metadata.get("segment_index", -1)
+                segment_index = int(metadata.get("segment_index", -1))
 
                 # Skip if text is only punctuation or whitespace
                 text_stripped = text.strip()
@@ -285,17 +285,17 @@ def main():
                     )
                     continue
 
-                send_log(node, "INFO", f"Processing segment {segment_index + 1} (len={len(text)})", config.LOG_LEVEL)
-                
+                send_log(node, "DEBUG", f"Processing segment {segment_index + 1} (len={len(text)})", config.LOG_LEVEL)
+
                 # Load models if not loaded
                 if not model_loaded:
-                    send_log(node, "INFO", "Loading models for the first time...", config.LOG_LEVEL)
+                    send_log(node, "DEBUG", "Loading models for the first time...", config.LOG_LEVEL)
                     # Validate models directory early so failures are visible
                     _validate_models_path(lambda lvl, msg: send_log(node, lvl, msg, config.LOG_LEVEL))
 
                     try:
                         # Always use PRIMESPEECH_MODEL_DIR
-                        send_log(node, "INFO", "Using PRIMESPEECH_MODEL_DIR for models...", config.LOG_LEVEL)
+                        send_log(node, "DEBUG", "Using PRIMESPEECH_MODEL_DIR for models...", config.LOG_LEVEL)
                         # Initialize TTS engine
                         # Convert voice name to lowercase and remove spaces for MoYoYo compatibility
                         moyoyo_voice = voice_name.lower().replace(" ", "")
@@ -318,9 +318,9 @@ def main():
                             send_log(node, "ERROR", "TTS engine initialization failed!", config.LOG_LEVEL)
                             send_log(node, "ERROR", "TTS wrapper exists but internal TTS is None", config.LOG_LEVEL)
                         else:
-                            send_log(node, "INFO", "TTS engine initialized successfully", config.LOG_LEVEL)
+                            send_log(node, "DEBUG", "TTS engine initialized successfully", config.LOG_LEVEL)
                         model_loaded = True
-                        send_log(node, "INFO", "TTS engine ready", config.LOG_LEVEL)
+                        send_log(node, "DEBUG", "TTS engine ready", config.LOG_LEVEL)
                     except Exception as init_err:
                         send_log(node, "ERROR", f"TTS init error: {init_err}", config.LOG_LEVEL)
                         send_log(node, "ERROR", f"Traceback: {traceback.format_exc()}", config.LOG_LEVEL)
@@ -359,7 +359,7 @@ def main():
                     
                     if hasattr(tts_engine, 'enable_streaming') and tts_engine.enable_streaming:
                         # Streaming synthesis
-                        send_log(node, "INFO", "Using streaming synthesis...", config.LOG_LEVEL)
+                        send_log(node, "DEBUG", "Using streaming synthesis...", config.LOG_LEVEL)
                         fragment_num = 0
                         total_audio_duration = 0
                         
@@ -420,7 +420,7 @@ def main():
                         total_syntheses += 1
                         total_duration += audio_duration
                         
-                        send_log(node, "INFO", f"Synthesized: {audio_duration:.2f}s audio in {synthesis_time:.3f}s", config.LOG_LEVEL)
+                        send_log(node, "DEBUG", f"Synthesized: {audio_duration:.2f}s audio in {synthesis_time:.3f}s", config.LOG_LEVEL)
                         
                         # Send audio output with segment counting metadata
                         node.send_output(
@@ -442,7 +442,7 @@ def main():
                         pa.array(["completed"]),
                         metadata={}
                     )
-                    send_log(node, "INFO", f"Sent segment_complete for segment {segment_index + 1}", config.LOG_LEVEL)
+                    send_log(node, "DEBUG", f"Sent segment_complete for segment {segment_index + 1}", config.LOG_LEVEL)
                     
                 except Exception as e:
                     error_details = traceback.format_exc()

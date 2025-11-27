@@ -1,0 +1,482 @@
+# Conference Study Session with Multi-Participant Audio
+#
+# Enhances dataflow-study-sequential.yml with audio playback for ALL 3 participants
+# Audio pipeline: LLMs → multi-text-segmenter → 3 TTS nodes → multi-audio-player
+#
+# Key features:
+# - FIFO session queue in text segmenter
+# - 3 different voices (Daniu, Doubao, Luo Xiang)
+# - Audio concatenation in arrival order
+# - Complete backpressure control
+# - Speaker ID removal for all participants
+
+nodes:
+  # ============ Study Participants (MaaS) ============
+
+  - id: student1
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-student1/text
+      control: conference-controller/llm_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: study_config_maas_student1.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  - id: student2
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-student2/text
+      control: conference-controller/llm_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: study_config_maas_student2.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  - id: tutor
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-tutor/text
+      control: conference-controller/judge_prompt
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: study_config_maas_tutor.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  # ============ Multi-Participant Audio Pipeline ============
+
+  # Multi-Input Text Segmenter with FIFO Session Queue
+  - id: multi-text-segmenter
+    build: pip install -e ../../node-hub/dora-text-segmenter
+    path: dora-text-segmenter
+    inputs:
+      # 3 LLM inputs (FIFO session queue)
+      student1:
+        source: student1/text
+        queue_size: 1000
+      student2:
+        source: student2/text
+        queue_size: 1000
+      tutor:
+        source: tutor/text
+        queue_size: 1000
+
+      # 3 TTS backpressure signals
+      tts_complete_student1: primespeech-student1/segment_complete
+      tts_complete_student2: primespeech-student2/segment_complete
+      tts_complete_tutor: primespeech-tutor/segment_complete
+
+      # Control signals (reset and cancel)
+      control: conference-controller/llm_control
+      reset: conference-controller/control_judge
+
+    outputs:
+      - text_segment_student1
+      - text_segment_student2
+      - text_segment_tutor
+      - status
+      - metrics
+      - log
+
+    env:
+      SEGMENT_MODE: "sentence"
+      MIN_SEGMENT_LENGTH: "5"
+      MAX_SEGMENT_LENGTH: "15"
+      PUNCTUATION_MARKS: '。！？.!?，,、；：""''（）【】《》'
+      REMOVE_SPEAKER_ID: "true" # Remove [Name] for all 3 participants
+      LOG_LEVEL: "DEBUG"
+
+  # PrimeSpeech TTS for Student1 (Daniu - Male, Rational Voice)
+  - id: primespeech-student1
+    build: pip install -e ../../node-hub/dora-primespeech
+    path: dora-primespeech
+    inputs:
+      text: multi-text-segmenter/text_segment_student1
+    outputs:
+      - audio
+      - status
+      - segment_complete
+      - log
+    env:
+      # Allow transformers to load models
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+
+      # Voice selection - Daniu for student1
+      VOICE_NAME: "Zhao Daniu" # Male, rational voice
+      PRIMESPEECH_MODEL_DIR: $HOME/.dora/models/primespeech
+
+      # Language settings
+      TEXT_LANG: zh
+      PROMPT_LANG: zh
+
+      # Inference parameters
+      TOP_K: 5
+      TOP_P: 1.0
+      TEMPERATURE: 1.0
+      SPEED_FACTOR: 1.0
+
+      # Performance
+      USE_GPU: false
+      NUM_THREADS: 4
+
+      RETURN_FRAGMENT: "false"
+      LOG_LEVEL: DEBUG
+
+      # Internal text segmentation
+      ENABLE_INTERNAL_SEGMENTATION: "true"
+      TTS_MAX_SEGMENT_LENGTH: "100"
+      TTS_MIN_SEGMENT_LENGTH: "20"
+
+  # PrimeSpeech TTS for Student2 (Doubao - Female, Emotional Voice)
+  - id: primespeech-student2
+    build: pip install -e ../../node-hub/dora-primespeech
+    path: dora-primespeech
+    inputs:
+      text: multi-text-segmenter/text_segment_student2
+    outputs:
+      - audio
+      - status
+      - segment_complete
+      - log
+    env:
+      # Allow transformers to load models
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+
+      # Voice selection - Doubao for student2
+      VOICE_NAME: "Doubao" # Female, emotional voice
+      PRIMESPEECH_MODEL_DIR: $HOME/.dora/models/primespeech
+
+      # Language settings
+      TEXT_LANG: zh
+      PROMPT_LANG: zh
+
+      # Inference parameters
+      TOP_K: 5
+      TOP_P: 1.0
+      TEMPERATURE: 1.0
+      SPEED_FACTOR: 1.0
+
+      # Performance
+      USE_GPU: false
+      NUM_THREADS: 4
+
+      RETURN_FRAGMENT: "false"
+      LOG_LEVEL: DEBUG
+
+      # Internal text segmentation
+      ENABLE_INTERNAL_SEGMENTATION: "true"
+      TTS_MAX_SEGMENT_LENGTH: "100"
+      TTS_MIN_SEGMENT_LENGTH: "20"
+
+  # PrimeSpeech TTS for Tutor (Luo Xiang - Male, Authoritative Voice)
+  - id: primespeech-tutor
+    build: pip install -e ../../node-hub/dora-primespeech
+    path: dora-primespeech
+    inputs:
+      text: multi-text-segmenter/text_segment_tutor
+    outputs:
+      - audio
+      - status
+      - segment_complete
+      - log
+    env:
+      # Allow transformers to load models
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+
+      # Voice selection - Luo Xiang for tutor
+      VOICE_NAME: "Luo Xiang" # Male, authoritative voice
+      PRIMESPEECH_MODEL_DIR: $HOME/.dora/models/primespeech
+
+      # Language settings
+      TEXT_LANG: zh
+      PROMPT_LANG: zh
+
+      # Inference parameters
+      TOP_K: 5
+      TOP_P: 1.0
+      TEMPERATURE: 1.0
+      SPEED_FACTOR: 1.0
+
+      # Performance
+      USE_GPU: false
+      NUM_THREADS: 4
+
+      RETURN_FRAGMENT: "false"
+      LOG_LEVEL: DEBUG
+
+      # Internal text segmentation
+      ENABLE_INTERNAL_SEGMENTATION: "true"
+      TTS_MAX_SEGMENT_LENGTH: "100"
+      TTS_MIN_SEGMENT_LENGTH: "20"
+
+  # Multi-Input Audio Player (Concatenates 3 audio streams)
+  - id: audio-player
+    path: dynamic
+    inputs:
+      # 3 audio inputs from 3 TTS nodes
+      audio_student1:
+        source: primespeech-student1/audio
+        queue_size: 1000
+      audio_student2:
+        source: primespeech-student2/audio
+        queue_size: 1000
+      audio_tutor:
+        source: primespeech-tutor/audio
+        queue_size: 1000
+    outputs:
+      - buffer_status # Backpressure signal to controller
+      - status
+
+  # ============ 3 Conference Bridges (Switch) ============
+
+  # Bridge 1: Student2 + Tutor → Student1
+  - id: bridge-to-student1
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student2:
+        source: student2/text
+        queue_size: 1000
+      tutor:
+        source: tutor/text
+        queue_size: 1000
+      control:
+        source: conference-controller/control_llm1
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  # Bridge 2: Student1 + Tutor → Student2
+  - id: bridge-to-student2
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student1:
+        source: student1/text
+        queue_size: 1000
+      tutor:
+        source: tutor/text
+        queue_size: 1000
+      control:
+        source: conference-controller/control_llm2
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  # Bridge 3: Student1 + Student2 → Tutor
+  - id: bridge-to-tutor
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student1:
+        source: student1/text
+        queue_size: 1000
+      student2:
+        source: student2/text
+        queue_size: 1000
+      control:
+        source: conference-controller/control_judge
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  # ============ Conference Controller (Brain) with Audio Backpressure ============
+
+  - id: conference-controller
+    path: ../../target/release/dora-conference-controller
+    env:
+      # Sequential policy with priority: tutor can speak anytime, student2 priority 2, student1 priority 1
+      DORA_POLICY_PATTERN: "[(tutor, *), (student2, 2), (student1, 1)]"
+      INITIAL_QUESTION_ID: 1
+
+      # Audio buffer backpressure control
+      AUDIO_BUFFER_THRESHOLD: 30 # Pause when buffer > 30%
+      AUDIO_BUFFER_RESUME_THRESHOLD: 10 # Resume when buffer < 10%
+    inputs:
+      # All 3 participants
+      student1:
+        source: student1/text
+        queue_size: 1000
+      student2:
+        source: student2/text
+        queue_size: 1000
+      tutor:
+        source: tutor/text
+        queue_size: 1000
+
+      # Control from study-monitor UI
+      control: debate-monitor/control
+
+      # Audio buffer status for backpressure
+      buffer_status: audio-player/buffer_status
+    outputs:
+      - control_judge # Resume to bridge-to-tutor
+      - control_llm2 # Resume to bridge-to-student2
+      - control_llm1 # Resume to bridge-to-student1
+      - llm_control # Reset/cancel to Student1 and Student2
+      - judge_prompt # User prompts and reset/cancel to tutor
+      - status
+      - log
+
+  # ============ Study Monitor (TUI) ============
+
+  - id: debate-monitor
+    path: dynamic
+    env:
+      DORA_STUDY_MODE: "true"
+      LOG_LEVEL: "DEBUG"
+    inputs:
+      # Student1 panel
+      llm1_text:
+        source: student1/text
+        queue_size: 1000
+      llm1_status: student1/status
+      llm1_prompt:
+        source: bridge-to-student1/text
+        queue_size: 1000
+
+      # Student2 panel
+      llm2_text:
+        source: student2/text
+        queue_size: 1000
+      llm2_status: student2/status
+      llm2_prompt:
+        source: bridge-to-student2/text
+        queue_size: 1000
+
+      # Tutor panel
+      judge_text:
+        source: tutor/text
+        queue_size: 1000
+      judge_status: tutor/status
+      judge_prompt:
+        source: bridge-to-tutor/text
+        queue_size: 1000
+
+      # Audio status
+      audio_status: audio-player/status
+      buffer_status: audio-player/buffer_status
+    outputs:
+      - control
+
+  # ============ Viewer (Logging) ============
+
+  - id: viewer
+    path: dynamic
+    inputs:
+      # Student1 logs
+      llm1_log:
+        source: student1/log
+        queue_size: 1000
+      llm1_status: student1/status
+      llm1_text:
+        source: student1/text
+        queue_size: 1000
+
+      # Student2 logs
+      llm2_log:
+        source: student2/log
+        queue_size: 1000
+      llm2_status: student2/status
+      llm2_text:
+        source: student2/text
+        queue_size: 1000
+
+      # Tutor logs
+      judge_log:
+        source: tutor/log
+        queue_size: 1000
+      judge_status: tutor/status
+      judge_text:
+        source: tutor/text
+        queue_size: 1000
+
+      # Bridge logs
+      bridge1_log:
+        source: bridge-to-student1/log
+        queue_size: 1000
+      bridge1_status: bridge-to-student1/status
+      bridge1_text:
+        source: bridge-to-student1/text
+        queue_size: 1000
+      bridge2_log:
+        source: bridge-to-student2/log
+        queue_size: 1000
+      bridge2_status: bridge-to-student2/status
+      bridge2_text:
+        source: bridge-to-student2/text
+        queue_size: 1000
+      bridge3_log:
+        source: bridge-to-tutor/log
+        queue_size: 1000
+      bridge3_status: bridge-to-tutor/status
+      bridge3_text:
+        source: bridge-to-tutor/text
+        queue_size: 1000
+
+      # Controller logs
+      controller_status: conference-controller/status
+      controller_log:
+        source: conference-controller/log
+        queue_size: 1000
+      control_judge: conference-controller/control_judge
+      control_llm2: conference-controller/control_llm2
+      control_llm1: conference-controller/control_llm1
+
+      # Audio pipeline logs
+      segmenter_log:
+        source: multi-text-segmenter/log
+        queue_size: 1000
+      segmenter_status: multi-text-segmenter/status
+      tts1_log:
+        source: primespeech-student1/log
+        queue_size: 1000
+      tts1_status: primespeech-student1/status
+      tts2_log:
+        source: primespeech-student2/log
+        queue_size: 1000
+      tts2_status: primespeech-student2/status
+      tts3_log:
+        source: primespeech-tutor/log
+        queue_size: 1000
+      tts3_status: primespeech-tutor/status
+      audio_log: audio-player/status

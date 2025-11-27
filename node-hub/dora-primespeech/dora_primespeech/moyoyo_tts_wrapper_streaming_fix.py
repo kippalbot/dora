@@ -459,18 +459,18 @@ class StreamingMoYoYoTTSWrapper:
                 **self.optimization_config
             }
             
-            self.log("INFO", f"Synthesizing {len(text)} chars")
-            
+            self.log("DEBUG", f"Synthesizing {len(text)} chars")
+
             # Generate audio
             for result in self.tts.run(inputs):
                 sample_rate, audio_data = result
                 break
-            
+
             # Convert to float32 if needed
             if audio_data.dtype == np.int16:
                 audio_data = audio_data.astype(np.float32) / 32768.0
-            
-            self.log("INFO", f"Synthesized {len(audio_data)/sample_rate:.2f}s audio")
+
+            self.log("DEBUG", f"Synthesized {len(audio_data)/sample_rate:.2f}s audio")
             return sample_rate, audio_data
             
         except Exception as e:

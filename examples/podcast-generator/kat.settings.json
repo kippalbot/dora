@@ -1,0 +1,10 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://vanchin.streamlake.ai/api/gateway/v1/endpoints/ep-sinn8y-1764032414590278438/claude-code-proxy",
+    "ANTHROPIC_AUTH_TOKEN": "WwXgR-1AOxH-oiQrky0V1_DX_KElI0HvHZ-8poa0bbQ",
+    "ANTHROPIC_MODEL": "KAT-Coder",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "KAT-Coder",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "KAT-Coder",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "KAT-Coder"
+  }
+}
