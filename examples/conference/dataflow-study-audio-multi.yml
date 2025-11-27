@@ -84,6 +84,11 @@ nodes:
       tts_complete_student2: primespeech-student2/segment_complete
       tts_complete_tutor: primespeech-tutor/segment_complete
 
+      # Audio buffer control for backpressure
+      audio_buffer_control:
+        source: audio-player/buffer_status
+        queue_size: 10
+
       # Control signals (reset and cancel)
       control: conference-controller/llm_control
       reset: conference-controller/control_judge
@@ -103,6 +108,10 @@ nodes:
       PUNCTUATION_MARKS: '。！？.!?，,、；：""''（）【】《》'
       REMOVE_SPEAKER_ID: "true" # Remove [Name] for all 3 participants
       LOG_LEVEL: "DEBUG"
+
+      # Buffer control thresholds
+      AUDIO_BUFFER_LOW_WATER_MARK: "30" # Resume when buffer < 30%
+      AUDIO_BUFFER_HIGH_WATER_MARK: "60" # Pause when buffer > 60%
 
   # PrimeSpeech TTS for Student1 (Daniu - Male, Rational Voice)
   - id: primespeech-student1
@@ -325,7 +334,7 @@ nodes:
     path: ../../target/release/dora-conference-controller
     env:
       # Sequential policy with priority: tutor can speak anytime, student2 priority 2, student1 priority 1
-      DORA_POLICY_PATTERN: "[(tutor, *), (student2, 2), (student1, 1)]"
+      DORA_POLICY_PATTERN: "[(tutor, *), (student2, 1), (student1, 2)]"
       INITIAL_QUESTION_ID: 1
 
       # Audio buffer backpressure control

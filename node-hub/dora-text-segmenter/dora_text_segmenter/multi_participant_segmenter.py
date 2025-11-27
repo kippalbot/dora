@@ -156,9 +156,10 @@ def segment_by_punctuation(text, min_length, max_length, punctuation_marks, node
 
 
 def is_participant_port(event_id):
-    """Check if event_id is a participant input port (not control or TTS)."""
+    """Check if event_id is a participant input port (not control or TTS or buffer control)."""
     CONTROL_PORTS = {"control", "reset"}
-    if event_id in CONTROL_PORTS:
+    BUFFER_CONTROL_PORTS = {"audio_buffer_control"}
+    if event_id in CONTROL_PORTS or event_id in BUFFER_CONTROL_PORTS:
         return False
     if event_id.startswith("tts_complete_"):
         return False
@@ -183,6 +184,64 @@ def select_oldest_session_queue(participant_names, session_timestamps, segment_q
     # Sort by timestamp, return oldest
     candidates.sort(key=lambda x: x[1])
     return candidates[0][0]
+
+
+def handle_audio_buffer_control(buffer_percentage, node, log_level, active_queue_ref, segment_queues, is_sending, buffer_control_paused_ref, audio_buffer_level_ref, low_water_mark, high_water_mark, last_session_end_sent):
+    """Handle buffer status from audio player with separate buffer control state"""
+
+    audio_buffer_level_ref[0] = buffer_percentage
+
+    if buffer_percentage > high_water_mark and not buffer_control_paused_ref[0]:
+        buffer_control_paused_ref[0] = True
+
+        send_log(node, "INFO",
+                f"🎵 🛑 BUFFER BACKPRESSURE: Audio buffer at {buffer_percentage:.1f}% > {high_water_mark}%, "
+                f"PAUSING segment sending (active_queue: {active_queue_ref[0]} remains)", log_level)
+
+    elif buffer_percentage < low_water_mark and buffer_control_paused_ref[0]:
+        buffer_control_paused_ref[0] = False
+        send_log(node, "INFO",
+                f"🎵 ▶️ BUFFER RESUMED: Audio buffer at {buffer_percentage:.1f}% < {low_water_mark}%, "
+                f"RESUMING {active_queue_ref[0]}", log_level)
+
+        # Trigger immediate resume for current active queue
+        if active_queue_ref[0] and segment_queues.get(active_queue_ref[0]):
+            send_log(node, "INFO", f"🎵 🚀 IMMEDIATE RESUME: Sending next segment for {active_queue_ref[0]}", log_level)
+            send_next_segment_for_participant(active_queue_ref[0], node, log_level, segment_queues, is_sending, last_session_end_sent)
+
+
+
+def send_next_segment_for_participant(participant, node, log_level, segment_queues, is_sending, last_session_end_sent):
+    """Send next segment for participant (called when buffer control resumes)"""
+    if not segment_queues.get(participant):
+        return
+
+    segment = segment_queues[participant].popleft()
+    output_port = f"text_segment_{participant}"
+
+    send_log(node, "INFO",
+            f"🎤 RESUMED SENDING to {participant}: '{segment['text']}' "
+            f"(queue_remaining={len(segment_queues[participant])})", log_level)
+
+    node.send_output(
+        output_port,
+        pa.array([segment["text"]]),
+        metadata={"session_id": segment["session_id"]}
+    )
+    is_sending[participant] = True
+
+    # Check if this was the last segment of a session (critical for session completion)
+    if segment["is_session_end"]:
+        # Mark that the last chunk of this session has been sent
+        last_session_end_sent[participant] = True
+        send_log(node, "INFO",
+            f"📤 RESUMED LAST CHUNK SENT: {participant}, waiting for TTS complete to activate next session",
+            log_level)
+    else:
+        # Not last chunk - continue draining queue normally
+        send_log(node, "DEBUG",
+            f"🔄 RESUMED CONTINUING DRAIN: {participant}, more segments remaining",
+            log_level)
 
 
 def complete_session_and_activate_next(completed_participant, node, participant_names, session_timestamps, segment_queues, active_queue_ref, is_sending, kick_start_sending, log_level):
@@ -233,6 +292,10 @@ def main():
     segment_mode = os.getenv("SEGMENT_MODE", "sentence").lower()
     remove_speaker_id_enabled = os.getenv("REMOVE_SPEAKER_ID", "true").lower() in {"1", "true", "yes"}
 
+    # Buffer control configuration
+    AUDIO_BUFFER_LOW_WATER_MARK = int(os.getenv("AUDIO_BUFFER_LOW_WATER_MARK", "30"))
+    AUDIO_BUFFER_HIGH_WATER_MARK = int(os.getenv("AUDIO_BUFFER_HIGH_WATER_MARK", "60"))
+
     send_log(
         node,
         "INFO",
@@ -255,6 +318,8 @@ def main():
 
     # Global state
     active_queue = None        # Which participant's queue is currently sending (only ONE)
+    buffer_control_paused = False  # Separate flag for buffer control pause
+    audio_buffer_level = 0.0     # Current buffer percentage
 
     def ensure_participant_initialized(participant):
         """Initialize data structures for a newly discovered participant."""
@@ -419,9 +484,6 @@ def main():
                             "session_id": current_session[participant],
                             "is_session_end": False
                         })
-                        send_log(node, "INFO",
-                            f"📝 ENQUEUED segment for {participant}: '{segment_text}' (queue_size: {len(segment_queues[participant])})",
-                            log_level)
 
                 # Try to activate queue if idle
                 try_activate_queue()
@@ -487,6 +549,13 @@ def main():
                     log_level)
                 continue
 
+            # Check buffer control state BEFORE sending next segment
+            if buffer_control_paused:
+                send_log(node, "INFO",
+                        f"🎵 ⏸️ BUFFER PAUSED: Not sending next segment for {participant} "
+                        f"(buffer: {audio_buffer_level:.1f}%, buffer_control_paused=True)", log_level)
+                continue  # Skip sending, wait for buffer recovery
+
             # Active queue - continue draining
             if not segment_queues[participant]:
                 send_log(node, "DEBUG",
@@ -523,6 +592,43 @@ def main():
                     f"🔄 CONTINUING DRAIN: {participant}, more segments remaining",
                     log_level)
 
+        # ==================== AUDIO BUFFER CONTROL EVENTS ====================
+        elif event_id == "audio_buffer_control":
+            # Handle buffer status from audio player
+            buffer_percentage = None
+
+            # Try to get buffer percentage from event value (primary method)
+            raw_value = event.get("value")
+            if raw_value and len(raw_value) > 0:
+                try:
+                    buffer_data = raw_value[0].as_py() if hasattr(raw_value[0], 'as_py') else raw_value[0]
+                    if isinstance(buffer_data, (int, float)):
+                        buffer_percentage = float(buffer_data)
+                        send_log(node, "DEBUG", f"🎵 Buffer percentage from event value: {buffer_percentage:.1f}%", log_level)
+                except Exception as e:
+                    send_log(node, "DEBUG", f"🎵 Failed to parse buffer percentage from event value: {e}", log_level)
+
+            # Fallback: try to get from metadata (legacy method)
+            if buffer_percentage is None and event.get("metadata") and "buffer_percentage" in event["metadata"].parameters:
+                buffer_param = event["metadata"].parameters["buffer_percentage"]
+                if hasattr(buffer_param, "as_py"):
+                    buffer_percentage = buffer_param.as_py()
+                else:
+                    buffer_percentage = float(buffer_param)
+                send_log(node, "DEBUG", f"🎵 Buffer percentage from metadata: {buffer_percentage:.1f}%", log_level)
+
+            if buffer_percentage is not None:
+                active_queue_ref = [active_queue]
+                buffer_control_paused_ref = [buffer_control_paused]
+                audio_buffer_level_ref = [audio_buffer_level]
+                last_session_end_sent_ref = [last_session_end_sent]
+                handle_audio_buffer_control(buffer_percentage, node, log_level, active_queue_ref, segment_queues, is_sending, buffer_control_paused_ref, audio_buffer_level_ref, AUDIO_BUFFER_LOW_WATER_MARK, AUDIO_BUFFER_HIGH_WATER_MARK, last_session_end_sent)
+                active_queue = active_queue_ref[0]
+                buffer_control_paused = buffer_control_paused_ref[0]
+                audio_buffer_level = audio_buffer_level_ref[0]
+            else:
+                send_log(node, "WARNING", f"🎵 Received audio_buffer_control event but could not parse buffer percentage", log_level)
+
         # ==================== CONTROL EVENTS ====================
         elif event_id in ["control", "reset"]:
             command = event["value"][0].as_py() if event.get("value") else None
@@ -540,6 +646,10 @@ def main():
                     last_session_end_sent[participant] = False
 
                 active_queue = None
+
+                # Clear buffer control state
+                buffer_control_paused = False
+                audio_buffer_level = 0.0
 
 
 if __name__ == "__main__":

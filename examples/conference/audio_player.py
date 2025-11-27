@@ -46,7 +46,7 @@ class CircularAudioBuffer:
                 overflow = (self.available_samples + data_len) - self.buffer_size
                 self.read_pos = (self.read_pos + overflow) % self.buffer_size
                 self.available_samples -= overflow
-                print(f"[Buffer] Overrun! Skipping {overflow} samples (from {participant})")
+                pass  # print(f"[Buffer] Overrun! Skipping {overflow} samples (from {participant})")
 
             samples_written = 0
             while samples_written < data_len:
@@ -140,7 +140,7 @@ class CircularBufferAudioPlayer:
     def audio_callback(self, outdata, frames, time_info, status):
         """Callback for sounddevice stream."""
         if status:
-            print(f"[Audio Callback] Status: {status}")
+            pass  # print(f"[Audio Callback] Status: {status}")
 
         data = self.buffer.read(frames)
         outdata[:, 0] = data
@@ -162,7 +162,7 @@ class CircularBufferAudioPlayer:
         if new_rate != self.sample_rate:
             self.sample_rate = new_rate
             self.buffer.sample_rate = new_rate
-            print(f"[Audio Player] Sample rate updated to {new_rate} Hz")
+            pass  # print(f"[Audio Player] Sample rate updated to {new_rate} Hz")
 
     def add_audio(self, audio_data, participant=None):
         """Add audio data to buffer. Concatenates from all participants."""
@@ -180,13 +180,13 @@ class CircularBufferAudioPlayer:
         """Reset the audio buffer."""
         self.pause()
         self.buffer.reset()
-        print("[Audio Player] Buffer reset to empty")
+        pass  # print("[Audio Player] Buffer reset to empty")
 
 
 shutdown_flag = threading.Event()
 
 def signal_handler(signum, frame):
-    print("\n[Multi-Audio Player] Shutting down...")
+    pass  # print("\n[Multi-Audio Player] Shutting down...")
     shutdown_flag.set()
 
 
@@ -215,17 +215,16 @@ def main():
         )
         player.start()
 
-        # Clear screen
-        print("\033[2J\033[H", end="")
-
-        print("=" * 60)
-        print("MULTI-INPUT CIRCULAR BUFFER AUDIO PLAYER")
-        print("=" * 60)
-        print(f"Buffer: {args.buffer_seconds} seconds")
-        print(f"Inputs: student1, student2, tutor")
-        print("Audio streams concatenated in arrival order (FIFO)")
-        print("Outputs buffer percentage for backpressure control")
-        print("=" * 60 + "\n")
+        # Clear screen and show banner
+        # print("\033[2J\033[H", end="")
+        # print("=" * 60)
+        # print("MULTI-INPUT CIRCULAR BUFFER AUDIO PLAYER")
+        # print("=" * 60)
+        # print(f"Buffer: {args.buffer_seconds} seconds")
+        # print(f"Inputs: student1, student2, tutor")
+        # print("Audio streams concatenated in arrival order (FIFO)")
+        # print("Outputs buffer percentage for backpressure control")
+        # print("=" * 60 + "\n")
 
         # State
         playback_started = False
@@ -280,48 +279,72 @@ def main():
                                 segments_per_participant[participant] += 1
                                 segment_index = metadata.get("segment_index", -1)
 
-                                print(f"[Audio Player] 🎵 {participant.upper()}: "
-                                      f"segment {segment_index + 1}, "
-                                      f"{len(audio_data)} samples, "
-                                      f"{duration:.3f}s", flush=True)
+                                # print(f"[Audio Player] 🎵 {participant.upper()}: "
+                                #       f"segment {segment_index + 1}, "
+                                #       f"{len(audio_data)} samples, "
+                                #       f"{duration:.3f}s", flush=True)
 
                                 # Auto-start playback
                                 if not playback_started:
                                     player.resume()
                                     playback_started = True
-                                    print(f"[Audio Player] ▶️  Playback STARTED")
+                                    # print(f"[Audio Player] ▶️  Playback STARTED")
 
                 except Exception as e:
-                    print(f"[Error] Processing audio from {event['id']}: {e}")
+                    pass  # print(f"[Error] Processing audio from {event['id']}: {e}")
 
             # Send buffer status periodically
             current_time = time.time()
             if current_time - last_status_time >= status_interval:
                 stats = player.buffer.get_stats()
                 buffer_percentage = stats['buffer_fill']
+                buffer_seconds = stats['available_seconds']
 
                 # Send buffer percentage to controller
                 node.send_output("buffer_status",
                     pa.array([buffer_percentage], type=pa.float64()))
 
-                # Print status
-                print(f"\r[Buffer] {stats['available_seconds']:.1f}s ({buffer_percentage:.1f}%) | "
-                      f"Student1: {segments_per_participant['student1']}, "
-                      f"Student2: {segments_per_participant['student2']}, "
-                      f"Tutor: {segments_per_participant['tutor']}",
+                # ASCII Art Buffer Visualization
+                bar_width = 40
+                chars_per_second = bar_width / args.buffer_seconds
+                chars_filled = int(buffer_seconds * chars_per_second)
+
+                # Build buffer bar
+                buffer_bar = "█" * min(chars_filled, bar_width) + "░" * max(0, bar_width - chars_filled)
+
+                # Status indicators
+                if buffer_percentage < 5:
+                    status = "EMPTY"
+                    icon = "⚠️"
+                elif buffer_percentage < 20:
+                    status = "LOW"
+                    icon = "⚠️"
+                elif buffer_percentage > 80:
+                    status = "HIGH"
+                    icon = "⚠️"
+                else:
+                    status = "NORMAL"
+                    icon = "✓"
+
+                playback_status = "PLAYING" if (playback_started and player.is_playing) else "PAUSED" if not player.is_playing and playback_started else "WAITING"
+
+                # Display buffer visualization
+                print(f"\r[{buffer_percentage:5.1f}%] {status:6s} {icon} [{buffer_bar}] {buffer_seconds:5.1f}s/{args.buffer_seconds}s | "
+                      f"S1:{segments_per_participant['student1']:3d} S2:{segments_per_participant['student2']:3d} T:{segments_per_participant['tutor']:3d} | "
+                      f"{playback_status}",
                       end="", flush=True)
 
                 last_status_time = current_time
 
     except Exception as e:
-        print(f"\n[Error] Main loop: {e}")
-        import traceback
-        traceback.print_exc()
+        pass  # print(f"\n[Error] Main loop: {e}")
+        # import traceback
+        # traceback.print_exc()
     finally:
         if player.stream:
             player.stream.stop()
             player.stream.close()
-        print("\n[Multi-Audio Player] Shutdown complete")
+        pass  # print("\n[Multi-Audio Player] Shutdown complete")
 
 
 if __name__ == "__main__":
