@@ -319,8 +319,7 @@ def main():
     segment_queue = deque()
     is_sending = False
 
-    # Segment counter
-    segment_counter = 0  # Number of segments in queue
+    # Removed segment counter - no longer needed
 
     # Track current question_id for smart reset
     current_question_id = None
@@ -398,7 +397,6 @@ def main():
                             "metadata": metadata,
                         })
 
-                        segment_counter += 1
                         send_log(node, "DEBUG", f"Queued segment: '{segment_text}' (total: {len(segment_queue)})", log_level)
                     else:
                         send_log(node, "DEBUG", f"Skipped punctuation-only segment: '{segment_text}'", log_level)
@@ -409,18 +407,14 @@ def main():
                 if not is_sending and segment_queue:
                     segment = segment_queue.popleft()
 
-                    # Decrease counter BEFORE sending
-                    segment_counter -= 1
-
-                    send_log(node, "INFO", f"Sending first to TTS: '{segment['text']}' (len={len(segment['text'])}, segments_remaining={segment_counter})", log_level)
+                    send_log(node, "INFO", f"Sending first to TTS: '{segment['text']}' (len={len(segment['text'])})", log_level)
 
                     # Send segment to TTS with metadata
                     node.send_output(
                         "text_segment",
                         pa.array([segment["text"]]),
                         metadata={
-                            "segments_remaining": segment_counter,  # After decrease
-                            **segment["metadata"]
+                            **segment["metadata"]  # Just pass through original metadata
                         }
                     )
 
@@ -434,17 +428,13 @@ def main():
                 if segment_queue:
                     segment = segment_queue.popleft()
 
-                    # Decrease counter BEFORE sending
-                    segment_counter -= 1
-
                     send_log(node, "INFO", f"Sending to TTS: '{segment['text']}' (len={len(segment['text'])})", log_level)
 
                     node.send_output(
                         "text_segment",
                         pa.array([segment["text"]]),
                         metadata={
-                            "segments_remaining": segment_counter,  # After decrease
-                            **segment["metadata"]
+                            **segment["metadata"]  # Just pass through original metadata
                         }
                     )
                     send_log(node, "DEBUG", "send_output() completed, setting is_sending=True", log_level)
@@ -461,7 +451,7 @@ def main():
                     segment_queue.clear()
                     text_buffer = ""
                     is_sending = False
-                    segment_counter = 0
+                    # segment_counter removed
                     send_log(node, "INFO", f"Reset: Cleared {cleared_segments} queued segments and text buffer (buffer had text: {cleared_buffer})", log_level)
 
             elif event["id"] == "reset":
@@ -484,7 +474,7 @@ def main():
                     segment_queue.clear()
                     text_buffer = ""
                     is_sending = False
-                    segment_counter = 0
+                    # segment_counter removed
                     send_log(node, "INFO", f"Reset: Cleared {cleared_count} queued segments and text buffer (no question_id)", log_level)
                 else:
                     # Smart reset - only clear segments from different question_id
@@ -506,7 +496,7 @@ def main():
                             cleared_count += 1
 
                     segment_queue = new_queue
-                    segment_counter = len(segment_queue)
+                    # segment_counter removed
 
                     # Clear text buffer ONLY when question_id changes
                     # Keep buffer for same question_id to avoid losing incomplete text

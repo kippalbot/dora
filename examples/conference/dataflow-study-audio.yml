@@ -64,7 +64,7 @@ nodes:
   # ============ Audio Pipeline for Tutor Only ============
   # Audio flow: tutor LLM → text-segmenter → primespeech-tutor → audio-player
 
-  # Text Segmenter - buffers tutor output and sends to TTS one segment at a time
+  # Text Segmenter - buffers tutor output and sends to TTS one segment at a time (no session end output)
   - id: tutor-text-segmenter
     build: pip install -e ../../node-hub/dora-text-segmenter
     path: dora-text-segmenter
@@ -137,10 +137,10 @@ nodes:
       audio:
         source: primespeech-tutor/audio
         queue_size: 1000
-      # control: conference-controller/control_judge # REMOVED - prevent excessive reset signals from flow control
     outputs:
-      - buffer_status # Re-enabled for backpressure control
       - status
+      - log
+      - session_end  # Session end signals with question_id from audio completion
 
   # ============ 3 Conference Bridges (Switch) ============
   # Same as dataflow-study-sequential.yml
@@ -226,13 +226,10 @@ nodes:
   - id: conference-controller
     path: ../../target/release/dora-conference-controller
     env:
-      # 🎯 Sequential policy: fixed speaking order
-      #DORA_POLICY_PATTERN: "[student2 → student1 → tutor]"
+      # 🎯 Enhanced policy with session end based round completion
       DORA_POLICY_PATTERN: "[(tutor, *), (student2, 2), (student1, 1)]"
       INITIAL_QUESTION_ID: 1 # Start with question_id=1
-      # 🎵 Audio buffer backpressure control
-      AUDIO_BUFFER_THRESHOLD: 30 # Pause when buffer > 60% full
-      AUDIO_BUFFER_RESUME_THRESHOLD: 10 # Resume when buffer < 30% full
+      # Note: Audio buffer control removed - using session end signals instead
     inputs:
       # When any participant speaks, controller updates policy
       student1:
@@ -246,10 +243,10 @@ nodes:
         queue_size: 1000
       # Control from study-monitor UI
       control: debate-monitor/control
-      # Audio buffer status for backpressure control
-      buffer_status: audio-player/buffer_status
+      # Session end signal from audio player for round completion (NEW)
+      session_end: audio-player/session_end
     outputs:
-      - control_judge # → "resume" to bridge-to-tutor (also resets tutor audio)
+      - control_judge # → "resume" to bridge-to-tutor
       - control_llm2 # → "resume" to bridge-to-student2
       - control_llm1 # → "resume" to bridge-to-student1
       - llm_control # → "reset/cancel" to Student1 and Student2
@@ -295,7 +292,6 @@ nodes:
 
       # Audio status for tutor
       audio_status: audio-player/status
-      buffer_status: audio-player/buffer_status
     outputs:
       - control # → To conference-controller for reset and other commands
 

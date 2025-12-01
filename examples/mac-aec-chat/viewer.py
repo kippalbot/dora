@@ -84,18 +84,18 @@ def main():
                     # TTS segment completion
                     status = event["value"][0].as_py()
                     metadata = event.get("metadata", {})
-                    segment_index = metadata.get("segment_index", -1)
-                    segments_remaining = metadata.get("segments_remaining", 0)
-                    print_event("✅ TTS", f"Segment {segment_index + 1} complete (status: {status}, remaining: {segments_remaining})", Colors.GREEN)
+                    question_id = metadata.get("question_id", "unknown")
+                    session_status = metadata.get("session_status", "unknown")
+                    print_event("✅ TTS", f"TTS {status} (question_id: {question_id}, session: {session_status})", Colors.GREEN)
 
                 elif input_id == "audio":
                     # Audio output from TTS
                     metadata = event.get("metadata", {})
-                    segment_index = metadata.get("segment_index", -1)
+                    question_id = metadata.get("question_id", "unknown")
                     duration = metadata.get("duration", 0)
                     sample_rate = metadata.get("sample_rate", 0)
-                    is_streaming = metadata.get("is_streaming", False)
-                    print_event("🎵 AUDIO", f"Segment {segment_index + 1}, {duration:.2f}s @ {sample_rate}Hz (streaming: {is_streaming})", Colors.CYAN)
+                    session_status = metadata.get("session_status", "unknown")
+                    print_event("🎵 AUDIO", f"Audio {duration:.2f}s @ {sample_rate}Hz (question_id: {question_id}, session: {session_status})", Colors.CYAN)
                         
                 elif input_id == "speech_started":
                     # User started speaking

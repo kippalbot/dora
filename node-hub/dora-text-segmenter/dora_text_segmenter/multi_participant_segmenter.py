@@ -226,7 +226,11 @@ def send_next_segment_for_participant(participant, node, log_level, segment_queu
     node.send_output(
         output_port,
         pa.array([segment["text"]]),
-        metadata={"session_id": segment["session_id"]}
+        metadata={
+            "session_id": segment["session_id"],
+            "question_id": segment.get("question_id"),
+            "session_status": segment.get("session_status", "unknown")
+        }
     )
     is_sending[participant] = True
 
@@ -358,7 +362,11 @@ def main():
         node.send_output(
             output_port,
             pa.array([segment["text"]]),
-            metadata={"session_id": segment["session_id"]}
+            metadata={
+                "session_id": segment["session_id"],
+                "question_id": segment.get("question_id"),
+                "session_status": segment.get("session_status", "unknown")
+            }
         )
         is_sending[participant] = True
 
@@ -395,9 +403,15 @@ def main():
                 session_id = str(uuid.uuid4())
                 timestamp = time.time()
 
+                # Capture question_id and session_status from incoming metadata
+                question_id = metadata.get("question_id")
+                session_status = metadata.get("session_status", "started")
+
                 session_timestamps[participant].append({
                     "session_id": session_id,
-                    "timestamp": timestamp
+                    "timestamp": timestamp,
+                    "question_id": question_id,
+                    "session_status": session_status
                 })
                 current_session[participant] = session_id
 
@@ -431,12 +445,17 @@ def main():
                 text_buffers[participant] = incomplete_text if keep_incomplete else ""
 
                 # Enqueue segments from the first chunk
+                # Get metadata from the current session
+                current_session_metadata = session_timestamps[participant][-1] if session_timestamps[participant] else {}
+
                 for i, segment_text in enumerate(complete_segments):
                     if not should_skip_segment(segment_text, punctuation_marks, node, log_level):
                         segment_queues[participant].append({
                             "text": segment_text,
                             "session_id": current_session[participant],
-                            "is_session_end": False
+                            "is_session_end": False,
+                            "question_id": current_session_metadata.get("question_id"),
+                            "session_status": current_session_metadata.get("session_status", "started")
                         })
                         send_log(node, "INFO",
                             f"📝 ENQUEUED FIRST segment for {participant}: '{segment_text}' (queue_size: {len(segment_queues[participant])})",
@@ -477,12 +496,17 @@ def main():
                 text_buffers[participant] = incomplete_text if keep_incomplete else ""
 
                 # Enqueue segments
+                # Get metadata from the current session
+                current_session_metadata = session_timestamps[participant][-1] if session_timestamps[participant] else {}
+
                 for i, segment_text in enumerate(complete_segments):
                     if not should_skip_segment(segment_text, punctuation_marks, node, log_level):
                         segment_queues[participant].append({
                             "text": segment_text,
                             "session_id": current_session[participant],
-                            "is_session_end": False
+                            "is_session_end": False,
+                            "question_id": current_session_metadata.get("question_id"),
+                            "session_status": current_session_metadata.get("session_status", "started")
                         })
 
                 # Try to activate queue if idle
@@ -500,13 +524,18 @@ def main():
                     log_level)
 
                 # Flush incomplete buffer as final segment
+                # Get metadata from the current session
+                current_session_metadata = session_timestamps[participant][-1] if session_timestamps[participant] else {}
+
                 if text_buffers[participant].strip():
                     incomplete_text = text_buffers[participant].strip()
                     if not should_skip_segment(incomplete_text, punctuation_marks, node, log_level):
                         segment_queues[participant].append({
                             "text": incomplete_text,
                             "session_id": current_session[participant],
-                            "is_session_end": True  # Mark as session end
+                            "is_session_end": True,  # Mark as session end
+                            "question_id": current_session_metadata.get("question_id"),
+                            "session_status": current_session_metadata.get("session_status", "ended")
                         })
                         send_log(node, "DEBUG",
                             f"🔥 Flushed buffer as final segment: '{incomplete_text}'", log_level)
@@ -575,7 +604,11 @@ def main():
             node.send_output(
                 output_port,
                 pa.array([segment["text"]]),
-                metadata={"session_id": segment["session_id"]}
+                metadata={
+                    "session_id": segment["session_id"],
+                    "question_id": segment.get("question_id"),
+                    "session_status": segment.get("session_status", "unknown")
+                }
             )
             is_sending[participant] = True
 

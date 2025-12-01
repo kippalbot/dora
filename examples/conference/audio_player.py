@@ -14,6 +14,8 @@ import sys
 import numpy as np
 import pyarrow as pa
 from dora import Node
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'node-hub', 'dora-common'))
+from dora_common.logging import send_log, get_log_level_from_env
 import sounddevice as sd
 
 
@@ -206,6 +208,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    player = None
     try:
         node = Node("audio-player")
         player = CircularBufferAudioPlayer(
@@ -232,6 +235,12 @@ def main():
         # Stats per participant
         segments_per_participant = {"student1": 0, "student2": 0, "tutor": 0}
 
+        # Track last question_id per participant for session end detection
+        last_question_id = {"student1": None, "student2": None, "tutor": None}
+
+        # Track session completion to avoid duplicate signals
+        completed_sessions = set()
+
         # Timing
         last_status_time = time.time()
         status_interval = 1.0  # Send status every second
@@ -239,6 +248,12 @@ def main():
         # Get configurable timeout from environment
         node_timeout_ms = int(os.getenv("NODE_TIMEOUT_MS", "1000"))
         node_timeout = node_timeout_ms / 1000.0
+
+        # Get log level from environment
+        log_level = get_log_level_from_env()
+
+        # Send startup log
+        send_log(node, "INFO", "🔊 Audio Player initialized - Ready for audio streams", "audio-player")
 
         while not shutdown_flag.is_set():
             # Process events with timeout
@@ -279,6 +294,39 @@ def main():
                                 segments_per_participant[participant] += 1
                                 segment_index = metadata.get("segment_index", -1)
 
+                                # Log first few audio segments to verify reception
+                                if segments_per_participant[participant] <= 3:
+                                    send_log(node, "INFO", f"🎵 {participant.upper()}: segment {segment_index + 1}, {duration:.3f}s", "audio-player")
+
+                                # Extract metadata and simply pass through whatever LLM sent
+                                question_id = metadata.get("question_id")
+                                session_status = metadata.get("session_status")
+                                session_id = metadata.get("session_id")
+
+                                # Store latest question_id for this participant
+                                if question_id is not None:
+                                    last_question_id[participant] = question_id
+
+                                # Session start detection: send signal when new session starts
+                                if session_status == "started":
+                                    # Create unique session identifier to avoid duplicates
+                                    session_key = f"{participant}_{session_id}" if session_id else f"{participant}_{question_id}"
+
+                                    if session_key not in completed_sessions and last_question_id[participant] is not None:
+                                        # Track that we've seen this session start
+                                        completed_sessions.add(session_key)
+
+                                        # Send session_start signal, passing through ALL original metadata
+                                        session_start_metadata = metadata.copy() if metadata else {}
+                                        session_start_metadata["source"] = "audio_player"
+
+                                        node.send_output("session_start",
+                                            pa.array([session_status]),
+                                            metadata=session_start_metadata
+                                        )
+                                        # Send log using common logging utility
+                                        send_log(node, "INFO", f"🎬 Session START: {participant} (question_id={last_question_id[participant]}, status={session_status})", "audio-player")
+
                                 # print(f"[Audio Player] 🎵 {participant.upper()}: "
                                 #       f"segment {segment_index + 1}, "
                                 #       f"{len(audio_data)} samples, "
@@ -288,7 +336,7 @@ def main():
                                 if not playback_started:
                                     player.resume()
                                     playback_started = True
-                                    # print(f"[Audio Player] ▶️  Playback STARTED")
+                                    send_log(node, "INFO", "▶️  Playback STARTED", "audio-player")
 
                 except Exception as e:
                     pass  # print(f"[Error] Processing audio from {event['id']}: {e}")
@@ -303,6 +351,9 @@ def main():
                 # Send buffer percentage to controller
                 node.send_output("buffer_status",
                     pa.array([buffer_percentage], type=pa.float64()))
+
+                # Send regular buffer status log to viewer
+                send_log(node, "INFO", f"🔊 Buffer: {buffer_percentage:.1f}% ({buffer_seconds:.1f}s)", "audio-player")
 
                 # ASCII Art Buffer Visualization
                 bar_width = 40
@@ -341,7 +392,7 @@ def main():
         # import traceback
         # traceback.print_exc()
     finally:
-        if player.stream:
+        if player and player.stream:
             player.stream.stop()
             player.stream.close()
         pass  # print("\n[Multi-Audio Player] Shutdown complete")

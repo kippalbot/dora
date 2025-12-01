@@ -18,32 +18,15 @@ from .config import PrimeSpeechConfig, VOICE_CONFIGS
 from .model_manager import ModelManager
 from .moyoyo_tts_wrapper_streaming_fix import StreamingMoYoYoTTSWrapper as MoYoYoTTSWrapper, MOYOYO_AVAILABLE
 
+# Add common logging to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'dora-common'))
+from dora_common.logging import send_log as common_send_log, get_log_level_from_env
+
 
 def send_log(node, level, message, config_level="INFO"):
-    """Send log message through log output channel."""
-    LOG_LEVELS = {
-        "DEBUG": 10,
-        "INFO": 20,
-        "WARNING": 30,
-        "ERROR": 40
-    }
-    
-    if LOG_LEVELS.get(level, 0) < LOG_LEVELS.get(config_level, 20):
-        return
-    
-    formatted_message = f"[{level}] {message}"
-    # Also print to console so errors show in docker logs
-    try:
-        print(formatted_message, file=sys.stderr if level in {"ERROR", "WARNING"} else sys.stdout, flush=True)
-    except Exception:
-        pass
-    log_data = {
-        "node": "primespeech",
-        "level": level,
-        "message": formatted_message,
-        "timestamp": time.time()
-    }
-    node.send_output("log", pa.array([json.dumps(log_data)]))
+    """Wrapper for backward compatibility during migration to common logging."""
+    # Convert old format to new format
+    common_send_log(node, level, message, "primespeech-tts", config_level)
 
 
 def validate_language_config(lang_code, param_name, node, log_level):
@@ -278,10 +261,24 @@ def main():
                 if not text_stripped or all(c in '。！？.!?,，、；：""''（）【】《》\n\r\t ' for c in text_stripped):
                     send_log(node, "DEBUG", f"SKIPPED - text is only punctuation/whitespace: '{text}'", config.LOG_LEVEL)
                     # Send segment_complete without audio
+                    # Send segment skipped signal
                     node.send_output(
                         "segment_complete",
                         pa.array(["skipped"]),
-                        metadata={}
+                        metadata={
+                            "question_id": metadata.get("question_id", "default"),  # Pass through question_id
+                            "session_status": metadata.get("session_status", "unknown"),  # Pass through session status
+                        }
+                    )
+
+                    # For empty text, just skip processing but send segment_complete for flow control
+                    send_log(node, "DEBUG", f"Skipping empty segment", config.LOG_LEVEL)
+
+                    # Send segment_complete to maintain proper flow control, passing through ALL metadata
+                    node.send_output(
+                        "segment_complete",
+                        pa.array(["empty"]),
+                        metadata=metadata if metadata else {}
                     )
                     continue
 
@@ -326,17 +323,23 @@ def main():
                         send_log(node, "ERROR", f"Traceback: {traceback.format_exc()}", config.LOG_LEVEL)
                         # Mark as not loaded and send error completion without audio
                         model_loaded = False
+                        # Send error completion signal
                         node.send_output(
                             "segment_complete",
                             pa.array(["error"]),
                             metadata={
                                 "session_id": session_id,
                                 "request_id": request_id,
-                                "segment_index": segment_index,
+                                "question_id": metadata.get("question_id", "default"),  # Pass through question_id
+                                "session_status": "error",  # Explicit error status
                                 "error": str(init_err),
                                 "error_stage": "init"
                             }
                         )
+
+                        # Session end signals are now handled by the text segmenter, not TTS
+                        # The text segmenter will handle error cases appropriately
+                        send_log(node, "ERROR", f"TTS initialization error for question_id {metadata.get('question_id', 'default')}: {init_err}", config.LOG_LEVEL)
                         # Skip this event since we cannot synthesize
                         continue
                 
@@ -382,13 +385,10 @@ def main():
                                     "audio",
                                     pa.array([audio_fragment]),
                                     metadata={
-                                        "segment_index": segment_index,
-                                        "segments_remaining": metadata.get("segments_remaining", 0),
                                         "question_id": metadata.get("question_id", "default"),  # Pass through question_id
-                                        "fragment_num": fragment_num,
+                                        "session_status": metadata.get("session_status", "unknown"),  # Pass through session status
                                         "sample_rate": sample_rate,
                                         "duration": fragment_duration,
-                                        "is_streaming": True,
                                     }
                                 )
                         
@@ -427,12 +427,10 @@ def main():
                             "audio",
                             pa.array([audio_array]),
                             metadata={
-                                "segment_index": segment_index,
-                                "segments_remaining": metadata.get("segments_remaining", 0),
                                 "question_id": metadata.get("question_id", "default"),  # Pass through question_id
+                                "session_status": metadata.get("session_status", "unknown"),  # Pass through session status
                                 "sample_rate": sample_rate,
                                 "duration": audio_duration,
-                                "is_streaming": False,
                             }
                         )
                     
@@ -440,10 +438,18 @@ def main():
                     node.send_output(
                         "segment_complete",
                         pa.array(["completed"]),
-                        metadata={}
+                        metadata={
+                            "question_id": metadata.get("question_id", "default"),  # Pass through question_id
+                            "session_status": metadata.get("session_status", "unknown"),  # Pass through session status
+                        }
                     )
-                    send_log(node, "DEBUG", f"Sent segment_complete for segment {segment_index + 1}", config.LOG_LEVEL)
-                    
+
+                    # Session end signals are now handled by the text segmenter, not TTS
+                    # The text segmenter detects session end from session_status metadata and sends appropriate signals
+                    session_status = metadata.get("session_status", "unknown")
+                    if session_status in ["completed", "finished", "ended", "final"]:
+                        send_log(node, "INFO", f"TTS completed session for question_id {metadata.get('question_id', 'default')} with status: {session_status}", config.LOG_LEVEL)
+
                 except Exception as e:
                     error_details = traceback.format_exc()
 
@@ -462,16 +468,27 @@ def main():
                     send_log(node, "ERROR", f"Traceback: {error_details}", config.LOG_LEVEL)
                     
                     # Do NOT send invalid audio on error; only notify completion with error
+                    # Send error completion signal
                     node.send_output(
                         "segment_complete",
                         pa.array(["error"]),
                         metadata={
+                            "question_id": metadata.get("question_id", "default"),  # Pass through question_id
+                            "session_status": "error",  # Explicit error status
                             "error": str(e),
                             "error_stage": "synthesis"
                         }
                     )
-                    send_log(node, "ERROR", f"Sent error segment_complete for segment {segment_index + 1}", config.LOG_LEVEL)
-            
+                    question_id = metadata.get('question_id', 0)
+                    if isinstance(question_id, (int, float)):
+                        send_log(node, "ERROR", f"Sent error segment_complete with enhanced question_id={question_id}", config.LOG_LEVEL)
+                    else:
+                        send_log(node, "ERROR", f"Sent error segment_complete with question_id={question_id}", config.LOG_LEVEL)
+
+                    # Session end signals are now handled by the text segmenter, not TTS
+                    # The text segmenter will handle error cases appropriately based on session_status metadata
+                    send_log(node, "ERROR", f"TTS synthesis error for question_id {metadata.get('question_id', 'default')}: {e}", config.LOG_LEVEL)
+
             elif input_id == "control":
                 # Handle control commands
                 command = event["value"][0].as_py()

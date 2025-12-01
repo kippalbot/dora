@@ -4,6 +4,8 @@ Multi-engine ASR with task management and interruption handling.
 """
 
 import time
+import os
+import sys
 import json
 import numpy as np
 import pyarrow as pa
@@ -18,38 +20,15 @@ from .utils import (
     merge_transcription_chunks
 )
 
+# Add common logging to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'dora-common'))
+from dora_common.logging import send_log as common_send_log, get_log_level_from_env
+
 
 def send_log(node, level, message, config_level="INFO"):
-    """Send log message through log output channel.
-    
-    Args:
-        node: Dora node instance
-        level: Log level (DEBUG, INFO, WARNING, ERROR)
-        message: Log message
-        config_level: Configured log level (default INFO)
-    """
-    # Define log level hierarchy
-    LOG_LEVELS = {
-        "DEBUG": 10,
-        "INFO": 20,
-        "WARNING": 30,
-        "ERROR": 40
-    }
-    
-    # Check if message should be logged
-    if LOG_LEVELS.get(level, 0) < LOG_LEVELS.get(config_level, 20):
-        return  # Skip messages below configured level
-    
-    # Format message with level prefix
-    formatted_message = f"[{level}] {message}"
-    
-    log_data = {
-        "node": "asr",
-        "level": level,
-        "message": formatted_message,
-        "timestamp": time.time()
-    }
-    node.send_output("log", pa.array([json.dumps(log_data)]))
+    """Wrapper for backward compatibility during migration to common logging."""
+    # Convert old format to new format
+    common_send_log(node, level, message, "dora-asr", config_level)
 
 
 def main():

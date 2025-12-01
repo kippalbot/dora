@@ -256,6 +256,8 @@ nodes:
     outputs:
       - buffer_status # Backpressure signal to controller
       - status
+      - session_start  # Session start signals when first audio chunk received
+      - log
 
   # ============ 3 Conference Bridges (Switch) ============
 
@@ -354,6 +356,9 @@ nodes:
 
       # Control from study-monitor UI
       control: debate-monitor/control
+
+      # Session start signal from audio player for round completion
+      session_start: audio-player/session_start
 
       # Audio buffer status for backpressure
       buffer_status: audio-player/buffer_status
@@ -488,4 +493,7 @@ nodes:
         source: primespeech-tutor/log
         queue_size: 1000
       tts3_status: primespeech-tutor/status
-      audio_log: audio-player/status
+      audio_status: audio-player/status
+      audio_player_log:
+        source: audio-player/log
+        queue_size: 1000

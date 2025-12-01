@@ -1,11 +1,47 @@
 use dora_node_api::{self, DoraNode, Event, Parameter};
 use dora_node_api::arrow::array::{StringArray, AsArray};
-use dora_node_api::arrow::datatypes::Float64Type;
+use dora_node_api::arrow;
 use dora_conference_controller::policies::{Policy, UnifiedRatioPolicy};
 use dora_core::config::DataId;
 use eyre::Result;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::HashMap;
 use std::env;
+
+// Enhanced Question ID (16-bit: 8-4-4 layout)
+// Bits 15-8: Round number (0-255)
+// Bits 7-4: Total participants (1-16, stored as total-1)
+// Bits 3-0: Current participant (0-15)
+fn encode_enhanced_question_id(round: u8, participant: u8, total_participants: u8) -> u16 {
+    let round_bits = (round as u16) << 8;
+    let total_bits = ((total_participants - 1) as u16) << 4;
+    let participant_bits = participant as u16;
+
+    round_bits | total_bits | participant_bits
+}
+
+fn decode_enhanced_question_id(question_id: u16) -> (u8, u8, u8, bool) {
+    let round = (question_id >> 8) as u8;
+    let total_participants = ((question_id >> 4) & 0xF) + 1;
+    let participant = (question_id & 0xF) as u8;
+    let is_last_participant = participant + 1 == total_participants as u8;
+
+    (round, participant, total_participants as u8, is_last_participant)
+}
+
+fn enhanced_id_debug_string(question_id: u16) -> String {
+    let (round, participant, total, is_last) = decode_enhanced_question_id(question_id);
+    format!("R{}P{}/{}{}", round + 1, participant + 1, total, if is_last {"[LAST]"} else {""})
+}
+
+fn is_last_participant(question_id: u16) -> bool {
+    let (_, _, _, is_last) = decode_enhanced_question_id(question_id);
+    is_last
+}
+
+fn get_round_number(question_id: u16) -> u8 {
+    (question_id >> 8) as u8 + 1
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LogLevel {
@@ -88,13 +124,11 @@ struct ConferenceController {
     log_level: LogLevel,
     reset_pending: bool,  // Track if reset is in progress - ignore incoming "reset" status
     participant_name_map: HashMap<String, String>, // Maps role -> participant ID (e.g., "judge" -> "tutor")
-    current_question_id: u32,  // Track current conversation question ID
-    round_completed: bool,       // Track if current round is complete
-    // 🎵 Audio buffer backpressure control
-    audio_buffer_paused: bool,  // Whether audio playback is paused due to buffer overflow
-    audio_buffer_threshold: f64,  // Pause when buffer > this percentage
-    audio_buffer_resume_threshold: f64,  // Resume when buffer < this percentage
-    pending_tutor_activation: Option<String>,  // Track deferred tutor turn (control_output name)
+    participant_index_map: HashMap<String, u8>,  // Maps participant ID -> index (0-based)
+    current_question_id: u16,  // Track current conversation question ID (enhanced 16-bit format)
+    round_completed: bool,       // Track if current round text is complete (waiting for session_start)
+    round_participants: HashMap<u8, Vec<String>>,  // Track actual participants in each round (round -> participant IDs)
+    audio_started: std::collections::HashSet<u16>,  // Track which question_ids have started audio playback
 }
 
 impl ConferenceController {
@@ -135,32 +169,26 @@ impl ConferenceController {
 
         send_log(node, LogLevel::Info, log_level, &format!("🔄 Participant name mapping: {:?}", participant_name_map));
 
-        // Initialize question_id
-        let initial_question_id = env::var("INITIAL_QUESTION_ID")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(1); // Default: start at 1
+        // Initialize participant index mapping (0-based)
+        let mut participant_index_map = HashMap::new();
+        for (index, participant_id) in participants.iter().enumerate() {
+            participant_index_map.insert(participant_id.clone(), index as u8);
+            send_log(node, LogLevel::Debug, log_level,
+                &format!("📍 Participant index mapping: {} -> {}", participant_id, index));
+        }
+
+        // Initialize enhanced question_id for round 1
+        let initial_round = 0; // 0-based for encoding
+        let total_participants = participants.len() as u8;
+        // Start with first participant (index 0)
+        let initial_enhanced_id = encode_enhanced_question_id(initial_round, 0, total_participants);
 
         send_log(node, LogLevel::Info, log_level,
-            &format!("🏷️ Starting conversation with question_id: {}", initial_question_id));
+            &format!("🏷️ Starting with enhanced question_id: {} ({})",
+                initial_enhanced_id, enhanced_id_debug_string(initial_enhanced_id)));
 
         // Log the ready message after all initialization is complete
         send_log(node, LogLevel::Info, log_level, "🚀 all nodes are ready, starting dataflow");
-
-        // 🎵 Load audio buffer thresholds from environment
-        let audio_buffer_threshold = env::var("AUDIO_BUFFER_THRESHOLD")
-            .ok()
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(80.0); // Default: pause at 80% buffer
-
-        let audio_buffer_resume_threshold = env::var("AUDIO_BUFFER_RESUME_THRESHOLD")
-            .ok()
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(30.0); // Default: resume at 30% buffer
-
-        send_log(node, LogLevel::Info, log_level,
-            &format!("🎵 Audio buffer thresholds: pause > {:.1}%, resume < {:.1}%",
-                audio_buffer_threshold, audio_buffer_resume_threshold));
 
         Ok(Self {
             state: ControllerState::Waiting,
@@ -171,12 +199,11 @@ impl ConferenceController {
             log_level,
             reset_pending: false,
             participant_name_map,
-            current_question_id: initial_question_id,
+            participant_index_map,
+            current_question_id: initial_enhanced_id,
             round_completed: false,
-            audio_buffer_paused: false,
-            audio_buffer_threshold,
-            audio_buffer_resume_threshold,
-            pending_tutor_activation: None,
+            round_participants: HashMap::new(),
+            audio_started: std::collections::HashSet::new(),
         })
     }
 
@@ -310,43 +337,187 @@ impl ConferenceController {
                 &format!("📥 {} completed ({} words)", participant_id, word_count));
 
             // Check if this completes a round (all participants have spoken)
-            self.check_round_completion(node);
-
-            self.process_next_speaker(node)?;
+            let round_text_complete = self.policy.all_participants_completed();
+            if round_text_complete {
+                self.check_round_completion(node)?;
+                // check_round_completion will either advance immediately (if P0 already started)
+                // or wait for session_start signal from audio player
+            } else {
+                // Round not complete yet, proceed to next speaker
+                self.process_next_speaker(node)?;
+            }
         }
 
         Ok(())
     }
 
     /// Generate new question_id for next conversation round
-    fn generate_new_question_id(&mut self, node: &mut DoraNode) -> u32 {
-        self.current_question_id += 1;
-        send_log(node, LogLevel::Info, self.log_level,
-            &format!("🏷️ New conversation round - question_id: {}", self.current_question_id));
-        self.current_question_id
+    fn generate_enhanced_question_id(&mut self, node: &mut DoraNode, participant_id: &str) -> u16 {
+        // Get current round from existing question_id
+        let (current_round, _, _, _) = decode_enhanced_question_id(self.current_question_id);
+
+        // Initialize round participants if not already done
+        if !self.round_participants.contains_key(&current_round) {
+            self.initialize_round_participants(node, current_round);
+        }
+
+        // Get participant index within the round
+        let empty_vec = vec![];
+        let round_participants = self.round_participants.get(&current_round)
+            .unwrap_or(&empty_vec);
+
+        // Find this participant's index in the round
+        let participant_index = round_participants.iter()
+            .position(|p| p == participant_id)
+            .unwrap_or(0) as u8;
+
+        let round_participant_count = round_participants.len() as u8;
+
+        // Generate enhanced question_id with round-specific participant count
+        let enhanced_id = encode_enhanced_question_id(current_round, participant_index, round_participant_count);
+
+        send_log(node, LogLevel::Debug, self.log_level,
+            &format!("🏷️ Generated enhanced question_id: {} ({}) for participant {} (round has {} participants)",
+                enhanced_id, enhanced_id_debug_string(enhanced_id), participant_id, round_participant_count));
+
+        enhanced_id
     }
 
-    /// Check if current round is completed and prepare for next round
-    fn check_round_completion(&mut self, node: &mut DoraNode) {
+    // Initialize participants for the current round
+    fn initialize_round_participants(&mut self, node: &mut DoraNode, round_number: u8) {
+        // Get the actual participants that will speak in this round
+        // This should be based on policy logic for who gets to speak
+        let mut round_participants = Vec::new();
+
+        // For now, we'll simulate by asking the policy who the next speakers would be
+        // In a real implementation, this should be coordinated with the policy to determine
+        // the complete set of participants for this round
+        let all_participants = self.policy.get_participants();
+
+        // TODO: This needs to be improved to actually determine round-specific participants
+        // based on priority, audio buffer status, and other criteria
+        // For now, we'll use all participants as a fallback
+        for participant_id in all_participants {
+            round_participants.push(participant_id);
+        }
+
+        self.round_participants.insert(round_number, round_participants.clone());
+
+        send_log(node, LogLevel::Info, self.log_level,
+            &format!("👥 Round {} initialized with {} participants: {:?}",
+                round_number + 1, round_participants.len(), round_participants));
+    }
+
+    // Generate enhanced question_id for next round (first participant)
+    fn advance_to_new_round(&mut self, node: &mut DoraNode) -> u16 {
+        // Get current round and increment
+        let (current_round, _, _, _) = decode_enhanced_question_id(self.current_question_id);
+        let new_round = current_round + 1; // Next round
+
+        // Clear audio_started tracking for new round
+        self.audio_started.clear();
+
+        // Initialize participants for this new round
+        self.initialize_round_participants(node, new_round);
+
+        // Get the actual number of participants in THIS round
+        let round_participant_count = self.round_participants.get(&new_round)
+            .map(|participants| participants.len() as u8)
+            .unwrap_or(1); // Default to 1 if not set
+
+        // Start new round with first participant (index 0)
+        let enhanced_id = encode_enhanced_question_id(new_round, 0, round_participant_count);
+
+        send_log(node, LogLevel::Info, self.log_level,
+            &format!("🏷️ Advanced to round {} - first enhanced question_id: {} ({})",
+                new_round + 1, enhanced_id, enhanced_id_debug_string(enhanced_id)));
+
+        enhanced_id
+    }
+
+    /// Handle TTS session end signals for round completion
+    fn handle_session_start(&mut self, question_id: u16, node: &mut DoraNode, log_level: LogLevel) -> Result<()> {
+        let (round, participant, total, _is_last) = decode_enhanced_question_id(question_id);
+        let round_number = round + 1; // Convert to 1-based for logging
+        let participant_number = participant + 1; // Convert to 1-based for logging
+
+        // Validate decoded question_id components
+        if total == 0 || participant >= total {
+            send_log(node, LogLevel::Error, log_level,
+                &format!("❌ Invalid question_id components: total={}, participant={} (question_id={})",
+                    total, participant, question_id));
+            return Ok(()); // Ignore invalid question_id
+        }
+
+        send_log(node, LogLevel::Info, log_level,
+            &format!("🎬 Session start: {} ({}) - participant {} of round {}",
+                question_id, enhanced_id_debug_string(question_id), participant_number, round_number));
+
+        // Track that this question_id has started audio playback
+        self.audio_started.insert(question_id);
+
+        // Get current round from current_question_id
+        let (current_round, _, _, _) = decode_enhanced_question_id(self.current_question_id);
+
+        // If we were waiting for round advancement (round_completed=true),
+        // check if we can advance now
+        if self.round_completed && round == current_round {
+            // Check if the first participant (P0) of current round has started audio
+            let first_participant_qid = encode_enhanced_question_id(current_round, 0, total);
+
+            if self.audio_started.contains(&first_participant_qid) {
+                send_log(node, LogLevel::Info, log_level,
+                    &format!("✅ Round advancement condition met - first participant of round {} has already started audio",
+                        round_number));
+
+                // Advance to next round
+                self.advance_round_after_session_start(node, log_level, round)?;
+            } else {
+                send_log(node, LogLevel::Debug, log_level,
+                    &format!("📝 Participant {} of round {} session started (waiting for P1 to start audio)",
+                        participant_number, round_number));
+            }
+        } else {
+            send_log(node, LogLevel::Debug, log_level,
+                &format!("📝 Participant {} of round {} session started (round not text-complete yet)",
+                    participant_number, round_number));
+        }
+
+        Ok(())
+    }
+
+    // TTS completion handling removed - now using session end signals from audio player
+
+    /// Check if current round text completion is done and if first participant has already started audio
+    fn check_round_completion(&mut self, node: &mut DoraNode) -> Result<()> {
         // Check if all participants have completed in this round
         if self.policy.all_participants_completed() {
-            if !self.round_completed {
+            send_log(node, LogLevel::Info, self.log_level,
+                "📋 All participants completed text - checking if first participant already started audio");
+
+            // Get current round and check if first participant (P0) has already started audio
+            let (current_round, _, total_participants, _) = decode_enhanced_question_id(self.current_question_id);
+            let first_participant_qid = encode_enhanced_question_id(current_round, 0, total_participants);
+
+            if self.audio_started.contains(&first_participant_qid) {
                 send_log(node, LogLevel::Info, self.log_level,
-                    "📋 All participants completed - round finished");
+                    &format!("✅ First participant (P1) of round {} already started audio - advancing immediately",
+                        current_round + 1));
+
+                // Set round_completed flag before advancing
                 self.round_completed = true;
 
-                // Increment cycle counter
-                self.policy.increment_cycle();
-                let current_cycle = self.policy.get_current_cycle();
+                // Advance round immediately
+                self.advance_round_after_session_start(node, self.log_level, current_round)?;
+            } else {
                 send_log(node, LogLevel::Info, self.log_level,
-                    &format!("🔄 Advanced to cycle: {}", current_cycle));
+                    "⏳ Round will advance when first participant (P1) starts audio playback");
 
-                // Generate new question_id for NEXT round
-                let next_question_id = self.current_question_id + 1;
-                send_log(node, LogLevel::Info, self.log_level,
-                    &format!("🏷️ Next round will use question_id: {}", next_question_id));
+                // Set round_completed flag to wait for session_start
+                self.round_completed = true;
             }
         }
+        Ok(())
     }
 
     fn process_next_speaker(&mut self, node: &mut DoraNode) -> Result<()> {
@@ -377,39 +548,21 @@ impl ConferenceController {
 
             // If starting a new round, increment question_id
             if self.round_completed {
-                self.generate_new_question_id(node);
+                self.current_question_id = self.advance_to_new_round(node);
                 self.round_completed = false;
                 // Reset round tracking for the new round
                 self.policy.reset_round_tracking();
+            } else {
+                // Generate enhanced question_id for this participant in current round
+                // Use next_speaker as participant_id
+                self.current_question_id = self.generate_enhanced_question_id(node, &next_speaker);
             }
 
-            // Prepare metadata with current question_id
+            // Prepare metadata with enhanced question_id
             let mut metadata = std::collections::BTreeMap::new();
+            // Store question_id as string for compatibility
             metadata.insert("question_id".to_string(),
                 dora_node_api::Parameter::String(self.current_question_id.to_string()));
-
-            // 🎵 Check audio buffer backpressure for tutor
-            let is_tutor = control_output == "control_judge" || next_speaker.contains("tutor") || next_speaker.contains("judge");
-
-            if is_tutor && self.should_pause_tutor_output() {
-                // Audio buffer is full - defer tutor activation for retry when buffer drains
-                self.pending_tutor_activation = Some(control_output.to_string());
-
-                send_log(node, LogLevel::Info, self.log_level,
-                    &format!("🎵 🛑 DEFERRED BRIDGE {}: Audio buffer backpressure (threshold: {:.1}%), will retry when buffer < {:.1}% (question_id: {})",
-                        control_output, self.audio_buffer_threshold, self.audio_buffer_resume_threshold, self.current_question_id));
-
-                // Don't send resume yet - wait for buffer to drain
-                return Ok(());
-            }
-
-            // Clear pending activation when successfully sending resume
-            if is_tutor {
-                self.pending_tutor_activation = None;
-                send_log(node, LogLevel::Info, self.log_level,
-                    &format!("🎵 ✅ RESUME BRIDGE {}: Audio buffer safe (question_id: {})",
-                        control_output, self.current_question_id));
-            }
 
             send_log(node, LogLevel::Info, self.log_level,
                 &format!("🎯 {}: {} → {} (question_id: {})",
@@ -436,9 +589,26 @@ impl ConferenceController {
         Ok(())
     }
 
+    /// Advance to next round after session start of first participant
+    fn advance_round_after_session_start(&mut self, node: &mut DoraNode, log_level: LogLevel, round: u8) -> Result<()> {
+        let round_number = round + 1;
+        send_log(node, LogLevel::Info, log_level,
+            &format!("🚀 Advancing to next round - first participant of round {} started audio", round_number));
+
+        // self.round_completed is already true from text completion
+        // Now call process_next_speaker to actually advance to next round
+        // process_next_speaker will call advance_to_new_round which increments the round number
+        self.process_next_speaker(node)?;
+
+        send_log(node, LogLevel::Info, log_level,
+            &format!("✅ Advanced to next round - audio playing for round {}", round_number));
+
+        Ok(())
+    }
+
     fn reset(&mut self, node: &mut DoraNode) -> Result<()> {
-        // Generate new question_id for fresh conversation
-        self.generate_new_question_id(node);
+        // Generate new question_id for fresh conversation - start with round 0, participant 0
+        self.current_question_id = encode_enhanced_question_id(0, 0, 1);
 
         send_log(node, LogLevel::Info, self.log_level, "🔄 Resetting controller");
         self.reset_pending = true;
@@ -461,10 +631,12 @@ impl ConferenceController {
         // Reset internal state
         self.participant_inputs.clear();
         self.streaming_accumulators.clear();
+        self.audio_started.clear();
+        self.round_participants.clear();
+        self.round_completed = false;
         self.policy.reset_counts();
         self.policy.reset_round_tracking();  // Reset round tracking
         self.state = ControllerState::Waiting;
-        self.pending_tutor_activation = None;  // Clear any pending activation
 
         send_log(node, LogLevel::Info, self.log_level, "✅ Reset complete");
         Ok(())
@@ -482,67 +654,6 @@ impl ConferenceController {
         }
 
         stats
-    }
-
-    /// Handle audio buffer status for backpressure control
-    fn handle_audio_buffer_status(&mut self, buffer_percentage: f64, node: &mut DoraNode, log_level: LogLevel) -> Result<()> {
-        let was_paused = self.audio_buffer_paused;
-
-        // Check if buffer exceeded threshold (need to pause)
-        if buffer_percentage > self.audio_buffer_threshold && !self.audio_buffer_paused {
-            self.audio_buffer_paused = true;
-            send_log(node, LogLevel::Info, log_level,
-                &format!("🎵 Audio buffer {:.1}% > {:.1}%: PAUSING tutor output to prevent overflow",
-                    buffer_percentage, self.audio_buffer_threshold));
-        }
-        // Check if buffer dropped below resume threshold (can resume)
-        else if buffer_percentage < self.audio_buffer_resume_threshold && self.audio_buffer_paused {
-            self.audio_buffer_paused = false;
-            send_log(node, LogLevel::Info, log_level,
-                &format!("🎵 Audio buffer {:.1}% < {:.1}%: RESUMING tutor output",
-                    buffer_percentage, self.audio_buffer_resume_threshold));
-
-            // ✅ Retry pending tutor activation that was deferred due to backpressure
-            if let Some(control_output) = &self.pending_tutor_activation {
-                let control_output = control_output.clone();
-                self.pending_tutor_activation = None;  // Clear before retry
-
-                send_log(node, LogLevel::Info, log_level,
-                    &format!("🎵 ✅ RETRY DEFERRED BRIDGE {}: Sending resume (buffer: {:.1}%, question_id: {})",
-                        control_output, buffer_percentage, self.current_question_id));
-
-                // Prepare metadata with current question_id
-                let mut metadata = std::collections::BTreeMap::new();
-                metadata.insert("question_id".to_string(),
-                    dora_node_api::Parameter::String(self.current_question_id.to_string()));
-
-                // Send resume signal
-                if let Err(e) = node.send_output(
-                    DataId::from(control_output.clone()),
-                    metadata,
-                    StringArray::from(vec!["resume"]),
-                ) {
-                    send_log(node, LogLevel::Error, log_level,
-                        &format!("❌ Failed to send deferred resume to {}: {}", control_output, e));
-                }
-            }
-        }
-
-        // Log status changes for debugging
-        if was_paused != self.audio_buffer_paused {
-            send_log(node, LogLevel::Info, log_level,
-                &format!("🎵 Audio backpressure status changed: {} -> {} (buffer: {:.1}%)",
-                    if was_paused { "PAUSED" } else { "ACTIVE" },
-                    if self.audio_buffer_paused { "PAUSED" } else { "ACTIVE" },
-                    buffer_percentage));
-        }
-
-        Ok(())
-    }
-
-    /// Check if audio buffer backpressure is preventing tutor output
-    fn should_pause_tutor_output(&self) -> bool {
-        self.audio_buffer_paused
     }
 }
 
@@ -566,7 +677,6 @@ fn main() -> Result<()> {
         .unwrap_or(LogLevel::Info);
 
     send_log(&mut node, LogLevel::Info, log_level, &format!("🚀 Controller started with pattern: {}", pattern));
-    send_log(&mut node, LogLevel::Info, log_level, "🎵 Audio buffer backpressure control enabled - expecting buffer_status input");
     let mut controller = ConferenceController::new(pattern, &mut node, log_level)?;
 
     let mut events = dora_node_api::futures::executor::block_on_stream(events);
@@ -599,11 +709,23 @@ fn main() -> Result<()> {
                     if let Some(json) = &parsed_json {
                         // Handle JSON control input
                         if let Some(prompt) = json.get("prompt").and_then(|v| v.as_str()) {
-                            // Forward prompt to judge via llm_control
-                            send_log(&mut node, LogLevel::Info, log_level, &format!("📤 Forwarding user prompt to judge: {}", prompt));
+                            // Forward prompt to judge via llm_control with question_id metadata
+                            send_log(&mut node, LogLevel::Info, log_level,
+                                &format!("📤 Forwarding user prompt to judge with question_id={} ({}): {}",
+                                    controller.current_question_id,
+                                    enhanced_id_debug_string(controller.current_question_id),
+                                    prompt));
+
+                            // Create metadata with question_id
+                            let mut metadata = std::collections::BTreeMap::new();
+                            metadata.insert(
+                                "question_id".to_string(),
+                                Parameter::String(controller.current_question_id.to_string())
+                            );
+
                             node.send_output(
                                 DataId::from("judge_prompt".to_string()),
-                                Default::default(),
+                                metadata,
                                 StringArray::from(vec![control_text]),  // Forward the full JSON
                             )?;
                         } else if let Some(command) = json.get("command").and_then(|v| v.as_str()) {
@@ -676,37 +798,44 @@ fn main() -> Result<()> {
                             }
                         }
                     }
-                } else if id.as_str() == "buffer_status" {
-                    // Handle audio buffer status for backpressure control
-                    send_log(&mut node, LogLevel::Debug, log_level, "🎵 Received buffer_status input from audio-player");
+                } else if id.as_str() == "session_start" {
+                    // Handle session start signal from audio player
+                    // When we receive session_start for first participant of a round,
+                    // it means we can advance to that round
+                    send_log(&mut node, LogLevel::Info, log_level, "🎬 Received session_start input from audio player");
 
-                    // Audio player sends buffer percentage as a float array with metadata
-                    let mut buffer_percentage = 0.0;
+                    // Read the data (session_status string) - we don't use it but need to consume it
+                    let _session_status_array = data.as_string::<i32>();
 
-                    // Try to get buffer percentage from metadata first (more reliable)
-                    if let Some(buffer_val) = metadata.parameters.get("buffer_percentage") {
-                        send_log(&mut node, LogLevel::Debug, log_level, &format!("🎵 Found buffer_percentage in metadata: {:?}", buffer_val));
-                        if let dora_node_api::Parameter::Float(val) = buffer_val {
-                            buffer_percentage = *val;
-                        }
-                    }
-
-                    // If metadata doesn't have it, try to parse from the data array
-                    if buffer_percentage == 0.0 {
-                        // The audio player sends a float array: pa.array([buffer_percentage])
-                        send_log(&mut node, LogLevel::Debug, log_level, "🎵 Trying to parse buffer from data array");
-                        if let Some(buffer_array) = data.as_primitive_opt::<Float64Type>() {
-                            if buffer_array.len() > 0 {
-                                buffer_percentage = buffer_array.value(0) as f64;
-                                send_log(&mut node, LogLevel::Debug, log_level, &format!("🎵 Parsed buffer from array: {}", buffer_percentage));
+                    // Get question_id from metadata
+                    let question_id = if let Some(Parameter::String(qid_str)) = metadata.parameters.get("question_id") {
+                        match qid_str.parse::<u16>() {
+                            Ok(qid) => {
+                                if qid == 0 {
+                                    send_log(&mut node, LogLevel::Error, log_level, "❌ Invalid question_id=0 in session_start signal - ignoring");
+                                    continue;
+                                }
+                                qid
                             }
-                        } else {
-                            send_log(&mut node, LogLevel::Warn, log_level, "🎵 Failed to parse float array from audio_buffer_status");
+                            Err(e) => {
+                                send_log(&mut node, LogLevel::Error, log_level, &format!("❌ Failed to parse question_id '{}' in session_start signal: {}", qid_str, e));
+                                continue;
+                            }
                         }
-                    }
+                    } else {
+                        send_log(&mut node, LogLevel::Warn, log_level, "⚠️ Session start signal missing question_id metadata");
+                        continue;
+                    };
 
-                    send_log(&mut node, LogLevel::Debug, log_level, &format!("🎵 Audio buffer status: {:.1}%", buffer_percentage));
-                    controller.handle_audio_buffer_status(buffer_percentage, &mut node, log_level)?;
+                    // Handle session start for round advancement
+                    if let Err(e) = controller.handle_session_start(question_id, &mut node, log_level) {
+                        send_log(&mut node, LogLevel::Error, log_level, &format!("❌ Error handling session start: {}", e));
+                    }
+                } else if id.as_str() == "buffer_status" {
+                    // Buffer status from audio player - we don't use this anymore
+                    // Just consume it to avoid crashes
+                    let _buffer_data = data.as_primitive::<arrow::datatypes::Float64Type>();
+                    send_log(&mut node, LogLevel::Debug, log_level, "📊 Received buffer_status (ignored)");
                 } else {
                     // Participant input - extract text
                     let text_array = data.as_string::<i32>();

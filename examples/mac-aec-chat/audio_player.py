@@ -360,18 +360,10 @@ def main():
                                             print(f"[Audio Player] DEBUG: DISCARDING - audio question_id={audio_question_id} != reset_question_id={reset_question_id}", flush=True)
                                             continue
                                     else:
-                                        # Fallback to old fragment/segment detection
-                                        fragment_num = metadata.get("fragment_num", 0)
-                                        segment_index = metadata.get("segment_index", -1)
-
-                                        if fragment_num == 1 or segment_index == 0:
-                                            discard_next_audio = False
-                                            print(f"[Audio Player] DEBUG: Stop discarding - fragment={fragment_num} or segment={segment_index} is 0", flush=True)
-                                        else:
-                                            print(f"[Audio Player] DEBUG: DISCARDING - fragment={fragment_num}, segment={segment_index} (fallback)", flush=True)
-                                            continue
-
-                                segment_index = metadata.get("segment_index", -1)
+                                        # Fallback detection - assume first audio after reset is new content
+                                        # This is less reliable than question_id matching but provides basic functionality
+                                        print(f"[Audio Player] DEBUG: No question_id available - assuming this is new content", flush=True)
+                                        discard_next_audio = False
 
                                 incoming_rate = metadata.get("sample_rate")
                                 if incoming_rate is not None:
@@ -386,9 +378,9 @@ def main():
                                 player.add_audio(audio_data)
 
                                 # Print audio reception info
-                                segment_index = metadata.get("segment_index", -1)
                                 duration = len(audio_data) / effective_rate if effective_rate > 0 else 0.0
-                                print(f"[Audio Player] RECEIVED audio segment {segment_index + 1}: {len(audio_data)} samples, {duration:.3f}s duration", flush=True)
+                                question_id = metadata.get("question_id", "unknown")
+                                print(f"[Audio Player] RECEIVED audio (question_id={question_id}): {len(audio_data)} samples, {duration:.3f}s duration", flush=True)
                                 
                                 # Auto-start playback as soon as we have any audio
                                 if not playback_started and len(audio_data) > 0:

@@ -74,6 +74,16 @@ def get_node_config_entries():
             "icon": "🔌",
             "color": Colors.BLUE
         }),
+        ("audio-player", {
+            "name": "Audio Player",
+            "icon": "🔊",
+            "color": Colors.CYAN
+        }),
+        ("audio_player", {
+            "name": "Audio Player",
+            "icon": "🔊",
+            "color": Colors.CYAN
+        }),
         ("conference-controller", {
             "name": "Controller",
             "icon": "🎯",
@@ -253,6 +263,9 @@ def get_node_config_from_input_id(input_id):
 
     if "controller" in input_id.lower():
         return {"name": "Controller", "icon": "🎯", "color": Colors.BLUE}
+
+    if "audio" in input_id.lower() and ("player" in input_id.lower() or "status" in input_id.lower()):
+        return {"name": "Audio Player", "icon": "🔊", "color": Colors.CYAN}
 
     # Fallback to original logic
     # Extract base node name from input_id (remove suffix like _log, _status, _text)
