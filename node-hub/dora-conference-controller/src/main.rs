@@ -414,6 +414,9 @@ impl ConferenceController {
         let (current_round, _, _, _) = decode_enhanced_question_id(self.current_question_id);
         let new_round = current_round + 1; // Next round
 
+        // Increment policy cycle counter (for ratio_priority mode tracking)
+        self.policy.increment_cycle();
+
         // Clear audio_started tracking for new round
         self.audio_started.clear();
 
@@ -437,7 +440,7 @@ impl ConferenceController {
 
     /// Handle TTS session end signals for round completion
     fn handle_session_start(&mut self, question_id: u16, node: &mut DoraNode, log_level: LogLevel) -> Result<()> {
-        let (round, participant, total, _is_last) = decode_enhanced_question_id(question_id);
+        let (round, participant, total, is_last) = decode_enhanced_question_id(question_id);
         let round_number = round + 1; // Convert to 1-based for logging
         let participant_number = participant + 1; // Convert to 1-based for logging
 
@@ -450,8 +453,9 @@ impl ConferenceController {
         }
 
         send_log(node, LogLevel::Info, log_level,
-            &format!("🎬 Session start: {} ({}) - participant {} of round {}",
-                question_id, enhanced_id_debug_string(question_id), participant_number, round_number));
+            &format!("🎬 Session start: {} ({}) - participant {} of round {}{}",
+                question_id, enhanced_id_debug_string(question_id), participant_number, round_number,
+                if is_last { " [LAST]" } else { "" }));
 
         // Track that this question_id has started audio playback
         self.audio_started.insert(question_id);
@@ -462,20 +466,18 @@ impl ConferenceController {
         // If we were waiting for round advancement (round_completed=true),
         // check if we can advance now
         if self.round_completed && round == current_round {
-            // Check if the first participant (P0) of current round has started audio
-            let first_participant_qid = encode_enhanced_question_id(current_round, 0, total);
-
-            if self.audio_started.contains(&first_participant_qid) {
+            // Check if this is the last participant of current round
+            if is_last {
                 send_log(node, LogLevel::Info, log_level,
-                    &format!("✅ Round advancement condition met - first participant of round {} has already started audio",
-                        round_number));
+                    &format!("✅ Round advancement condition met - last participant (P{}) of round {} has started audio",
+                        total, round_number));
 
                 // Advance to next round
                 self.advance_round_after_session_start(node, log_level, round)?;
             } else {
                 send_log(node, LogLevel::Debug, log_level,
-                    &format!("📝 Participant {} of round {} session started (waiting for P1 to start audio)",
-                        participant_number, round_number));
+                    &format!("📝 Participant {} of round {} session started (waiting for P{} to start audio)",
+                        participant_number, round_number, total));
             }
         } else {
             send_log(node, LogLevel::Debug, log_level,
@@ -488,21 +490,21 @@ impl ConferenceController {
 
     // TTS completion handling removed - now using session end signals from audio player
 
-    /// Check if current round text completion is done and if first participant has already started audio
+    /// Check if current round text completion is done and if last participant has already started audio
     fn check_round_completion(&mut self, node: &mut DoraNode) -> Result<()> {
         // Check if all participants have completed in this round
         if self.policy.all_participants_completed() {
             send_log(node, LogLevel::Info, self.log_level,
-                "📋 All participants completed text - checking if first participant already started audio");
+                "📋 All participants completed text - checking if last participant already started audio");
 
-            // Get current round and check if first participant (P0) has already started audio
+            // Get current round and check if last participant has already started audio
             let (current_round, _, total_participants, _) = decode_enhanced_question_id(self.current_question_id);
-            let first_participant_qid = encode_enhanced_question_id(current_round, 0, total_participants);
+            let last_participant_qid = encode_enhanced_question_id(current_round, total_participants - 1, total_participants);
 
-            if self.audio_started.contains(&first_participant_qid) {
+            if self.audio_started.contains(&last_participant_qid) {
                 send_log(node, LogLevel::Info, self.log_level,
-                    &format!("✅ First participant (P1) of round {} already started audio - advancing immediately",
-                        current_round + 1));
+                    &format!("✅ Last participant (P{}) of round {} already started audio - advancing immediately",
+                        total_participants, current_round + 1));
 
                 // Set round_completed flag before advancing
                 self.round_completed = true;
@@ -511,7 +513,7 @@ impl ConferenceController {
                 self.advance_round_after_session_start(node, self.log_level, current_round)?;
             } else {
                 send_log(node, LogLevel::Info, self.log_level,
-                    "⏳ Round will advance when first participant (P1) starts audio playback");
+                    &format!("⏳ Round will advance when last participant (P{}) starts audio playback", total_participants));
 
                 // Set round_completed flag to wait for session_start
                 self.round_completed = true;
