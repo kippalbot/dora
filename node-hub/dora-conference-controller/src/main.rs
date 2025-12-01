@@ -126,9 +126,10 @@ struct ConferenceController {
     participant_name_map: HashMap<String, String>, // Maps role -> participant ID (e.g., "judge" -> "tutor")
     participant_index_map: HashMap<String, u8>,  // Maps participant ID -> index (0-based)
     current_question_id: u16,  // Track current conversation question ID (enhanced 16-bit format)
-    round_completed: bool,       // Track if current round text is complete (waiting for session_start)
-    round_participants: HashMap<u8, Vec<String>>,  // Track actual participants in each round (round -> participant IDs)
-    audio_started: std::collections::HashSet<u16>,  // Track which question_ids have started audio playback
+
+    // New session-start based resume control
+    waiting_for_session_start: Option<u16>,  // Question ID we're waiting for
+    pending_next_speaker: bool,              // Flag that next speaker should be determined after session_start
 }
 
 impl ConferenceController {
@@ -201,9 +202,8 @@ impl ConferenceController {
             participant_name_map,
             participant_index_map,
             current_question_id: initial_enhanced_id,
-            round_completed: false,
-            round_participants: HashMap::new(),
-            audio_started: std::collections::HashSet::new(),
+            waiting_for_session_start: None,  // Cold start - no waiting initially
+            pending_next_speaker: false,
         })
     }
 
@@ -336,240 +336,77 @@ impl ConferenceController {
             send_log(node, LogLevel::Info, self.log_level,
                 &format!("📥 {} completed ({} words)", participant_id, word_count));
 
-            // Check if this completes a round (all participants have spoken)
-            let round_text_complete = self.policy.all_participants_completed();
-            if round_text_complete {
-                self.check_round_completion(node)?;
-                // check_round_completion will either advance immediately (if P0 already started)
-                // or wait for session_start signal from audio player
-            } else {
-                // Round not complete yet, proceed to next speaker
-                self.process_next_speaker(node)?;
-            }
+            // Process next speaker (will wait for session_start if needed)
+            self.process_next_speaker(node)?;
         }
 
         Ok(())
     }
 
     /// Generate new question_id for next conversation round
-    fn generate_enhanced_question_id(&mut self, node: &mut DoraNode, participant_id: &str) -> u16 {
-        // Get current round from existing question_id
-        let (current_round, _, _, _) = decode_enhanced_question_id(self.current_question_id);
-
-        // Initialize round participants if not already done
-        if !self.round_participants.contains_key(&current_round) {
-            self.initialize_round_participants(node, current_round);
-        }
-
-        // Get participant index within the round
-        let empty_vec = vec![];
-        let round_participants = self.round_participants.get(&current_round)
-            .unwrap_or(&empty_vec);
-
-        // Find this participant's index in the round
-        let participant_index = round_participants.iter()
-            .position(|p| p == participant_id)
-            .unwrap_or(0) as u8;
-
-        let round_participant_count = round_participants.len() as u8;
-
-        // Generate enhanced question_id with round-specific participant count
-        let enhanced_id = encode_enhanced_question_id(current_round, participant_index, round_participant_count);
-
-        send_log(node, LogLevel::Debug, self.log_level,
-            &format!("🏷️ Generated enhanced question_id: {} ({}) for participant {} (round has {} participants)",
-                enhanced_id, enhanced_id_debug_string(enhanced_id), participant_id, round_participant_count));
-
-        enhanced_id
-    }
-
-    // Initialize participants for the current round
-    fn initialize_round_participants(&mut self, node: &mut DoraNode, round_number: u8) {
-        // Get the actual participants that will speak in this round
-        // This should be based on policy logic for who gets to speak
-        let mut round_participants = Vec::new();
-
-        // For now, we'll simulate by asking the policy who the next speakers would be
-        // In a real implementation, this should be coordinated with the policy to determine
-        // the complete set of participants for this round
-        let all_participants = self.policy.get_participants();
-
-        // TODO: This needs to be improved to actually determine round-specific participants
-        // based on priority, audio buffer status, and other criteria
-        // For now, we'll use all participants as a fallback
-        for participant_id in all_participants {
-            round_participants.push(participant_id);
-        }
-
-        self.round_participants.insert(round_number, round_participants.clone());
-
-        send_log(node, LogLevel::Info, self.log_level,
-            &format!("👥 Round {} initialized with {} participants: {:?}",
-                round_number + 1, round_participants.len(), round_participants));
-    }
-
-    // Generate enhanced question_id for next round (first participant)
-    fn advance_to_new_round(&mut self, node: &mut DoraNode) -> u16 {
-        // Get current round and increment
-        let (current_round, _, _, _) = decode_enhanced_question_id(self.current_question_id);
-        let new_round = current_round + 1; // Next round
-
-        // Increment policy cycle counter (for ratio_priority mode tracking)
-        self.policy.increment_cycle();
-
-        // Clear audio_started tracking for new round
-        self.audio_started.clear();
-
-        // Initialize participants for this new round
-        self.initialize_round_participants(node, new_round);
-
-        // Get the actual number of participants in THIS round
-        let round_participant_count = self.round_participants.get(&new_round)
-            .map(|participants| participants.len() as u8)
-            .unwrap_or(1); // Default to 1 if not set
-
-        // Start new round with first participant (index 0)
-        let enhanced_id = encode_enhanced_question_id(new_round, 0, round_participant_count);
-
-        send_log(node, LogLevel::Info, self.log_level,
-            &format!("🏷️ Advanced to round {} - first enhanced question_id: {} ({})",
-                new_round + 1, enhanced_id, enhanced_id_debug_string(enhanced_id)));
-
-        enhanced_id
-    }
-
-    /// Handle TTS session end signals for round completion
+    /// Handle session_start signals from audio player
     fn handle_session_start(&mut self, question_id: u16, node: &mut DoraNode, log_level: LogLevel) -> Result<()> {
-        let (round, participant, total, is_last) = decode_enhanced_question_id(question_id);
-        let round_number = round + 1; // Convert to 1-based for logging
-        let participant_number = participant + 1; // Convert to 1-based for logging
-
-        // Validate decoded question_id components
-        if total == 0 || participant >= total {
-            send_log(node, LogLevel::Error, log_level,
-                &format!("❌ Invalid question_id components: total={}, participant={} (question_id={})",
-                    total, participant, question_id));
-            return Ok(()); // Ignore invalid question_id
-        }
+        let (cycle, participant, total, _) = decode_enhanced_question_id(question_id);
 
         send_log(node, LogLevel::Info, log_level,
-            &format!("🎬 Session start: {} ({}) - participant {} of round {}{}",
-                question_id, enhanced_id_debug_string(question_id), participant_number, round_number,
-                if is_last { " [LAST]" } else { "" }));
+            &format!("🎬 Session start: {} ({})",
+                question_id, enhanced_id_debug_string(question_id)));
 
-        // Track that this question_id has started audio playback
-        self.audio_started.insert(question_id);
+        // Check if this is the session_start we're waiting for
+        if self.waiting_for_session_start == Some(question_id) {
+            send_log(node, LogLevel::Info, log_level,
+                "✅ Participant audio started - ready for next speaker");
 
-        // Get current round from current_question_id
-        let (current_round, _, _, _) = decode_enhanced_question_id(self.current_question_id);
+            // Clear waiting state
+            self.waiting_for_session_start = None;
 
-        // If we were waiting for round advancement (round_completed=true),
-        // check if we can advance now
-        if self.round_completed && round == current_round {
-            // Check if this is the last participant of current round
-            if is_last {
+            // If we have a pending next speaker request, process it now
+            if self.pending_next_speaker {
                 send_log(node, LogLevel::Info, log_level,
-                    &format!("✅ Round advancement condition met - last participant (P{}) of round {} has started audio",
-                        total, round_number));
-
-                // Advance to next round
-                self.advance_round_after_session_start(node, log_level, round)?;
-            } else {
-                send_log(node, LogLevel::Debug, log_level,
-                    &format!("📝 Participant {} of round {} session started (waiting for P{} to start audio)",
-                        participant_number, round_number, total));
+                    "🔄 Processing pending next speaker");
+                self.pending_next_speaker = false;
+                self.process_next_speaker(node)?;
             }
         } else {
             send_log(node, LogLevel::Debug, log_level,
-                &format!("📝 Participant {} of round {} session started (round not text-complete yet)",
-                    participant_number, round_number));
+                &format!("📝 Session start for question_id={} (not waiting for this one)", question_id));
         }
 
-        Ok(())
-    }
-
-    // TTS completion handling removed - now using session end signals from audio player
-
-    /// Check if current round text completion is done and if last participant has already started audio
-    fn check_round_completion(&mut self, node: &mut DoraNode) -> Result<()> {
-        // Check if all participants have completed in this round
-        if self.policy.all_participants_completed() {
-            send_log(node, LogLevel::Info, self.log_level,
-                "📋 All participants completed text - checking if last participant already started audio");
-
-            // Get current round and check if last participant has already started audio
-            let (current_round, _, total_participants, _) = decode_enhanced_question_id(self.current_question_id);
-            let last_participant_qid = encode_enhanced_question_id(current_round, total_participants - 1, total_participants);
-
-            if self.audio_started.contains(&last_participant_qid) {
-                send_log(node, LogLevel::Info, self.log_level,
-                    &format!("✅ Last participant (P{}) of round {} already started audio - advancing immediately",
-                        total_participants, current_round + 1));
-
-                // Set round_completed flag before advancing
-                self.round_completed = true;
-
-                // Advance round immediately
-                self.advance_round_after_session_start(node, self.log_level, current_round)?;
-            } else {
-                send_log(node, LogLevel::Info, self.log_level,
-                    &format!("⏳ Round will advance when last participant (P{}) starts audio playback", total_participants));
-
-                // Set round_completed flag to wait for session_start
-                self.round_completed = true;
-            }
-        }
         Ok(())
     }
 
     fn process_next_speaker(&mut self, node: &mut DoraNode) -> Result<()> {
-        if let Some(next_speaker) = self.policy.determine_next_speaker() {
-            // Map the participant ID to the correct control output
-            let control_output = match next_speaker.as_str() {
-                participant_id if self.participant_name_map.contains_key("judge") &&
-                                 self.participant_name_map.get("judge") == Some(&next_speaker) => "control_judge",
-                participant_id if self.participant_name_map.contains_key("llm2") &&
-                                 self.participant_name_map.get("llm2") == Some(&next_speaker) => "control_llm2",
-                participant_id if self.participant_name_map.contains_key("llm1") &&
-                                 self.participant_name_map.get("llm1") == Some(&next_speaker) => "control_llm1",
-                _ => {
-                    // Fallback: try to guess based on naming patterns
-                    if next_speaker.contains("judge") || next_speaker.contains("tutor") {
-                        "control_judge"
-                    } else if next_speaker.contains("llm2") || next_speaker.contains("student2") {
-                        "control_llm2"
-                    } else if next_speaker.contains("llm1") || next_speaker.contains("student1") {
-                        "control_llm1"
-                    } else {
-                        send_log(node, LogLevel::Warn, self.log_level,
-                            &format!("⚠️ Unknown speaker: {}, mapping: {:?}", next_speaker, self.participant_name_map));
-                        return Ok(());
-                    }
-                }
-            };
+        // Check if we're waiting for a session_start
+        if self.waiting_for_session_start.is_some() {
+            send_log(node, LogLevel::Debug, self.log_level,
+                "⏳ Waiting for session_start - marking pending");
+            // Mark that we need to process next speaker after session_start arrives
+            self.pending_next_speaker = true;
+            return Ok(());
+        }
 
-            // If starting a new round, increment question_id
-            if self.round_completed {
-                self.current_question_id = self.advance_to_new_round(node);
-                self.round_completed = false;
-                // Reset round tracking for the new round
-                self.policy.reset_round_tracking();
-            } else {
-                // Generate enhanced question_id for this participant in current round
-                // Use next_speaker as participant_id
-                self.current_question_id = self.generate_enhanced_question_id(node, &next_speaker);
-            }
+        // Cold start or session_start already received - proceed immediately
+        if let Some(next_speaker) = self.policy.determine_next_speaker() {
+            // Map the participant ID to the correct control output (convert to owned String)
+            let control_output = self.get_control_output(&next_speaker).to_string();
+
+            // Generate question_id for this participant using cycle# as round#
+            let cycle = self.policy.get_current_cycle() as u8;
+            let participant_index = self.get_participant_index(&next_speaker);
+            let total_participants = self.policy.get_participants().len() as u8;
+            self.current_question_id = encode_enhanced_question_id(cycle, participant_index, total_participants);
+
+            // Increment cycle counter
+            self.policy.increment_cycle();
 
             // Prepare metadata with enhanced question_id
             let mut metadata = std::collections::BTreeMap::new();
-            // Store question_id as string for compatibility
             metadata.insert("question_id".to_string(),
                 dora_node_api::Parameter::String(self.current_question_id.to_string()));
 
             send_log(node, LogLevel::Info, self.log_level,
-                &format!("🎯 {}: {} → {} (question_id: {})",
-                    if self.round_completed { "New Round" } else { "Continue Round" },
-                    next_speaker, control_output, self.current_question_id));
+                &format!("🎯 Resume: {} → {} (question_id: {}, cycle: {})",
+                    next_speaker, control_output, self.current_question_id, cycle));
 
             // Send resume WITH controller's question_id
             node.send_output(
@@ -577,6 +414,12 @@ impl ConferenceController {
                 metadata,
                 StringArray::from(vec!["resume"]),
             )?;
+
+            // Now wait for this participant's session_start before next resume
+            self.waiting_for_session_start = Some(self.current_question_id);
+
+            send_log(node, LogLevel::Debug, self.log_level,
+                &format!("⏳ Now waiting for session_start for question_id={}", self.current_question_id));
         } else {
             send_log(node, LogLevel::Warn, self.log_level, "⚠️ No next speaker");
         }
@@ -591,30 +434,41 @@ impl ConferenceController {
         Ok(())
     }
 
-    /// Advance to next round after session start of first participant
-    fn advance_round_after_session_start(&mut self, node: &mut DoraNode, log_level: LogLevel, round: u8) -> Result<()> {
-        let round_number = round + 1;
-        send_log(node, LogLevel::Info, log_level,
-            &format!("🚀 Advancing to next round - first participant of round {} started audio", round_number));
-
-        // self.round_completed is already true from text completion
-        // Now call process_next_speaker to actually advance to next round
-        // process_next_speaker will call advance_to_new_round which increments the round number
-        self.process_next_speaker(node)?;
-
-        send_log(node, LogLevel::Info, log_level,
-            &format!("✅ Advanced to next round - audio playing for round {}", round_number));
-
-        Ok(())
+    /// Get control output name for a participant
+    fn get_control_output(&self, participant: &str) -> &str {
+        if self.participant_name_map.contains_key("judge") &&
+           self.participant_name_map.get("judge") == Some(&participant.to_string()) {
+            "control_judge"
+        } else if self.participant_name_map.contains_key("llm2") &&
+                  self.participant_name_map.get("llm2") == Some(&participant.to_string()) {
+            "control_llm2"
+        } else if self.participant_name_map.contains_key("llm1") &&
+                  self.participant_name_map.get("llm1") == Some(&participant.to_string()) {
+            "control_llm1"
+        } else {
+            // Fallback: try to guess based on naming patterns
+            if participant.contains("judge") || participant.contains("tutor") {
+                "control_judge"
+            } else if participant.contains("llm2") || participant.contains("student2") {
+                "control_llm2"
+            } else {
+                "control_llm1"
+            }
+        }
     }
 
+    /// Get participant index (0-based) for question_id encoding
+    fn get_participant_index(&self, participant: &str) -> u8 {
+        *self.participant_index_map.get(participant).unwrap_or(&0)
+    }
+
+    /// Advance to next round after session start of first participant
     fn reset(&mut self, node: &mut DoraNode) -> Result<()> {
         // Generate new question_id for fresh conversation - start with round 0, participant 0
         self.current_question_id = encode_enhanced_question_id(0, 0, 1);
 
         send_log(node, LogLevel::Info, self.log_level, "🔄 Resetting controller");
         self.reset_pending = true;
-        self.round_completed = false;
 
         // Send reset to all bridges - use dynamic control outputs
         let control_outputs = vec!["control_judge", "control_llm2", "control_llm1"];
@@ -633,11 +487,9 @@ impl ConferenceController {
         // Reset internal state
         self.participant_inputs.clear();
         self.streaming_accumulators.clear();
-        self.audio_started.clear();
-        self.round_participants.clear();
-        self.round_completed = false;
+        self.waiting_for_session_start = None;
+        self.pending_next_speaker = false;
         self.policy.reset_counts();
-        self.policy.reset_round_tracking();  // Reset round tracking
         self.state = ControllerState::Waiting;
 
         send_log(node, LogLevel::Info, self.log_level, "✅ Reset complete");
