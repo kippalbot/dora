@@ -267,6 +267,13 @@ def get_node_config_from_input_id(input_id):
     if "audio" in input_id.lower() and ("player" in input_id.lower() or "status" in input_id.lower()):
         return {"name": "Audio Player", "icon": "🔊", "color": Colors.CYAN}
 
+    # Human speech pipeline nodes
+    if "asr" in input_id.lower():
+        return {"name": "ASR", "icon": "🎙️", "color": Colors.GREEN}
+
+    if "mac_aec" in input_id.lower() or "mac-aec" in input_id.lower():
+        return {"name": "mac_aec", "icon": "📦", "color": Colors.YELLOW}
+
     # Fallback to original logic
     # Extract base node name from input_id (remove suffix like _log, _status, _text)
     if "_" in input_id:

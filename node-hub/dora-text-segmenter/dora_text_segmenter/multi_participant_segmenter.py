@@ -159,9 +159,10 @@ def is_participant_port(event_id):
     """Check if event_id is a participant input port (not control or TTS or buffer control)."""
     CONTROL_PORTS = {"control", "reset"}
     BUFFER_CONTROL_PORTS = {"audio_buffer_control"}
-    if event_id in CONTROL_PORTS or event_id in BUFFER_CONTROL_PORTS:
+    COMPLETION_PORTS = {"audio_complete"}  # Audio player completion signals
+    if event_id in CONTROL_PORTS or event_id in BUFFER_CONTROL_PORTS or event_id in COMPLETION_PORTS:
         return False
-    if event_id.startswith("tts_complete_"):
+    if event_id.startswith("tts_complete_"):  # Keep for backward compatibility
         return False
     return True
 
@@ -228,7 +229,7 @@ def send_next_segment_for_participant(participant, node, log_level, segment_queu
         pa.array([segment["text"]]),
         metadata={
             "session_id": segment["session_id"],
-            "question_id": segment.get("question_id"),
+            "question_id": segment.get("question_id", "unknown"),
             "session_status": segment.get("session_status", "unknown")
         }
     )
@@ -475,7 +476,7 @@ def main():
                 if remove_speaker_id_enabled:
                     text = remove_speaker_id(text, node, log_level)
 
-                send_log(node, "INFO",
+                send_log(node, "DEBUG",
                     f"📥 CHUNK from {participant}: '{text}' (len={len(text)})",
                     log_level)
 
@@ -550,18 +551,25 @@ def main():
                 # Try to activate queue
                 try_activate_queue()
 
-        # ==================== SENDING SIDE: TTS Complete Events ====================
-        elif event_id.startswith("tts_complete_"):
-            participant = event_id.replace("tts_complete_", "")
+        # ==================== SENDING SIDE: Audio Complete Events ====================
+        # Audio player sends audio_complete when it receives audio (replaces TTS segment_complete)
+        elif event_id == "audio_complete":
+            metadata = event.get("metadata", {})
+            participant = metadata.get("participant")
+
+            if not participant:
+                send_log(node, "WARNING", f"audio_complete without participant metadata", log_level)
+                continue
+
             is_sending[participant] = False
 
-            send_log(node, "DEBUG", f"✅ TTS_COMPLETE from {participant}", log_level)
+            send_log(node, "DEBUG", f"✅ AUDIO_COMPLETE from {participant}", log_level)
 
-            # FIX: Check if this TTS complete is for the last chunk of a session that needs activation
+            # FIX: Check if this audio complete is for the last chunk of a session that needs activation
             if last_session_end_sent[participant] and active_queue == participant:
-                # This is the TTS complete for the last chunk of active session - time to activate next!
+                # This is the audio complete for the last chunk of active session - time to activate next!
                 send_log(node, "INFO",
-                    f"🏁 TTS COMPLETE for LAST CHUNK: {participant}, activating next session",
+                    f"🏁 AUDIO COMPLETE for LAST CHUNK: {participant}, activating next session",
                     log_level)
 
                 # Complete the session and activate next
@@ -574,7 +582,7 @@ def main():
             # Only process if this participant's queue is active
             if active_queue != participant:
                 send_log(node, "DEBUG",
-                    f"TTS_COMPLETE from {participant} but active_queue={active_queue}, ignoring",
+                    f"AUDIO_COMPLETE from {participant} but active_queue={active_queue}, ignoring",
                     log_level)
                 continue
 
@@ -665,24 +673,73 @@ def main():
         # ==================== CONTROL EVENTS ====================
         elif event_id in ["control", "reset"]:
             command = event["value"][0].as_py() if event.get("value") else None
+            metadata = event.get("metadata", {})
 
             if command in ["reset", "cancel"]:
-                send_log(node, "INFO", f"🔄 {command.upper()} - Clearing all queues", log_level)
+                incoming_question_id = metadata.get("question_id", None)
 
-                # Clear all queues and state
-                for participant in participant_names:
-                    segment_queues[participant].clear()
-                    text_buffers[participant] = ""
-                    session_timestamps[participant].clear()
-                    current_session[participant] = None
-                    is_sending[participant] = False
-                    last_session_end_sent[participant] = False
+                if incoming_question_id is None:
+                    # No question_id - clear all (backward compatibility)
+                    send_log(node, "INFO", f"🔄 {command.upper()} - Clearing all queues (no question_id)", log_level)
 
-                active_queue = None
+                    for participant in participant_names:
+                        segment_queues[participant].clear()
+                        text_buffers[participant] = ""
+                        session_timestamps[participant].clear()
+                        current_session[participant] = None
+                        is_sending[participant] = False
+                        last_session_end_sent[participant] = False
 
-                # Clear buffer control state
-                buffer_control_paused = False
-                audio_buffer_level = 0.0
+                    active_queue = None
+                    buffer_control_paused = False
+                    audio_buffer_level = 0.0
+                else:
+                    # Smart reset - only clear segments with DIFFERENT question_id
+                    send_log(node, "INFO",
+                        f"🔄 {command.upper()} - Smart reset with question_id={incoming_question_id}",
+                        log_level)
+
+                    total_cleared = 0
+                    total_kept = 0
+
+                    for participant in participant_names:
+                        original_count = len(segment_queues[participant])
+                        new_queue = deque()
+                        cleared_count = 0
+
+                        # Filter segments by question_id
+                        for segment in segment_queues[participant]:
+                            seg_question_id = segment.get("question_id", None)
+
+                            # Keep if same question_id OR no question_id
+                            if seg_question_id == incoming_question_id or seg_question_id is None:
+                                new_queue.append(segment)
+                            else:
+                                cleared_count += 1
+
+                        segment_queues[participant] = new_queue
+                        total_cleared += cleared_count
+                        total_kept += len(new_queue)
+
+                        # Clear text buffer for participants with old data
+                        if cleared_count > 0:
+                            text_buffers[participant] = ""
+                            is_sending[participant] = False
+
+                        # Log per-participant stats
+                        if cleared_count > 0 or len(new_queue) > 0:
+                            send_log(node, "DEBUG",
+                                f"  {participant}: cleared {cleared_count}/{original_count}, kept {len(new_queue)}",
+                                log_level)
+
+                    send_log(node, "INFO",
+                        f"Smart reset complete: cleared {total_cleared} old segments, kept {total_kept} from question_id={incoming_question_id}",
+                        log_level)
+
+                    # Reset buffer control state and active queue
+                    active_queue = None
+                    buffer_control_paused = False
+                    audio_buffer_level = 0.0
 
 
 if __name__ == "__main__":

@@ -238,9 +238,10 @@ def main():
         last_question_id = {}
         completed_sessions = set()
 
-        # Smart reset state
-        reset_question_id = None  # Expected question_id after reset
-        filtering_mode = False     # Whether to filter by question_id
+        # Smart reset with question_id filtering
+        current_question_id = None
+        reset_question_id = None  # NEW question_id from reset signal
+        discard_next_audio = False
 
         # Timing
         last_status_time = time.time()
@@ -265,48 +266,32 @@ def main():
             except Exception:
                 event = None
 
-            # Handle control input for reset/cancel (accept both "control" and "reset" as input names)
-            if event and event["type"] == "INPUT" and event["id"] in ["control", "reset"]:
-                try:
-                    send_log(node, "INFO", "📥 Audio player received CONTROL input", "audio-player")
-                    control_value = event.get("value")
-                    if control_value and len(control_value) > 0:
-                        control_text = str(control_value[0].as_py()).strip().lower()
-                        metadata = event.get("metadata", {})
-                        send_log(node, "INFO", f"📥 Control: text='{control_text}', metadata={metadata}", "audio-player")
+            # Handle reset signal with question_id for smart discard
+            if event and event["type"] == "INPUT" and event["id"] == "reset":
+                metadata = event.get("metadata", {})
+                question_id = metadata.get("question_id", None)
 
-                        # Extract command and question_id from metadata
-                        command = metadata.get("command", control_text)
-                        new_question_id = metadata.get("question_id")
+                if question_id is not None:
+                    reset_question_id = question_id  # Track NEW question_id
 
-                        if command in ["reset", "cancel"]:
-                            if new_question_id is None:
-                                # Full reset - clear everything
-                                player.reset()
-                                segments_per_participant.clear()
-                                last_question_id.clear()
-                                completed_sessions.clear()
-                                reset_question_id = None
-                                filtering_mode = False
-                                send_log(node, "INFO", f"🔄 Audio buffer FULL RESET (command: {command})", "audio-player")
-                            else:
-                                # Smart reset - filter incoming audio by question_id
-                                # 1. Clear the buffer (discard all old audio)
-                                player.reset()
-                                segments_per_participant.clear()
-                                last_question_id.clear()
-                                completed_sessions.clear()
-
-                                # 2. Enable filtering mode - reject audio until matching question_id arrives
-                                reset_question_id = new_question_id
-                                filtering_mode = True
-
-                                send_log(node, "INFO",
-                                    f"🔄 Audio buffer SMART RESET with question_id={new_question_id}, entering filtering mode (command: {command})",
-                                    "audio-player")
-                except Exception as e:
-                    send_log(node, "ERROR", f"❌ Error handling control input: {e}", "audio-player")
-                continue
+                    # Smart reset logic
+                    if current_question_id == question_id:
+                        # Already playing NEW question - keep it
+                        send_log(node, "INFO", f"SMART RESET: Kept audio from question_id={question_id}", "audio-player")
+                    elif current_question_id is None:
+                        # No audio yet - set discard flag
+                        discard_next_audio = True
+                        send_log(node, "INFO", f"SMART RESET: Set discard flag for question_id={question_id}", "audio-player")
+                    else:
+                        # Playing OLD question - clear buffer
+                        player.reset()
+                        discard_next_audio = True
+                        send_log(node, "INFO", f"SMART RESET: Cleared old (current={current_question_id}, new={question_id})", "audio-player")
+                else:
+                    # No question_id - fallback to hard reset
+                    player.reset()
+                    discard_next_audio = False
+                    send_log(node, "INFO", "RESET: Cleared buffer (no question_id)", "audio-player")
 
             # Handle audio inputs: any input starting with "audio_"
             if event and event["type"] == "INPUT" and event["id"].startswith("audio_"):
@@ -329,27 +314,27 @@ def main():
 
                             if len(audio_data) > 0:
                                 metadata = event.get("metadata", {})
+                                audio_question_id = metadata.get("question_id", None)
 
-                                # Smart reset filtering: Check if we should filter by question_id
-                                if filtering_mode:
-                                    incoming_qid = metadata.get("question_id")
+                                # Update current_question_id from incoming audio
+                                if audio_question_id is not None:
+                                    current_question_id = audio_question_id
 
-                                    # Convert to string for comparison
-                                    incoming_qid_str = str(incoming_qid) if incoming_qid is not None else None
-                                    reset_qid_str = str(reset_question_id) if reset_question_id is not None else None
-
-                                    if incoming_qid_str != reset_qid_str:
-                                        # Reject old audio - question_id doesn't match
-                                        send_log(node, "DEBUG",
-                                            f"🚫 Filtering out old audio from {participant} (question_id={incoming_qid_str}, expected={reset_qid_str})",
-                                            "audio-player")
-                                        continue  # Skip this audio chunk
+                                # Smart discard based on question_id
+                                if discard_next_audio:
+                                    if reset_question_id is not None and audio_question_id is not None:
+                                        if audio_question_id == reset_question_id:
+                                            # This is audio from NEW question - stop discarding
+                                            discard_next_audio = False
+                                            send_log(node, "DEBUG", f"Stop discarding - matched reset_question_id={reset_question_id}", "audio-player")
+                                        else:
+                                            # Audio from old question - discard
+                                            send_log(node, "DEBUG", f"DISCARDING audio question_id={audio_question_id} != reset_question_id={reset_question_id}", "audio-player")
+                                            continue
                                     else:
-                                        # First chunk with matching question_id - exit filtering mode
-                                        filtering_mode = False
-                                        send_log(node, "INFO",
-                                            f"✅ Received matching question_id={reset_qid_str} from {participant}, exiting filtering mode",
-                                            "audio-player")
+                                        # No question_id available - assume new content
+                                        send_log(node, "DEBUG", "No question_id - assuming new content", "audio-player")
+                                        discard_next_audio = False
 
                                 # Update sample rate if provided
                                 incoming_rate = metadata.get("sample_rate")
@@ -365,21 +350,6 @@ def main():
 
                                 segments_per_participant[participant] += 1
                                 segment_index = metadata.get("segment_index", -1)
-
-                                # Send audio_complete signal immediately after receiving audio
-                                # This replaces TTS segment_complete for flow control
-                                audio_complete_metadata = {
-                                    "participant": participant,
-                                    "question_id": metadata.get("question_id", "unknown"),
-                                    "session_status": metadata.get("session_status", "unknown"),
-                                    "session_id": metadata.get("session_id", "unknown")
-                                }
-                                node.send_output(
-                                    "audio_complete",
-                                    pa.array(["received"]),
-                                    metadata=audio_complete_metadata
-                                )
-                                send_log(node, "DEBUG", f"📤 AUDIO_COMPLETE: {participant} (qid={metadata.get('question_id')}, status={metadata.get('session_status')})", "audio-player")
 
                                 # Log first few audio segments to verify reception
                                 if segments_per_participant[participant] <= 3:
@@ -406,8 +376,6 @@ def main():
                                         # Send session_start signal, passing through ALL original metadata
                                         session_start_metadata = metadata.copy() if metadata else {}
                                         session_start_metadata["source"] = "audio_player"
-                                        # Remove None values from metadata (PyArrow can't handle None)
-                                        session_start_metadata = {k: (v if v is not None else "unknown") for k, v in session_start_metadata.items()}
 
                                         node.send_output("session_start",
                                             pa.array([session_status]),

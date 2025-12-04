@@ -1,14 +1,15 @@
-# Conference Study Session with Multi-Participant Audio
+# Conference Study Session with Human Participant (Mac AEC + ASR)
 #
-# Enhances dataflow-study-sequential.yml with audio playback for ALL 3 participants
-# Audio pipeline: LLMs → multi-text-segmenter → 3 TTS nodes → multi-audio-player
+# Extends dataflow-study-audio-multi.yml with human speaker capability
+# Human speaker: mac-aec → ASR → controller + bridges + audio-player
 #
 # Key features:
-# - FIFO session queue in text segmenter
-# - 3 different voices (Daniu, Doubao, Luo Xiang)
-# - Audio concatenation in arrival order
-# - Complete backpressure control
-# - Speaker ID removal for all participants
+# - Human has highest priority (can interrupt)
+# - Smart reset with question_id filtering
+# - When human speaks: cancel LLMs, reset bridges, reset audio pipeline
+# - When human finishes: restart from initial state (tutor speaks first)
+# - Complete question_id propagation for data discard
+# - Audio-player-based flow control: audio_complete signals replace TTS segment_complete
 
 nodes:
   # ============ Study Participants (MaaS) ============
@@ -61,9 +62,38 @@ nodes:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       LOG_LEVEL: INFO
 
+  # ============ Human Speaker Pipeline ============
+
+  # Mac AEC + VAD Segmentation
+  - id: mac-aec
+    path: dynamic
+    outputs:
+      - audio_segment # Includes question_id metadata
+      - speech_started
+      - speech_ended
+      - question_ended # Includes question_id metadata
+      - status
+      - log
+
+  # ASR for Human Speech
+  - id: asr
+    build: pip install -e ../../node-hub/dora-asr
+    path: dora-asr
+    inputs:
+      audio: mac-aec/audio_segment # Gets question_id from mac-aec
+    outputs:
+      - transcription # Passes question_id + adds session_status="ended"
+      - status
+      - log
+    env:
+      USE_GPU: "true"
+      ASR_ENGINE: "funasr"
+      LANGUAGE: "zh"
+      LOG_LEVEL: "INFO"
+
   # ============ Multi-Participant Audio Pipeline ============
 
-  # Multi-Input Text Segmenter with FIFO Session Queue
+  # Multi-Input Text Segmenter with FIFO Session Queue + Smart Reset
   - id: multi-text-segmenter
     build: pip install -e ../../node-hub/dora-text-segmenter
     path: dora-text-segmenter
@@ -89,7 +119,7 @@ nodes:
         source: audio-player/buffer_status
         queue_size: 10
 
-      # Control signals (reset and cancel)
+      # Control signals (reset and cancel) with question_id
       control: conference-controller/llm_control
       reset: conference-controller/control_judge
 
@@ -130,7 +160,7 @@ nodes:
       HF_HUB_OFFLINE: "1"
 
       # Voice selection - Daniu for student1
-      VOICE_NAME: "Luo Xiang" # Male, rational voice
+      VOICE_NAME: "Liu Xiang" # Male, rational voice
       PRIMESPEECH_MODEL_DIR: $HOME/.dora/models/primespeech
 
       # Language settings
@@ -142,7 +172,6 @@ nodes:
       TOP_P: 1.0
       TEMPERATURE: 1.0
       SPEED_FACTOR: 1.0
-      FRAGMENT_INTERVAL: "0.1"
 
       # Performance
       USE_GPU: false
@@ -184,8 +213,7 @@ nodes:
       TOP_K: 5
       TOP_P: 1.0
       TEMPERATURE: 1.0
-      SPEED_FACTOR: 1.1
-      FRAGMENT_INTERVAL: "0.2"
+      SPEED_FACTOR: 1.0
 
       # Performance
       USE_GPU: false
@@ -227,8 +255,7 @@ nodes:
       TOP_K: 5
       TOP_P: 1.0
       TEMPERATURE: 1.0
-      SPEED_FACTOR: 1.1
-      FRAGMENT_INTERVAL: "0.1"
+      SPEED_FACTOR: 1.0
 
       # Performance
       USE_GPU: false
@@ -242,7 +269,7 @@ nodes:
       TTS_MAX_SEGMENT_LENGTH: "100"
       TTS_MIN_SEGMENT_LENGTH: "20"
 
-  # Multi-Input Audio Player (Concatenates 3 audio streams)
+  # Multi-Input Audio Player with question_id Smart Reset
   - id: audio-player
     path: dynamic
     inputs:
@@ -257,10 +284,8 @@ nodes:
         source: primespeech-tutor/audio
         queue_size: 1000
 
-      # Control signal for reset
-      control:
-        source: conference-controller/llm_control
-        queue_size: 10
+      # Reset signal with question_id for smart discard
+      reset: conference-controller/llm_control
     outputs:
       - buffer_status # Backpressure signal to controller
       - status
@@ -270,12 +295,12 @@ nodes:
 
   # ============ 3 Conference Bridges (Switch) ============
 
-  # Bridge 1: Student2 + Tutor → Student1
+  # Bridge 1: Student2 + Tutor + HUMAN → Student1
   - id: bridge-to-student1
     path: ../../target/release/dora-conference-bridge
     env:
       LOG_LEVEL: INFO
-      STREAMING_PORTS: student1,tutor,student2
+      STREAMING_PORTS: student1,tutor,student2,human # ADD human
       ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
       DORA_STUDY_MODE: "true"
     inputs:
@@ -284,6 +309,9 @@ nodes:
         queue_size: 1000
       tutor:
         source: tutor/text
+        queue_size: 1000
+      human: # NEW INPUT
+        source: asr/transcription
         queue_size: 1000
       control:
         source: conference-controller/control_llm1
@@ -293,12 +321,12 @@ nodes:
       - status
       - log
 
-  # Bridge 2: Student1 + Tutor → Student2
+  # Bridge 2: Student1 + Tutor + HUMAN → Student2
   - id: bridge-to-student2
     path: ../../target/release/dora-conference-bridge
     env:
       LOG_LEVEL: INFO
-      STREAMING_PORTS: student1,tutor,student2
+      STREAMING_PORTS: student1,tutor,student2,human # ADD human
       ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
       DORA_STUDY_MODE: "true"
     inputs:
@@ -307,6 +335,9 @@ nodes:
         queue_size: 1000
       tutor:
         source: tutor/text
+        queue_size: 1000
+      human: # NEW INPUT
+        source: asr/transcription
         queue_size: 1000
       control:
         source: conference-controller/control_llm2
@@ -316,12 +347,12 @@ nodes:
       - status
       - log
 
-  # Bridge 3: Student1 + Student2 → Tutor
+  # Bridge 3: Student1 + Student2 + HUMAN → Tutor
   - id: bridge-to-tutor
     path: ../../target/release/dora-conference-bridge
     env:
       LOG_LEVEL: INFO
-      STREAMING_PORTS: student1,tutor,student2
+      STREAMING_PORTS: student1,tutor,student2,human # ADD human
       ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
       DORA_STUDY_MODE: "true"
     inputs:
@@ -331,6 +362,9 @@ nodes:
       student2:
         source: student2/text
         queue_size: 1000
+      human: # NEW INPUT
+        source: asr/transcription
+        queue_size: 1000
       control:
         source: conference-controller/control_judge
         queue_size: 10
@@ -339,20 +373,22 @@ nodes:
       - status
       - log
 
-  # ============ Conference Controller (Brain) with Audio Backpressure ============
+  # ============ Conference Controller (Brain) with Human Input ============
 
   - id: conference-controller
     path: ../../target/release/dora-conference-controller
     env:
-      # Sequential policy with priority: tutor can speak anytime, student2 priority 2, student1 priority 1
-      DORA_POLICY_PATTERN: "[(tutor, *), (student2, 1), (student1, 2)]"
+      # Policy: human=priority (handled specially by controller), tutor=*, student2=1, student1=2
+      # Human input triggers special reset logic in handle_human_input()
+      # Use very small ratio for human since actual scheduling bypassed by controller
+      DORA_POLICY_PATTERN: "[(human, 0.001), (tutor, *), (student2, 1), (student1, 2)]"
       INITIAL_QUESTION_ID: 1
 
       # Audio buffer backpressure control
       AUDIO_BUFFER_THRESHOLD: 30 # Pause when buffer > 30%
       AUDIO_BUFFER_RESUME_THRESHOLD: 10 # Resume when buffer < 10%
     inputs:
-      # All 3 participants
+      # All 3 AI participants
       student1:
         source: student1/text
         queue_size: 1000
@@ -361,6 +397,11 @@ nodes:
         queue_size: 1000
       tutor:
         source: tutor/text
+        queue_size: 1000
+
+      # NEW: Human speaker (via ASR)
+      human:
+        source: asr/transcription
         queue_size: 1000
 
       # Control from study-monitor UI
@@ -375,7 +416,7 @@ nodes:
       - control_judge # Resume to bridge-to-tutor
       - control_llm2 # Resume to bridge-to-student2
       - control_llm1 # Resume to bridge-to-student1
-      - llm_control # Reset/cancel to Student1 and Student2
+      - llm_control # Reset/cancel to Student1 and Student2, reset to text-segmenter/audio-player
       - judge_prompt # User prompts and reset/cancel to tutor
       - status
       - log
@@ -415,6 +456,12 @@ nodes:
         source: bridge-to-tutor/text
         queue_size: 1000
 
+      # NEW: Human panel
+      human_text:
+        source: asr/transcription
+        queue_size: 1000
+      human_status: asr/status
+
       # Audio status
       audio_status: audio-player/status
       buffer_status: audio-player/buffer_status
@@ -452,6 +499,19 @@ nodes:
       judge_text:
         source: tutor/text
         queue_size: 1000
+
+      # Human logs (ASR + mac-aec)
+      human_text:
+        source: asr/transcription
+        queue_size: 1000
+      asr_log:
+        source: asr/log
+        queue_size: 1000
+      asr_status: asr/status
+      mac_aec_log:
+        source: mac-aec/log
+        queue_size: 1000
+      mac_aec_status: mac-aec/status
 
       # Bridge logs
       bridge1_log:

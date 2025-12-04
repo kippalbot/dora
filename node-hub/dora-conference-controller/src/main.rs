@@ -130,6 +130,9 @@ struct ConferenceController {
     // New session-start based resume control
     waiting_for_session_start: Option<u16>,  // Question ID we're waiting for
     pending_next_speaker: bool,              // Flag that next speaker should be determined after session_start
+
+    // Human interrupt control
+    system_paused: bool,  // True when human is speaking or processing human input
 }
 
 impl ConferenceController {
@@ -204,6 +207,7 @@ impl ConferenceController {
             current_question_id: initial_enhanced_id,
             waiting_for_session_start: None,  // Cold start - no waiting initially
             pending_next_speaker: false,
+            system_paused: false,  // Initialize as not paused
         })
     }
 
@@ -273,6 +277,12 @@ impl ConferenceController {
         metadata: &dora_node_api::Metadata,
         node: &mut DoraNode,
     ) -> Result<()> {
+        // NEW: Special handling for human input (non-streaming)
+        // Human input always arrives with session_status="ended" (single shot from ASR)
+        if participant_id == "human" {
+            return self.handle_human_input(participant_id, text, metadata, node);
+        }
+
         // Check session_status to understand the input type
         let session_status = metadata.parameters.get("session_status")
             .and_then(|p| match p { Parameter::String(s) => Some(s.as_str()), _ => None });
@@ -390,11 +400,16 @@ impl ConferenceController {
             // Map the participant ID to the correct control output (convert to owned String)
             let control_output = self.get_control_output(&next_speaker).to_string();
 
-            // Generate question_id for this participant using cycle# as round#
+            // Only generate NEW question_id if cycle > 0 (normal operation)
+            // If cycle == 0, it means we just reset and question_id was already set
             let cycle = self.policy.get_current_cycle() as u8;
-            let participant_index = self.get_participant_index(&next_speaker);
-            let total_participants = self.policy.get_participants().len() as u8;
-            self.current_question_id = encode_enhanced_question_id(cycle, participant_index, total_participants);
+            if cycle > 0 {
+                // Normal operation: generate question_id for this participant
+                let participant_index = self.get_participant_index(&next_speaker);
+                let total_participants = self.policy.get_participants().len() as u8;
+                self.current_question_id = encode_enhanced_question_id(cycle, participant_index, total_participants);
+            }
+            // else: cycle == 0 means we just reset, use existing question_id from reset_to_initial_state()
 
             // Increment cycle counter
             self.policy.increment_cycle();
@@ -434,6 +449,78 @@ impl ConferenceController {
         Ok(())
     }
 
+    /// Handle input from human speaker (via ASR)
+    /// Human input is non-streaming - always arrives complete with session_status="ended"
+    /// When human speaks, interrupt all AI participants and reset system to initial state
+    fn handle_human_input(
+        &mut self,
+        participant_id: &str,
+        text: String,
+        metadata: &dora_node_api::Metadata,
+        node: &mut DoraNode,
+    ) -> Result<()> {
+        send_log(node, LogLevel::Info, self.log_level,
+            &format!("👤 Human input received: '{}'",
+                     text.chars().take(100).collect::<String>()));
+
+        // Human input is always complete (non-streaming ASR output)
+        // ASR modification ensures session_status="ended" is always present
+        // So we immediately trigger interrupt sequence
+
+        // 1. Mark system as paused
+        self.system_paused = true;
+
+        // 2. Store current question_id for logging
+        let old_question_id = self.current_question_id;
+
+        // 3. ENCODE NEW question_id for next round (CRITICAL!)
+        // Question ID uses 16-bit encoding (8-4-4 layout):
+        //   Bits 15-8: Round number (0-255)
+        //   Bits 7-4: Total participants - 1 (0-15)
+        //   Bits 3-0: Current participant index (0-15)
+        // We increment the ROUND number and reset to first participant (tutor)
+        let (current_round, _, _, _) = decode_enhanced_question_id(old_question_id);
+        let new_round = current_round.wrapping_add(1);  // Increment round number
+        let total_participants = self.policy.get_participants().len() as u8;
+
+        // Encode new question_id: new round, participant 0 (will be tutor after reset)
+        self.current_question_id = encode_enhanced_question_id(
+            new_round,
+            0,  // Start from first participant (tutor speaks first)
+            total_participants
+        );
+
+        send_log(node, LogLevel::Info, self.log_level,
+            &format!("📈 Encoded new question_id: {} → {} ({})",
+                     old_question_id,
+                     self.current_question_id,
+                     enhanced_id_debug_string(self.current_question_id)));
+
+        // 4. Cancel all LLMs with NEW question_id
+        // LLMs will abort streaming and propagate question_id to downstream
+        self.send_cancel_to_all_llms(node)?;
+
+        // 5. Reset all bridges with NEW question_id
+        // Bridges will clear buffered messages
+        self.send_reset_to_all_bridges(node)?;
+
+        // 6. Reset audio pipeline (text-segmenter + audio-player) with NEW question_id
+        // Text-segmenter: discards segments with old question_id, keeps new
+        // Audio-player: discards audio with old question_id, keeps new
+        self.send_reset_to_audio_pipeline(node)?;
+
+        // 7. Reset controller state to initial (tutor speaks first, cycle=0)
+        self.reset_to_initial_state(node)?;
+
+        // 8. Resume system
+        self.system_paused = false;
+
+        send_log(node, LogLevel::Info, self.log_level,
+            "✅ System reset complete - ready for new round");
+
+        Ok(())
+    }
+
     /// Get control output name for a participant
     fn get_control_output(&self, participant: &str) -> &str {
         if self.participant_name_map.contains_key("judge") &&
@@ -460,6 +547,146 @@ impl ConferenceController {
     /// Get participant index (0-based) for question_id encoding
     fn get_participant_index(&self, participant: &str) -> u8 {
         *self.participant_index_map.get(participant).unwrap_or(&0)
+    }
+
+    /// Send cancel signal to all LLM participants with NEW question_id
+    fn send_cancel_to_all_llms(&self, node: &mut DoraNode) -> Result<()> {
+        use std::collections::BTreeMap;
+
+        // Create metadata with NEW question_id
+        let mut cancel_metadata = BTreeMap::new();
+        cancel_metadata.insert(
+            "command".to_string(),
+            Parameter::String("cancel".to_string())
+        );
+        cancel_metadata.insert(
+            "question_id".to_string(),
+            Parameter::String(self.current_question_id.to_string())
+        );
+
+        // Send to student1 and student2 via llm_control
+        node.send_output(
+            DataId::from("llm_control".to_string()),
+            cancel_metadata.clone(),
+            StringArray::from(vec!["cancel"]),
+        )?;
+
+        // Send to tutor via judge_prompt
+        node.send_output(
+            DataId::from("judge_prompt".to_string()),
+            cancel_metadata.clone(),
+            StringArray::from(vec!["cancel"]),
+        )?;
+
+        send_log(node, LogLevel::Debug, self.log_level,
+            &format!("🛑 Sent cancel to all LLMs with question_id={}",
+                     self.current_question_id));
+
+        Ok(())
+    }
+
+    /// Send reset signal to all bridges with NEW question_id
+    fn send_reset_to_all_bridges(&self, node: &mut DoraNode) -> Result<()> {
+        use std::collections::BTreeMap;
+
+        // Create metadata with NEW question_id
+        let mut reset_metadata = BTreeMap::new();
+        reset_metadata.insert(
+            "command".to_string(),
+            Parameter::String("reset".to_string())
+        );
+        reset_metadata.insert(
+            "question_id".to_string(),
+            Parameter::String(self.current_question_id.to_string())
+        );
+
+        // Send reset to all bridge control outputs
+        node.send_output(
+            DataId::from("control_judge".to_string()),
+            reset_metadata.clone(),
+            StringArray::from(vec!["reset"]),
+        )?;
+
+        node.send_output(
+            DataId::from("control_llm1".to_string()),
+            reset_metadata.clone(),
+            StringArray::from(vec!["reset"]),
+        )?;
+
+        node.send_output(
+            DataId::from("control_llm2".to_string()),
+            reset_metadata.clone(),
+            StringArray::from(vec!["reset"]),
+        )?;
+
+        send_log(node, LogLevel::Debug, self.log_level,
+            &format!("🔄 Sent reset to all bridges with question_id={}",
+                     self.current_question_id));
+
+        Ok(())
+    }
+
+    /// Send reset signal to audio pipeline (text-segmenter + audio-player) with NEW question_id
+    fn send_reset_to_audio_pipeline(&self, node: &mut DoraNode) -> Result<()> {
+        use std::collections::BTreeMap;
+
+        // Create metadata with NEW question_id
+        let mut reset_metadata = BTreeMap::new();
+        reset_metadata.insert(
+            "command".to_string(),
+            Parameter::String("reset".to_string())
+        );
+        reset_metadata.insert(
+            "question_id".to_string(),
+            Parameter::String(self.current_question_id.to_string())
+        );
+
+        // Send reset to llm_control (will reach text-segmenter)
+        // Text-segmenter will discard segments with question_id != current_question_id
+        // Audio-player will receive reset via its reset input (configured in YAML)
+        node.send_output(
+            DataId::from("llm_control".to_string()),
+            reset_metadata.clone(),
+            StringArray::from(vec!["reset"]),
+        )?;
+
+        send_log(node, LogLevel::Debug, self.log_level,
+            &format!("🔄 Sent reset to audio pipeline with question_id={}",
+                     self.current_question_id));
+
+        Ok(())
+    }
+
+    /// Reset controller to initial state (tutor speaks first, cycle=0)
+    fn reset_to_initial_state(&mut self, node: &mut DoraNode) -> Result<()> {
+        send_log(node, LogLevel::Info, self.log_level,
+            "🔄 Resetting controller to initial state");
+
+        // 1. Clear all accumulated inputs
+        self.participant_inputs.clear();
+
+        // 2. Clear streaming accumulators
+        self.streaming_accumulators.clear();
+
+        // 3. Reset state
+        self.state = ControllerState::Waiting;
+        self.reset_pending = false;
+        self.waiting_for_session_start = None;
+        self.pending_next_speaker = false;
+
+        // 4. Reset policy to initial state
+        self.policy.reset_counts();
+
+        send_log(node, LogLevel::Info, self.log_level,
+            &format!("✅ Reset complete - ready to start with question_id={} ({})",
+                     self.current_question_id,
+                     enhanced_id_debug_string(self.current_question_id)));
+
+        // 5. Trigger initial speaker (tutor)
+        // Use existing logic to process first speaker
+        self.process_next_speaker(node)?;
+
+        Ok(())
     }
 
     /// Advance to next round after session start of first participant

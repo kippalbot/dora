@@ -1222,10 +1222,18 @@ async fn main() -> Result<()> {
                         send_log(&mut node, "INFO", &format!("  Metadata: {:?}", metadata.parameters))?;
 
                         // Only proceed with detailed logging if this is an unexpected command
-                        if !control_text.eq_ignore_ascii_case("reset") &&
-                           !control_text.eq_ignore_ascii_case("cancel") &&
-                           !control_text.eq_ignore_ascii_case("ready") &&
-                           !control_text.eq_ignore_ascii_case("exit") {
+                        // Check if it's a known command or valid JSON with prompt
+                        let is_known_command = control_text.eq_ignore_ascii_case("reset") ||
+                                               control_text.eq_ignore_ascii_case("cancel") ||
+                                               control_text.eq_ignore_ascii_case("ready") ||
+                                               control_text.eq_ignore_ascii_case("exit");
+
+                        let is_valid_json_prompt = serde_json::from_str::<serde_json::Value>(&control_text)
+                            .ok()
+                            .and_then(|v| v.get("prompt").map(|_| true))
+                            .unwrap_or(false);
+
+                        if !is_known_command && !is_valid_json_prompt {
                             send_log(&mut node, "WARNING", &format!("🚨 UNEXPECTED CONTROL COMMAND!"))?;
                             send_log(&mut node, "WARNING", &format!("  This should help trace where 'resume' is coming from!"))?;
                         }
@@ -1618,13 +1626,21 @@ async fn main() -> Result<()> {
                                         );
                                         error_metadata.insert(
                                             "error_message".to_string(),
-                                            Parameter::String(error_msg),
+                                            Parameter::String(error_msg.clone()),
                                         );
+
+                                        // For cancellation errors, send empty text (just metadata signal)
+                                        // For other errors, send the error message text
+                                        let text_content = if error_type == "cancelled" {
+                                            ""  // Empty - don't contaminate downstream with error text
+                                        } else {
+                                            &format!("Error: {}", error_msg)
+                                        };
 
                                         node.send_output(
                                             DataId::from("text".to_string()),
                                             error_metadata,
-                                            StringArray::from(vec![format!("Error: {}", e).as_str()]),
+                                            StringArray::from(vec![text_content]),
                                         )
                                         .context("Failed to send error text")?;
                                         continue;
@@ -1662,13 +1678,21 @@ async fn main() -> Result<()> {
                                         );
                                         error_metadata.insert(
                                             "error_message".to_string(),
-                                            Parameter::String(error_msg),
+                                            Parameter::String(error_msg.clone()),
                                         );
+
+                                        // For cancellation errors, send empty text (just metadata signal)
+                                        // For other errors, send the error message text
+                                        let text_content = if error_type == "cancelled" {
+                                            ""  // Empty - don't contaminate downstream with error text
+                                        } else {
+                                            &format!("Error: {}", error_msg)
+                                        };
 
                                         node.send_output(
                                             DataId::from("text".to_string()),
                                             error_metadata,
-                                            StringArray::from(vec![format!("Error: {}", e).as_str()]),
+                                            StringArray::from(vec![text_content]),
                                         )
                                         .context("Failed to send error text")?;
                                         continue;

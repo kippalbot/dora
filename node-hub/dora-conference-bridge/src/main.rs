@@ -563,9 +563,25 @@ impl ConferenceBridge {
     }
 
     fn reset_state(&mut self, node: &mut DoraNode) -> Result<()> {
-        // Force clear all inputs - don't drain, just reset immediately
+        // Force clear all inputs EXCEPT human input - don't drain, just reset immediately
         // Any in-flight streaming chunks will be dropped
+        // Preserve human input (from ASR) so it can be forwarded after reset
         for (port_name, input) in self.inputs.iter_mut() {
+            // Check if this is human input by looking for "human" in port name or checking source
+            // Human input typically comes from ASR (asr/transcription source)
+            let is_human_input = port_name.to_lowercase().contains("human");
+
+            if is_human_input {
+                send_log(
+                    node,
+                    LogLevel::Info,
+                    self.log_level,
+                    &format!("🔄 PRESERVING human input during reset: {}", port_name),
+                );
+                // Don't reset human input - keep it for forwarding
+                continue;
+            }
+
             if input.is_streaming_active() {
                 send_log(
                     node,
@@ -577,7 +593,9 @@ impl ConferenceBridge {
             input.reset();  // Force clear, don't drain
         }
 
-        self.arrival_queue.clear();
+        // Don't clear arrival_queue completely - remove non-human entries but keep human
+        self.arrival_queue.retain(|port_name| port_name.to_lowercase().contains("human"));
+
         self.current_question_id = 0;
         self.resume_mode = false;  // Reset to pause mode
 
@@ -585,7 +603,7 @@ impl ConferenceBridge {
             node,
             LogLevel::Info,
             self.log_level,
-            "✅ Bridge reset complete - all inputs cleared, ready for new conversation",
+            "✅ Bridge reset complete - all inputs cleared (human input preserved), ready for new conversation",
         );
         self.send_status(node, "reset")?;
         Ok(())

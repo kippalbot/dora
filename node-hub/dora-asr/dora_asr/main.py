@@ -135,6 +135,7 @@ def main():
 
                     # Send transcription output - pass through all input metadata
                     output_metadata = input_metadata.copy()
+                    output_metadata["session_status"] = "ended"  # Mark transcription complete for conference system
 
                     node.send_output(
                         "transcription",
