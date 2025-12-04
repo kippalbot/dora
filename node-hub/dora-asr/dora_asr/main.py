@@ -33,12 +33,12 @@ def send_log(node, level, message, config_level="INFO"):
 
 def main():
     """Main entry point for ASR node"""
-    
+
     # Initialize
     node = Node()
     config = ASRConfig()
     manager = ASRManager(node)  # Pass node for logging
-    
+
     # Send initialization logs
     send_log(node, "INFO", "ASR Node initialized", config.LOG_LEVEL)
     send_log(node, "INFO", f"Engine: {config.ASR_ENGINE}", config.LOG_LEVEL)
@@ -46,6 +46,27 @@ def main():
     send_log(node, "INFO", f"Log level: {config.LOG_LEVEL}", config.LOG_LEVEL)
     send_log(node, "DEBUG", f"Punctuation: {config.ENABLE_PUNCTUATION}", config.LOG_LEVEL)
     send_log(node, "DEBUG", f"Models directory: {config.get_models_dir()}", config.LOG_LEVEL)
+
+    # Pre-initialize ASR engine to avoid first-call delay
+    try:
+        send_log(node, "INFO", "Pre-initializing ASR engine...", config.LOG_LEVEL)
+        start_time = time.time()
+
+        # Determine which engine to initialize based on config
+        if config.ASR_ENGINE == 'auto':
+            # Initialize the engine for the configured language
+            engine_name = manager.get_engine_for_language(config.LANGUAGE)
+        else:
+            engine_name = config.ASR_ENGINE
+
+        # Pre-initialize the engine
+        manager.get_or_create_engine(engine_name)
+
+        init_time = time.time() - start_time
+        send_log(node, "INFO", f"ASR engine pre-initialized in {init_time:.2f}s", config.LOG_LEVEL)
+    except Exception as e:
+        send_log(node, "WARNING", f"Failed to pre-initialize ASR engine: {e}", config.LOG_LEVEL)
+        send_log(node, "WARNING", "Engine will be initialized on first use", config.LOG_LEVEL)
     
     # Statistics
     total_segments = 0

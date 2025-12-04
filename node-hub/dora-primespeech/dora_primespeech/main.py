@@ -237,7 +237,45 @@ def main():
     # Initialize TTS engine
     tts_engine: Optional[MoYoYoTTSWrapper] = None
     model_loaded = False
-    
+
+    # Pre-initialize TTS engine to avoid first-call delay
+    try:
+        send_log(node, "INFO", "Pre-initializing TTS engine...", config.LOG_LEVEL)
+        start_time = time.time()
+
+        # Validate models directory early
+        _validate_models_path(lambda lvl, msg: send_log(node, lvl, msg, config.LOG_LEVEL))
+
+        # Initialize TTS wrapper
+        moyoyo_voice = voice_name.lower().replace(" ", "")
+        device = "cuda" if config.USE_GPU and config.DEVICE.startswith("cuda") else "cpu"
+        enable_streaming = config.RETURN_FRAGMENT if hasattr(config, 'RETURN_FRAGMENT') else False
+
+        tts_engine = MoYoYoTTSWrapper(
+            voice=moyoyo_voice,
+            device=device,
+            enable_streaming=enable_streaming,
+            chunk_duration=0.3,
+            voice_config=voice_config,
+            logger_func=lambda level, msg: send_log(node, level, msg, config.LOG_LEVEL)
+        )
+
+        # Verify initialization
+        if tts_engine is None or not hasattr(tts_engine, 'tts') or tts_engine.tts is None:
+            raise RuntimeError("TTS engine initialization failed - internal TTS is None")
+
+        model_loaded = True
+        init_time = time.time() - start_time
+        send_log(node, "INFO", f"TTS engine pre-initialized in {init_time:.2f}s", config.LOG_LEVEL)
+        send_log(node, "INFO", "Ready to synthesize speech", config.LOG_LEVEL)
+
+    except Exception as init_err:
+        send_log(node, "WARNING", f"Failed to pre-initialize TTS engine: {init_err}", config.LOG_LEVEL)
+        send_log(node, "WARNING", "TTS engine will be initialized on first use", config.LOG_LEVEL)
+        send_log(node, "DEBUG", f"Traceback: {traceback.format_exc()}", config.LOG_LEVEL)
+        model_loaded = False
+        tts_engine = None
+
     # Statistics
     total_syntheses = 0
     total_duration = 0
