@@ -124,6 +124,42 @@ pip install -e node-hub/dora-qwen3[torch]
 pip install -e node-hub/dora-text-segmenter
 ```
 
+### **dora-kokoro-tts** (Text-to-Speech - Kokoro Engine)
+**Core Dependencies:**
+- `numpy>=1.21.0,<2.0` (CRITICAL: 1.26.4 recommended)
+- `scipy>=1.11.0` (For audio resampling)
+- `torch>=2.0.0` (For model inference)
+- `torchaudio>=2.0.0` (Audio processing)
+- `soundfile>=0.12.0` (Audio file I/O)
+- `jieba>=0.42.1` (Chinese text processing)
+- `kokoro>=0.2.2` (CPU backend - cross-platform)
+
+**Backend Options:**
+- **CPU Backend** (kokoro): Cross-platform, works everywhere, ~4-5x RTF
+- **MLX Backend** (mlx-audio): Apple Silicon only, GPU-accelerated, ~8-9x RTF
+
+**MLX Dependencies (macOS Apple Silicon only):**
+- `mlx-audio` (GPU-accelerated TTS on Apple Silicon)
+- **No PyTorch conflicts** - MLX and PyTorch can coexist
+- Requires macOS 12.0+ with M1/M2/M3/M4 chip
+
+**Installation:**
+```bash
+# CPU backend (cross-platform)
+pip install -e node-hub/dora-kokoro-tts
+
+# MLX backend (macOS Apple Silicon only)
+pip install -e node-hub/dora-kokoro-tts
+pip install mlx-audio  # Additional GPU backend
+```
+
+**Key Features:**
+- Dual backend support (CPU/MLX) with automatic fallback
+- 24 voices: 8 Chinese (zf_*/zm_*) + 16 English (af_*/am_*/bf_*/bm_*)
+- Sample rate resampling (24kHz → 32kHz for PrimeSpeech compatibility)
+- Full metadata passthrough for session tracking
+- SPEED_FACTOR environment variable support
+
 ## 🚀 Environment Setup
 
 ### **Method 1: Automated Setup (Recommended)**

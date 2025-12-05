@@ -1,0 +1,38 @@
+[project]
+name = "dora-mlx-kokoro"
+version = "0.1.0"
+description = "Dora node for MLX-accelerated Kokoro TTS on Apple Silicon"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "dora-rs>=0.3.7",
+    "numpy>=1.21.0,<2.0",
+    "pyarrow>=10.0.0",
+    "mlx-audio>=0.2.6; sys_platform == 'darwin'",
+    "torch>=2.0.0; sys_platform != 'darwin'",  # CPU fallback for non-macOS
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+dora-mlx-kokoro = "dora_mlx_kokoro.main:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["dora_mlx_kokoro*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.black]
+line-length = 120
+target-version = ["py39"]

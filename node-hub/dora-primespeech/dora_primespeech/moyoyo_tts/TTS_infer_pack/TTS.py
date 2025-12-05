@@ -317,7 +317,7 @@ class TTS:
     def init_vits_weights(self, weights_path: str):
         print(f"Loading VITS weights from {weights_path}")
         self.configs.vits_weights_path = weights_path
-        dict_s2 = torch.load(weights_path, map_location=self.configs.device)
+        dict_s2 = torch.load(weights_path, map_location=self.configs.device, weights_only=False)
         hps = dict_s2["config"]
         if dict_s2['weight']['enc_p.text_embedding.weight'].shape[0] == 322:
             self.configs.update_version("v1")
@@ -356,7 +356,7 @@ class TTS:
         self.configs.t2s_weights_path = weights_path
         self.configs.save_configs()
         self.configs.hz = 50
-        dict_s1 = torch.load(weights_path, map_location=self.configs.device)
+        dict_s1 = torch.load(weights_path, map_location=self.configs.device, weights_only=False)
         config = dict_s1["config"]
         self.configs.max_sec = config["data"]["max_sec"]
         t2s_model = Text2SemanticLightningModule(config, "****", is_train=False)
@@ -720,12 +720,14 @@ class TTS:
                 #print(i18n("分段返回模式不支持分桶处理，已自动关闭分桶处理"))
 
         if split_bucket and speed_factor == 1.0:
-            print(i18n("分桶处理模式已开启"))
+            pass  # Bucket processing mode enabled (print disabled for dora integration)
+            #print(i18n("分桶处理模式已开启"))
         elif speed_factor != 1.0:
             #print(i18n("语速调节不支持分桶处理，已自动关闭分桶处理"))
             split_bucket = False
         else:
-            print(i18n("分桶处理模式已关闭"))
+            pass  # Bucket processing mode disabled (print disabled for dora integration)
+            #print(i18n("分桶处理模式已关闭"))
 
         if fragment_interval < 0.01:
             fragment_interval = 0.01

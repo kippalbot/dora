@@ -15,6 +15,11 @@ dependencies = [
   "misaki[zh]",
 ]
 
+[project.optional-dependencies]
+mlx = [
+  "mlx-audio>=0.2.6; sys_platform == 'darwin'",
+]
+
 [dependency-groups]
 dev = ["pytest >=8.1.1", "ruff >=0.9.1"]
 

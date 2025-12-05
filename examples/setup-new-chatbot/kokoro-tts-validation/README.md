@@ -20,7 +20,53 @@ The validation measures:
 pip install -e ../../../node-hub/dora-kokoro-tts
 ```
 
-### 2. Direct TTS Test (Recommended)
+### 2. Chinese Voice Verification (NEW!)
+
+**Test all Chinese male and female voices:**
+
+```bash
+# Test all 8 Chinese voices
+python test_chinese_voices.py
+
+# Test only male voices (zm_*)
+python test_chinese_voices.py --type male
+
+# Test only female voices (zf_*)
+python test_chinese_voices.py --type female
+```
+
+This comprehensive test:
+- Tests all 4 male voices (zm_yunjian, zm_yunxi, zm_yunxia, zm_yunyang)
+- Tests all 4 female voices (zf_xiaobei, zf_xiaoni, zf_xiaoxiao, zf_xiaoyi)
+- Saves audio samples for each voice for manual comparison
+- Generates performance metrics and comparison table
+- Helps you choose the best voice for your application
+
+📖 **See [README_CHINESE_VOICES.md](README_CHINESE_VOICES.md) for detailed documentation**
+
+### 2.5. English Voice Verification (NEW!)
+
+**Test all English male and female voices:**
+
+```bash
+# Test all 16 English voices
+python test_english_voices.py
+
+# Test only male voices (am_*, bm_*)
+python test_english_voices.py --type male
+
+# Test only female voices (af_*, bf_*)
+python test_english_voices.py --type female
+```
+
+This comprehensive test:
+- Tests 4 male voices (am_adam, am_michael, bm_george, bm_lewis)
+- Tests 12 female voices (af_alloy, af_aoede, af_bella, af_heart, etc.)
+- Saves audio samples for each voice for manual comparison
+- Generates performance metrics and comparison table
+- Helps you choose the best English voice for your application
+
+### 3. Direct TTS Test (Recommended)
 
 Test TTS performance without Dora dataflow:
 
@@ -69,9 +115,15 @@ This runs:
 ### 4. Run All Tests
 
 ```bash
-# Run both direct test and dataflow test
+# Run all voice verification and TTS tests
 ./run_all_tests.sh
 ```
+
+This will run:
+- Chinese voice verification (all 8 voices)
+- English voice verification (all 16 voices)
+- Direct TTS tests (English and Chinese)
+- Generate all audio samples and performance metrics
 
 ## Test Text
 
@@ -90,7 +142,10 @@ Artificial intelligence is revolutionizing the way we interact with technology. 
 ```
 kokoro-tts-validation/
 ├── README.md                          # This documentation
+├── README_CHINESE_VOICES.md           # Chinese voice verification guide
 ├── test_tts_direct.py                 # Standalone TTS test (no dataflow)
+├── test_chinese_voices.py             # Chinese voice verification test (NEW!)
+├── test_english_voices.py             # English voice verification test (NEW!)
 ├── dataflow-static.yml                # Dora dataflow configuration
 ├── simple_text_sender_static.py       # Text sender node
 ├── audio_recorder_static.py           # Audio recorder node
@@ -99,20 +154,42 @@ kokoro-tts-validation/
     ├── kokoro_en_output.wav           # English output
     ├── kokoro_zh_output.wav           # Chinese output
     ├── kokoro_test_output.wav         # Dataflow test output
-    └── kokoro_timing_results.json     # Performance metrics
+    ├── kokoro_timing_results.json     # Performance metrics
+    ├── chinese_voices/                # Chinese voice comparison (NEW!)
+    │   ├── zm_yunjian_test.wav        # Male voice samples
+    │   ├── zm_yunxi_test.wav
+    │   ├── zm_yunxia_test.wav
+    │   ├── zm_yunyang_test.wav
+    │   ├── zf_xiaobei_test.wav        # Female voice samples
+    │   ├── zf_xiaoni_test.wav
+    │   ├── zf_xiaoxiao_test.wav
+    │   ├── zf_xiaoyi_test.wav
+    │   └── chinese_voices_results.json # Voice comparison metrics
+    └── english_voices/                # English voice comparison (NEW!)
+        ├── am_adam_test.wav           # Male voice samples
+        ├── am_michael_test.wav
+        ├── bm_george_test.wav
+        ├── bm_lewis_test.wav
+        ├── af_*.wav                   # Female voice samples (12 voices)
+        ├── bf_emma_test.wav
+        └── english_voices_results.json # Voice comparison metrics
 ```
 
 ## Configuration
 
 ### Available Voices
 
-Kokoro TTS supports various voices. Some examples:
-- `af_heart` - Female voice
-- `bf_emma` - Female voice
-- `am_adam` - Male voice
-- `bm_lewis` - Male voice
+**Chinese Voices (use with LANGUAGE=z):**
+- **Male**: `zm_yunjian`, `zm_yunxi`, `zm_yunxia`, `zm_yunyang`
+- **Female**: `zf_xiaobei`, `zf_xiaoni`, `zf_xiaoxiao`, `zf_xiaoyi`
 
-See [Kokoro documentation](https://github.com/remsky/Kokoro-TTS) for full list.
+**English Voices (use with LANGUAGE=a):**
+- **Female**: `af_heart`, `bf_emma`, `af_alloy`, `af_aoede`, etc.
+- **Male**: `am_adam`, `bm_lewis`, `am_michael`, etc.
+
+📖 **Test Chinese voices:** Run `python test_chinese_voices.py` to compare all voices
+
+See [Kokoro VOICES.md](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md) for full list.
 
 ### Language Support
 

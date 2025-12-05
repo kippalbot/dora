@@ -146,7 +146,8 @@ VOICE_CONFIGS = {
 }
 
 # Kokoro TTS configuration
-KOKORO_DEFAULT_REPO = "hexgrad/Kokoro-82M"
+KOKORO_DEFAULT_REPO = "hexgrad/Kokoro-82M"  # CPU backend (PyTorch)
+KOKORO_MLX_REPO = "prince-canuma/Kokoro-82M"  # MLX backend (Apple Silicon GPU)
 KOKORO_MODEL_FILES = [
     "config.json",
     "kokoro-v1_0.pth",
@@ -154,11 +155,19 @@ KOKORO_MODEL_FILES = [
 
 
 def get_kokoro_models_dir() -> Path:
-    """Default storage location for Kokoro models."""
+    """Default storage location for Kokoro CPU models."""
     kokoro_dir = os.getenv("KOKORO_MODEL_DIR")
     if kokoro_dir:
         return Path(kokoro_dir)
     return Path.home() / ".dora" / "models" / "kokoro"
+
+
+def get_kokoro_mlx_models_dir() -> Path:
+    """Default storage location for Kokoro MLX models."""
+    kokoro_mlx_dir = os.getenv("KOKORO_MLX_MODEL_DIR")
+    if kokoro_mlx_dir:
+        return Path(kokoro_mlx_dir)
+    return Path.home() / ".dora" / "models" / "kokoro-mlx"
 
 
 def download_kokoro_base(models_dir: Path, repo_id: str = KOKORO_DEFAULT_REPO) -> bool:
@@ -285,9 +294,43 @@ def download_kokoro_voices(
 def download_kokoro_package(models_dir: Path, repo_id: str = KOKORO_DEFAULT_REPO) -> bool:
     """Download Kokoro base files and all voices."""
     print("\n📦 Downloading Kokoro TTS package")
+    print(f"   Repository: {repo_id}")
     base_ok = download_kokoro_base(models_dir, repo_id=repo_id)
     voices_ok = download_kokoro_voices("all", models_dir, repo_id=repo_id)
     return base_ok and voices_ok
+
+
+def download_kokoro_mlx(models_dir: Path) -> bool:
+    """Download MLX-optimized Kokoro model (Apple Silicon GPU).
+
+    Note: MLX uses prince-canuma/Kokoro-82M which is different from the CPU version.
+    The MLX model is automatically cached by HuggingFace Hub and used by mlx-audio.
+    """
+    print("\n📥 Downloading Kokoro MLX (Apple Silicon GPU acceleration)")
+    print(f"   Repository: {KOKORO_MLX_REPO}")
+    print(f"   Backend: MLX (Metal GPU)")
+    print(f"   Platform: macOS Apple Silicon only")
+    print(f"   Note: This is a DIFFERENT model than the CPU version (hexgrad/Kokoro-82M)")
+
+    try:
+        print("\n   Downloading MLX-optimized Kokoro model...")
+        print(f"   This will cache the model in HuggingFace cache directory")
+
+        # Download to HuggingFace cache (mlx-audio will use it from there)
+        downloaded_path = snapshot_download(
+            repo_id=KOKORO_MLX_REPO,
+            resume_download=True
+        )
+
+        print(f"   ✅ MLX Kokoro model downloaded successfully")
+        print(f"   Location: {downloaded_path}")
+        print(f"   Note: mlx-audio will automatically use this cached model")
+        print(f"   Model name to use: prince-canuma/Kokoro-82M")
+
+        return True
+    except Exception as e:
+        print(f"   ❌ Failed to download MLX Kokoro model: {e}")
+        return False
 
 
 def remove_kokoro_base(models_dir: Path) -> bool:
@@ -359,6 +402,14 @@ def remove_kokoro_package(models_dir: Path) -> bool:
     ok_base = remove_kokoro_base(models_dir)
     ok_voices = remove_kokoro_voices("all", models_dir)
     return ok_base and ok_voices
+
+
+def remove_kokoro_mlx() -> bool:
+    """Remove MLX Kokoro model from HuggingFace cache."""
+    print("\n🗑️  Removing Kokoro MLX model")
+    print(f"   Repository: {KOKORO_MLX_REPO}")
+
+    return remove_huggingface_model(KOKORO_MLX_REPO)
 
 
 def list_local_kokoro_voices(models_dir: Path) -> Dict[str, float]:
@@ -1418,7 +1469,7 @@ def main():
         type=str,
         help=(
             "Model to download: 'funasr', 'primespeech', 'primespeech-base', 'g2pw', 'kokoro', "
-            "'kokoro-base', 'kokoro-voices', or a HuggingFace repo ID"
+            "'kokoro-base', 'kokoro-voices', 'kokoro-mlx', or a HuggingFace repo ID"
         )
     )
     
@@ -1428,7 +1479,7 @@ def main():
         type=str,
         help=(
             "Model to remove: 'funasr', 'g2pw', voice name, 'all-voices', 'primespeech-base', "
-            "'kokoro', 'kokoro-base', 'kokoro-voices', or HuggingFace repo ID"
+            "'kokoro', 'kokoro-mlx', 'kokoro-base', 'kokoro-voices', or HuggingFace repo ID"
         )
     )
     
@@ -1498,6 +1549,7 @@ def main():
     
     args = parser.parse_args()
     kokoro_models_dir = Path(args.kokoro_dir) if args.kokoro_dir else get_kokoro_models_dir()
+    kokoro_mlx_models_dir = get_kokoro_mlx_models_dir()
     
     # Handle --list (show all downloaded models)
     if args.list:
@@ -1609,6 +1661,11 @@ def main():
             success = download_kokoro_package(kokoro_models_dir)
             if not success:
                 sys.exit(1)
+        elif args.download == "kokoro-mlx":
+            # MLX uses separate directory and HuggingFace cache
+            success = download_kokoro_mlx(kokoro_mlx_models_dir)
+            if not success:
+                sys.exit(1)
         elif args.download == "primespeech":
             # Download all PrimeSpeech required models (base, G2PW, and all voices)
             print("\n📦 Downloading complete PrimeSpeech package")
@@ -1654,7 +1711,8 @@ def main():
             print("   - 'primespeech' for complete PrimeSpeech package (base + G2PW + all voices)")
             print("   - 'primespeech-base' for PrimeSpeech base models only")
             print("   - 'g2pw' for G2PW model only")
-            print("   - 'kokoro' for Kokoro base + all voices")
+            print("   - 'kokoro' for Kokoro base + all voices (CPU backend)")
+            print("   - 'kokoro-mlx' for MLX-optimized Kokoro (Apple Silicon GPU)")
             print("   - 'kokoro-base' for Kokoro base files only")
             print("   - 'kokoro-voices' for all Kokoro voices only")
             print(f"   - Voice name: {', '.join(VOICE_CONFIGS.keys())}")
@@ -1709,6 +1767,10 @@ def main():
             success = remove_kokoro_package(kokoro_models_dir)
             if not success:
                 sys.exit(1)
+        elif remove_lower == "kokoro-mlx":
+            success = remove_kokoro_mlx()
+            if not success:
+                sys.exit(1)
         elif args.remove in VOICE_CONFIGS:
             # Remove specific voice
             success = remove_voice_models(args.remove, models_dir)
@@ -1722,7 +1784,7 @@ def main():
             print("   - 'g2pw' to remove G2PW model")
             print("   - 'all-voices' to remove all PrimeSpeech voices")
             print("   - 'primespeech-base' to remove base models")
-            print("   - 'kokoro', 'kokoro-base', 'kokoro-voices' for Kokoro assets")
+            print("   - 'kokoro', 'kokoro-mlx', 'kokoro-base', 'kokoro-voices' for Kokoro assets")
             print(f"   - Voice name: {', '.join(VOICE_CONFIGS.keys())}")
             sys.exit(1)
     
@@ -1767,15 +1829,22 @@ def main():
         print("  python download_models.py --list-voices               # List available voices")
 
         print("\n  # Kokoro TTS models:")
-        print("  python download_models.py --download kokoro           # Base + all voices")
-        print("  python download_models.py --download kokoro-base      # Base files only")
-        print("  python download_models.py --download kokoro-voices    # All voices only")
-        print("  python download_models.py --kokoro-voice af_heart     # Download specific voice")
+        print("  python download_models.py --download kokoro           # CPU backend (hexgrad/Kokoro-82M)")
+        print("  python download_models.py --download kokoro-mlx       # MLX backend (prince-canuma/Kokoro-82M)")
+        print("  python download_models.py --download kokoro-base      # CPU base files only")
+        print("  python download_models.py --download kokoro-voices    # CPU voices only")
+        print("  python download_models.py --kokoro-voice af_heart     # Download specific CPU voice")
         print("  python download_models.py --list-kokoro-voices        # List Kokoro voices")
+        print("")
+        print("  Note: CPU and MLX use DIFFERENT models from different repositories:")
+        print("    - CPU:  hexgrad/Kokoro-82M      (PyTorch, ~/.dora/models/kokoro)")
+        print("    - MLX:  prince-canuma/Kokoro-82M (Metal GPU, HuggingFace cache)")
 
         print("\n  # Remove models:")
         print("  python download_models.py --remove mlx-community/gemma-3-12b-it-4bit")
         print("  python download_models.py --remove funasr")
+        print("  python download_models.py --remove kokoro           # Remove CPU models")
+        print("  python download_models.py --remove kokoro-mlx       # Remove MLX model")
         print("  python download_models.py --remove \"Luo Xiang\"")
         print("  python download_models.py --remove all-voices")
         print("  python download_models.py --remove primespeech-base")

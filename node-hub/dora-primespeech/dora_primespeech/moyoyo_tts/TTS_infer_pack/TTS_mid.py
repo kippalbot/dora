@@ -716,12 +716,14 @@ class TTS:
                 #print(i18n("分段返回模式不支持分桶处理，已自动关闭分桶处理"))
 
         if split_bucket and speed_factor == 1.0:
-            print(i18n("分桶处理模式已开启"))
+            pass  # Bucket processing mode enabled (print disabled for dora integration)
+            #print(i18n("分桶处理模式已开启"))
         elif speed_factor != 1.0:
             #print(i18n("语速调节不支持分桶处理，已自动关闭分桶处理"))
             split_bucket = False
         else:
-            print(i18n("分桶处理模式已关闭"))
+            pass  # Bucket processing mode disabled (print disabled for dora integration)
+            #print(i18n("分桶处理模式已关闭"))
 
         if fragment_interval < 0.01:
             fragment_interval = 0.01

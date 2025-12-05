@@ -10,10 +10,10 @@ readme = "README.md"
 dependencies = [
     "dora-rs>=0.3.7",
     "numpy>=1.21.0,<2.0",  # CRITICAL: Must be 1.x (1.26.4 recommended)
-    "scipy>=1.11.0,<1.12.0",  # May be required by torch/torchaudio, use 1.11.4
+    "scipy>=1.11.0",  # Updated to support newer versions
     "pyarrow>=10.0.0",
-    "torch>=2.0.0,<2.3.0",  # Voice chat pipeline standard
-    "torchaudio>=2.0.0,<2.3.0",  # Match torch version range
+    "torch>=2.0.0",  # Updated to support PyTorch 2.6+ (transformers security fix)
+    "torchaudio>=2.0.0",  # Match torch version range
     "silero-vad>=5.1",
 ]
 

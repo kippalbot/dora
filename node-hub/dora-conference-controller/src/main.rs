@@ -697,15 +697,11 @@ impl ConferenceController {
         send_log(node, LogLevel::Info, self.log_level, "🔄 Resetting controller");
         self.reset_pending = true;
 
-        // Send reset to all bridges - use dynamic control outputs
-        let control_outputs = vec!["control_judge", "control_llm2", "control_llm1"];
-        for output_name in control_outputs {
-            node.send_output(
-                DataId::from(output_name.to_string()),
-                Default::default(),
-                StringArray::from(vec!["reset"]),
-            )?;
-        }
+        // Send reset to all bridges with NEW question_id (same as human speaker reset)
+        self.send_reset_to_all_bridges(node)?;
+
+        // Send reset to audio pipeline (text-segmenter + audio-player) with NEW question_id
+        self.send_reset_to_audio_pipeline(node)?;
 
         // Send reset to LLMs and judge
         node.send_output(DataId::from("llm_control".to_string()), Default::default(), StringArray::from(vec!["reset"]))?;
@@ -717,6 +713,7 @@ impl ConferenceController {
         self.waiting_for_session_start = None;
         self.pending_next_speaker = false;
         self.policy.reset_counts();
+        self.policy.reset_round_tracking();
         self.state = ControllerState::Waiting;
 
         send_log(node, LogLevel::Info, self.log_level, "✅ Reset complete");

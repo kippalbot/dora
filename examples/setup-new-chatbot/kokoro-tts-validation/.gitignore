@@ -1,0 +1,11 @@
+# Test output directory
+tts_output/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# System files
+.DS_Store
+out/

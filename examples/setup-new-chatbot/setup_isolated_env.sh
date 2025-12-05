@@ -263,7 +263,21 @@ install_dependencies() {
     # Install llama-cpp-python from conda-forge (avoids build issues)
     print_info "Installing llama-cpp-python from conda-forge..."
     conda install -c conda-forge llama-cpp-python -y
-    
+
+    # Install TTS backends
+    print_info "Installing TTS backends..."
+    pip install kokoro  # CPU backend (cross-platform)
+
+    # Install MLX backend (macOS only - Apple Silicon GPU acceleration)
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        print_info "Installing MLX audio backend (Apple Silicon GPU acceleration)..."
+        pip install mlx-audio
+        print_success "MLX audio backend installed (GPU-accelerated TTS)"
+    else
+        print_warning "Skipping MLX audio backend (macOS only)"
+        print_info "Using CPU backend for TTS (cross-platform compatible)"
+    fi
+
     print_success "Core dependencies installed"
 }
 
@@ -303,7 +317,8 @@ install_dora_nodes() {
     # List of Python nodes to install
     NODES=(
         "dora-asr"
-        "dora-primespeech" 
+        "dora-primespeech"
+        "dora-kokoro-tts"
         "dora-qwen3"
         "dora-text-segmenter"
         "dora-speechmonitor"
@@ -371,11 +386,25 @@ run_tests() {
 # Print summary
 print_summary() {
     print_header "Setup Complete!"
-    
+
     echo ""
     echo "Environment Name: $ENV_NAME"
     echo "Python Version: $PYTHON_VERSION"
     echo ""
+
+    # Check which TTS backends are available
+    echo "TTS Backends Installed:"
+    echo "  ✓ CPU (kokoro) - Cross-platform, best for short text (<150 chars)"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "  ✓ MLX (mlx-audio) - Apple Silicon GPU, best for long text (>200 chars)"
+        echo ""
+        echo "TTS Backend Selection:"
+        echo "  Set BACKEND=cpu   for CPU backend (1.8x faster for short text)"
+        echo "  Set BACKEND=mlx   for MLX backend (up to 3x faster for long text)"
+        echo "  Set BACKEND=auto  to auto-detect (default)"
+    fi
+    echo ""
+
     echo "To activate the environment:"
     echo "  conda activate $ENV_NAME"
     echo ""
@@ -387,6 +416,10 @@ print_summary() {
     echo "  cd $PROJECT_ROOT/examples/mac-aec-chat"
     echo "  dora up"
     echo "  dora start voice-chat-with-aec.yml"
+    echo ""
+    echo "To test Kokoro TTS backends:"
+    echo "  cd $SCRIPT_DIR/kokoro-tts-validation"
+    echo "  ./run_all_tests.sh"
     echo ""
     print_success "Setup completed successfully!"
 }

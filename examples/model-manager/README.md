@@ -115,7 +115,11 @@ python download_models.py --remove primespeech-base
 
 PrimeSpeech assets are stored under `~/.dora/models/primespeech` unless you pass `--models-dir`.
 
-### 3.4 Kokoro
+### 3.4 Kokoro TTS
+
+Kokoro supports **two backends**: CPU (PyTorch) and MLX (Apple Silicon GPU). These use **different models** from different repositories.
+
+#### CPU Backend (Cross-Platform)
 
 ```bash
 # Base files (config.json + kokoro-v1_0.pth) and cache refresh
@@ -133,13 +137,63 @@ python download_models.py --kokoro-voice af_heart
 # List available voices on Hugging Face
 python download_models.py --list-kokoro-voices
 
-# Remove
+# Remove CPU models
 python download_models.py --remove kokoro-base
 python download_models.py --remove kokoro-voices
 python download_models.py --remove kokoro
 ```
 
-Kokoro base files and voices are placed under `~/.dora/models/kokoro`. The script also mirrors the `hexgrad/Kokoro-82M` snapshot in your HF cache; removal cleans both local files and cached snapshot.
+**CPU Backend Details:**
+- **Repository**: `hexgrad/Kokoro-82M`
+- **Storage**: `~/.dora/models/kokoro`
+- **Platform**: All platforms (Linux, macOS, Windows)
+- **Best for**: Short text (<150 chars) - 1.8x faster than MLX
+
+#### MLX Backend (Apple Silicon GPU)
+
+```bash
+# Download MLX-optimized model
+python download_models.py --download kokoro-mlx
+
+# Remove MLX model
+python download_models.py --remove kokoro-mlx
+```
+
+**MLX Backend Details:**
+- **Repository**: `prince-canuma/Kokoro-82M` (DIFFERENT from CPU version)
+- **Storage**: `~/.cache/huggingface/hub/` (HuggingFace cache)
+- **Platform**: macOS Apple Silicon only (M1/M2/M3)
+- **Best for**: Long text (>200 chars) - up to 3x faster than CPU
+
+#### Performance Comparison
+
+| Text Length | Best Backend | Performance |
+|-------------|--------------|-------------|
+| Short (12 chars) | **CPU** | 4.35x faster than MLX |
+| Medium (79 chars) | **CPU** | 1.83x faster than MLX |
+| Long (363 chars) | **MLX** | 1.62x faster than CPU |
+| Ultra-long (1542 chars) | **MLX** | 3.02x faster than CPU |
+
+**Crossover point**: ~150-200 characters
+
+#### Backend Selection in Dora
+
+Set the `BACKEND` environment variable in your dataflow YAML:
+
+```yaml
+nodes:
+  - id: tts
+    operator:
+      python: ../../node-hub/dora-kokoro-tts
+    env:
+      BACKEND: "auto"      # auto-select (tries MLX first, falls back to CPU)
+      # BACKEND: "cpu"     # force CPU backend
+      # BACKEND: "mlx"     # force MLX backend
+      VOICE_NAME: "af_heart"
+```
+
+For validation tests and performance benchmarks, see:
+- `/Users/yuechen/home/fresh/dora/examples/setup-new-chatbot/kokoro-tts-validation/`
 
 ### 3.5 Other shortcuts
 
