@@ -298,11 +298,12 @@ def main():
     if segment_mode == "punctuation":
         punctuation_marks = "".join(dict.fromkeys(punctuation_marks + "".join(fallback_split_marks)))
 
+    send_log(node, "INFO", "Mode: single (queue-based)", log_level)
     send_log(
         node,
         "INFO",
         (
-            "Configured segmentation — mode: %s, min: %d, max: %s, punctuation: '%s', backpressure: %s, remove_speaker_id: %s"
+            "Configured — segment_mode: %s, min: %d, max: %s, punctuation: '%s', backpressure: %s, remove_speaker_id: %s"
             % (
                 segment_mode,
                 min_segment_length,
@@ -327,6 +328,10 @@ def main():
     # Text buffer for incomplete segments (accumulates across LLM chunks)
     text_buffer = ""
 
+    # Track pending session_ended signal (when it arrives while is_sending=True)
+    pending_session_end = False
+    pending_session_end_metadata = {}
+
     send_log(node, "INFO", "Text Segmenter started with punctuation-based segmentation", log_level)
     
     for event in node:
@@ -337,6 +342,46 @@ def main():
                 metadata = event.get("metadata", {})
 
                 send_log(node, "INFO", f"🔵 RAW LLM INPUT: '{text}' (len={len(text)})", log_level)
+
+                # Check for session_status: "ended" signal
+                session_status = metadata.get("session_status", "")
+                if session_status == "ended":
+                    send_log(node, "INFO", f"🏁 SESSION ENDED signal received", log_level)
+
+                    # If there's buffered text, flush it with "ended" status
+                    if text_buffer.strip():
+                        send_log(node, "INFO", f"🏁 Flushing buffer on session end: '{text_buffer}'", log_level)
+                        segment_queue.append({
+                            "text": text_buffer.strip(),
+                            "metadata": {**metadata, "session_status": "ended"},
+                        })
+                        text_buffer = ""
+
+                    # If queue has items, mark the last one as "ended"
+                    if segment_queue:
+                        segment_queue[-1]["metadata"]["session_status"] = "ended"
+                        send_log(node, "INFO", f"🏁 Marked last queued segment as ended", log_level)
+
+                    # If currently sending, the TTS will get the ended status from the queue
+                    # If not sending and queue has items, send now
+                    if not is_sending and segment_queue:
+                        segment = segment_queue.popleft()
+                        send_log(node, "INFO", f"🏁 Sending final segment: '{segment['text']}' with session_status=ended", log_level)
+                        node.send_output(
+                            "text_segment",
+                            pa.array([segment["text"]]),
+                            metadata=segment["metadata"]
+                        )
+                        is_sending = True
+                    elif is_sending and not segment_queue:
+                        # TTS is busy and no queued segments - remember to send session_ended later
+                        pending_session_end = True
+                        pending_session_end_metadata = metadata.copy()
+                        send_log(node, "INFO", f"🏁 TTS busy, queuing session_ended for later", log_level)
+
+                    # Skip normal text processing for empty "ended" message
+                    if not text.strip():
+                        continue
 
                 # Remove speaker ID if enabled
                 if remove_speaker_id_enabled:
@@ -441,6 +486,18 @@ def main():
                 else:
                     # No more segments to send
                     is_sending = False
+
+                    # Check if we have a pending session_ended signal to propagate
+                    if pending_session_end:
+                        send_log(node, "INFO", f"🏁 TTS done, sending pending session_ended signal", log_level)
+                        # Send empty segment with session_status="ended" to signal completion
+                        node.send_output(
+                            "text_segment",
+                            pa.array([""]),
+                            metadata={**pending_session_end_metadata, "session_status": "ended"}
+                        )
+                        pending_session_end = False
+                        pending_session_end_metadata = {}
                     
             elif event["id"] == "control":
                 # Reset command
@@ -451,6 +508,8 @@ def main():
                     segment_queue.clear()
                     text_buffer = ""
                     is_sending = False
+                    pending_session_end = False
+                    pending_session_end_metadata = {}
                     # segment_counter removed
                     send_log(node, "INFO", f"Reset: Cleared {cleared_segments} queued segments and text buffer (buffer had text: {cleared_buffer})", log_level)
 
@@ -474,6 +533,8 @@ def main():
                     segment_queue.clear()
                     text_buffer = ""
                     is_sending = False
+                    pending_session_end = False
+                    pending_session_end_metadata = {}
                     # segment_counter removed
                     send_log(node, "INFO", f"Reset: Cleared {cleared_count} queued segments and text buffer (no question_id)", log_level)
                 else:
@@ -504,6 +565,9 @@ def main():
                     if current_question_id != incoming_question_id:
                         buffer_was_cleared = len(text_buffer) > 0
                         text_buffer = ""
+                        # Also clear pending session_ended from old question
+                        pending_session_end = False
+                        pending_session_end_metadata = {}
 
                     # Update current_question_id to the new question
                     current_question_id = incoming_question_id

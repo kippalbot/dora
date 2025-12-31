@@ -38,36 +38,23 @@ def validate_language_config(lang_code, param_name, node, log_level):
     if lang_code in VALID_LANGUAGES:
         return lang_code
 
-    # Invalid language code - show error prominently
-    error_header = "=" * 70
-    print(f"\n{error_header}", flush=True)
-    print(f"❌ PRIMESPEECH CONFIGURATION ERROR", flush=True)
-    print(f"{error_header}", flush=True)
-
+    # Invalid language code - log error
     main_error = f"INVALID {param_name}: '{lang_code}' is NOT a valid language!"
-    print(f"{main_error}", flush=True)
     send_log(node, "ERROR", main_error, log_level)
 
     # Check for common mistakes and suggest corrections
     if lang_code.lower() == "cn":
         hint = "Did you mean 'zh' for Chinese? Use 'zh' not 'cn'!"
-        print(f"💡 HINT: {hint}", flush=True)
         send_log(node, "ERROR", hint, log_level)
     elif lang_code.lower() == "chinese":
         hint = "Use 'zh' for Chinese, not 'chinese'!"
-        print(f"💡 HINT: {hint}", flush=True)
         send_log(node, "ERROR", hint, log_level)
     elif lang_code.lower() == "english":
         hint = "Use 'en' for English, not 'english'!"
-        print(f"💡 HINT: {hint}", flush=True)
         send_log(node, "ERROR", hint, log_level)
 
     valid_msg = f"Valid languages: {', '.join(VALID_LANGUAGES)}"
-    print(f"✅ {valid_msg}", flush=True)
     send_log(node, "ERROR", valid_msg, log_level)
-
-    print(f"⚠️  TTS will FAIL until you fix {param_name} in your configuration!", flush=True)
-    print(f"{error_header}\n", flush=True)
     send_log(node, "ERROR", f"TTS will fail until you fix {param_name}!", log_level)
 
     # Return the invalid code as-is (will cause TTS to fail with clear error)
@@ -190,16 +177,6 @@ def main():
     # Print to stdout for immediate visibility
     speed_factor_value = voice_config.get('speed_factor')
     fragment_interval_value = voice_config.get('fragment_interval')
-    print(
-        f"[PRIMESPEECH SPEED_FACTOR] Voice: {voice_name}, Speed: {speed_factor_value}, Env Override: {config.SPEED_FACTOR_OVERRIDE}",
-        flush=True,
-    )
-    if fragment_interval_value is not None:
-        print(
-            f"[PRIMESPEECH FRAGMENT_INTERVAL] Voice: {voice_name}, Interval: {fragment_interval_value}, Env Override: {config.FRAGMENT_INTERVAL_OVERRIDE}",
-            flush=True,
-        )
-
     send_log(
         node,
         "INFO",

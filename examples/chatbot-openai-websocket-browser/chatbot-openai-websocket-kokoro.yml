@@ -1,0 +1,145 @@
+nodes:
+  - id: NODE_ID
+    build: cargo build --release -p dora-openai-websocket
+    path: dynamic
+    inputs:
+      audio: kokoro-tts/audio
+      text: asr/transcription
+      speech_started: speech-monitor/speech_started
+      speech_ended: speech-monitor/speech_ended
+    outputs:
+      - audio
+      - text
+      - log
+      - reset
+
+  # Speech detection and segmentation with pause/resume capability
+  - id: speech-monitor
+    build: pip install -e ../../node-hub/dora-speechmonitor
+    path: dora-speechmonitor
+    inputs:
+      audio:
+        source: NODE_ID/audio
+        queue_size: 1000000
+    outputs:
+      - speech_started
+      - speech_ended
+      - question_ended
+      - is_speaking
+      - audio_segment
+      - speech_probability
+      - log
+    env:
+      MIN_AUDIO_AMPLITUDE: 0.01
+      ACTIVE_FRAME_THRESHOLD_MS: 100
+      USER_SILENCE_THRESHOLD_MS: 1500
+      SILENCE_THRESHOLD_MS: 500
+      QUESTION_END_SILENCE_MS: 3000
+      AUDIO_FRAMES_THRESHOLD_MS: 10000
+      VAD_THRESHOLD: 0.6
+      VAD_ENABLED: true
+      SAMPLE_RATE: 16000
+      LOG_LEVEL: INFO
+
+  # ASR transcription
+  - id: asr
+    build: pip install -e ../../node-hub/dora-asr
+    path: dora-asr
+    inputs:
+      audio:
+        source: speech-monitor/audio_segment
+        queue_size: 10
+      control: NODE_ID/reset
+    outputs:
+      - transcription
+      - status
+      - log
+    env:
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+      FUNASR_DISABLE_UPDATE: "true"
+      ASR_MODELS_DIR: $HOME/.dora/models/asr
+      ASR_ENGINE: funasr
+      LANGUAGE: zh
+      USE_GPU: "false"
+      LOG_LEVEL: INFO
+
+  # MaaS Client with Playwright Browser Tools
+  - id: maas-client
+    build: cargo build -p dora-maas-client --release
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: asr/transcription
+      text_to_audio: NODE_ID/text
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: maas_mcp_browser_config.toml
+      LOG_LEVEL: INFO
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+  # Text Segmenter
+  - id: text-segmenter
+    build: pip install -e ../../node-hub/dora-text-segmenter
+    path: dora-text-segmenter
+    inputs:
+      text: maas-client/text
+      tts_complete: kokoro-tts/segment_complete
+      reset: NODE_ID/reset
+    outputs:
+      - text_segment
+      - status
+      - metrics
+      - log
+    env:
+      SEGMENTER_MODE: "single"
+      ENABLE_BACKPRESSURE: "false"
+      SEGMENT_MODE: "sentence"
+      MIN_SEGMENT_LENGTH: "3"
+      MAX_SEGMENT_LENGTH: "10"
+      PUNCTUATION_MARKS: "。！？.!?，,：:"
+      LOG_LEVEL: "INFO"
+
+  # Kokoro TTS - Fast CPU-based TTS
+  - id: kokoro-tts
+    build: pip install -e ../../node-hub/dora-kokoro-tts
+    path: dora-kokoro-tts
+    inputs:
+      text: text-segmenter/text_segment
+      control: NODE_ID/reset
+    outputs:
+      - audio
+      - status
+      - segment_complete
+      - log
+    env:
+      BACKEND: cpu
+      KOKORO_MODEL_CPU: hexgrad/Kokoro-82M
+      # Chinese Voices: zf_xiaobei, zf_xiaoni, zf_xiaoxiao, zf_xiaoyi (female)
+      #                 zm_yunjian, zm_yunxi, zm_yunxia, zm_yunyang (male)
+      VOICE: zf_xiaoxiao
+      LANGUAGE: z
+      SPEED_FACTOR: "1.3"
+      LOG_LEVEL: DEBUG
+
+  # Log viewer (dynamic node - launch separately)
+  - id: viewer
+    path: dynamic
+    inputs:
+      wserver_log: NODE_ID/log
+      speechmonitor_log: speech-monitor/log
+      asr_log: asr/log
+      maas_log: maas-client/log
+      segmenter_log: text-segmenter/log
+      kokoro_log: kokoro-tts/log
+      asr_status: asr/status
+      maas_status: maas-client/status
+      segmenter_status: text-segmenter/status
+      kokoro_status: kokoro-tts/status
+      speech_started: speech-monitor/speech_started
+      speech_ended: speech-monitor/speech_ended
+      question_ended: speech-monitor/question_ended
+    env:
+      LOG_LEVEL: DEBUG

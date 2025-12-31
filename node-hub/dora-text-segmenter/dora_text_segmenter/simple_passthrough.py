@@ -31,7 +31,8 @@ def main():
     node = Node("text-segmenter")
     log_level = os.getenv("LOG_LEVEL", "INFO")
 
-    send_log(node, "INFO", "Started - will pass through all text immediately", log_level)
+    send_log(node, "INFO", "Mode: passthrough", log_level)
+    send_log(node, "INFO", "Will pass through all text immediately", log_level)
 
     segment_index = 0
 

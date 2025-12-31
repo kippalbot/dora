@@ -98,7 +98,8 @@ nodes:
     build: pip install -e ../../node-hub/dora-text-segmenter
     path: dora-text-segmenter
     inputs:
-      # 3 LLM inputs (FIFO session queue)
+      # Participant inputs - output names are derived from these input port names
+      # e.g., input "student1" -> output "text_segment_student1"
       student1:
         source: student1/text
         queue_size: 1000
@@ -123,15 +124,18 @@ nodes:
       control: conference-controller/llm_control
       reset: conference-controller/control_judge
 
+    # NOTE: Output names must match input port names with "text_segment_" prefix
+    # If you rename an input (e.g., student1 -> alice), update the corresponding output
     outputs:
-      - text_segment_student1
-      - text_segment_student2
-      - text_segment_tutor
+      - text_segment_student1  # matches input "student1"
+      - text_segment_student2  # matches input "student2"
+      - text_segment_tutor     # matches input "tutor"
       - status
       - metrics
       - log
 
     env:
+      SEGMENTER_MODE: "conference"
       SEGMENT_MODE: "sentence"
       MIN_SEGMENT_LENGTH: "5"
       MAX_SEGMENT_LENGTH: "15"

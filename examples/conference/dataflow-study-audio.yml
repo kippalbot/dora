@@ -80,6 +80,7 @@ nodes:
       - metrics
       - log
     env:
+      SEGMENTER_MODE: "single"
       ENABLE_BACKPRESSURE: "false" # Don't wait initially - send first segment immediately
       SEGMENT_MODE: "sentence" # sentence, punctuation, or fixed
       MIN_SEGMENT_LENGTH: "5"

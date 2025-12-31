@@ -10,9 +10,9 @@ dependencies = [
     "scipy>=1.11.0,<1.12.0",  # CRITICAL: 1.11.4 for Python 3.12 compatibility
     "torchmetrics==1.0.0",  # CRITICAL: Exact version to avoid scipy conflicts
     "pyarrow>=10.0.0",
-    "torch>=2.0.0",  # Compatible with voice chat pipeline (updated for transformers security fix)
-    "torchaudio>=2.0.0",  # Match torch version range
-    "torchvision>=0.15.0",  # Compatible torchvision range
+    "torch>=2.0.0,<2.3.0",  # Compatible with voice chat pipeline
+    "torchaudio>=2.0.0,<2.3.0",  # Match torch version range
+    "torchvision>=0.15.0,<0.18.0",  # Compatible torchvision range
     "librosa>=0.10.0",
     "soundfile>=0.12.0",
     "funasr>=1.0.0",  # ASR for speech recognition integration

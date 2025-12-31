@@ -415,6 +415,8 @@ async fn main() -> Result<()> {
                             .collect::<Vec<_>>()
                             .join(" ");
 
+                        send_log(&mut node, "INFO", &format!("Received input: \"{}\"", user_text))?;
+
                         if user_text.is_empty() {
                             send_log(&mut node, "WARNING", "Received empty text input")?;
                             continue;

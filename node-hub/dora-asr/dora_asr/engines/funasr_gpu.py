@@ -267,7 +267,8 @@ class FunASRGPUEngine(ASRInterface):
         result = self.asr_model.generate(
             input=audio_array,
             batch_size_s=300,
-            hotword=hotwords
+            hotword=hotwords,
+            disable_pbar=True
         )
         
         # Extract text
@@ -278,7 +279,7 @@ class FunASRGPUEngine(ASRInterface):
         
         # Add punctuation if available
         if self.punc_model and text:
-            punc_result = self.punc_model.generate(input=text)
+            punc_result = self.punc_model.generate(input=text, disable_pbar=True)
             if isinstance(punc_result, list) and len(punc_result) > 0:
                 text = punc_result[0].get("text", text)
         

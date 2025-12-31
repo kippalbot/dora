@@ -29,14 +29,12 @@ def send_log(node, level, message, config_level="INFO"):
     if LOG_LEVELS.get(level, 0) < LOG_LEVELS.get(config_level, 20):
         return
 
-    formatted_message = f"[{level}] {message}"
     log_data = {
         "node": "multi-text-segmenter",
         "level": level,
         "message": message
     }
     node.send_output("log", pa.array([json.dumps(log_data)]))
-    print(formatted_message, flush=True)
 
 
 def parse_int_env(name, default):
@@ -285,9 +283,7 @@ def complete_session_and_activate_next(completed_participant, node, participant_
 
 
 def main():
-    print("[STARTUP] multi_participant_segmenter.py main() called", flush=True)
     node = Node()
-    print("[STARTUP] Node created", flush=True)
 
     # Configuration
     min_segment_length = max(1, parse_int_env("MIN_SEGMENT_LENGTH", 5))
@@ -301,10 +297,11 @@ def main():
     AUDIO_BUFFER_LOW_WATER_MARK = int(os.getenv("AUDIO_BUFFER_LOW_WATER_MARK", "30"))
     AUDIO_BUFFER_HIGH_WATER_MARK = int(os.getenv("AUDIO_BUFFER_HIGH_WATER_MARK", "60"))
 
+    send_log(node, "INFO", "Mode: conference (multi-participant)", log_level)
     send_log(
         node,
         "INFO",
-        f"Multi-Participant Segmenter configured — mode: {segment_mode}, "
+        f"Configured — segment_mode: {segment_mode}, "
         f"min: {min_segment_length}, max: {max_segment_length}, "
         f"punctuation: '{punctuation_marks}', remove_speaker_id: {remove_speaker_id_enabled}",
         log_level,
@@ -385,7 +382,6 @@ def main():
             kick_start_sending(next_queue)
 
     send_log(node, "INFO", "Multi-Participant Text Segmenter started (session-based FIFO)", log_level)
-    print("[STARTUP] Entering event loop", flush=True)
 
     for event in node:
         event_id = event["id"]

@@ -150,8 +150,8 @@ def main():
     segmenter = SequentialTextSegmenter()
     log_level = os.getenv("LOG_LEVEL", "INFO")
 
-    send_log(node, "INFO", "Sequential Text Segmenter started", log_level)
-    send_log(node, "INFO", f"Max segment length: {segmenter.max_length}", log_level)
+    send_log(node, "INFO", "Mode: sequential", log_level)
+    send_log(node, "INFO", f"Configured — max_segment_length: {segmenter.max_length}", log_level)
 
     while True:
         event = node.next(timeout=0.5)
