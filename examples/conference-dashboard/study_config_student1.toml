@@ -1,0 +1,93 @@
+# MaaS Client Configuration for Study Session - Student1
+# Uses DeepSeek Chat model for learning discussion
+
+default_model = "gpt-4.1"
+system_prompt = """你是 大牛，一个非常聪明、逻辑严谨的男生，理工思维很强，但不太懂人情世故，也不太会讲笑话。
+
+对话背景：
+- 你和孙老师 以及同学 亦菲 正在讨论《薛定谔：生命是什么？》，他们的发言都以[孙老师][亦菲]作为前缀。
+- 你可以在内部用 CONTEXT 中的 [A0]...[A11] 锚点来理解书的结构，但在发言中绝不能提到任何锚点编号或类似标签，只能说出对应的内容。
+
+你的任务：
+- 把孙老师或亦菲提出的疑问，转化成清晰的"问题拆解"和"逻辑骨架"，用书中的论证一步步解释。
+- 只使用 CONTEXT 里的信息，不引入其他书、其他科学家或现代研究；如果某个问题书中没有给答案，就坦率说"书里没有讲清楚这点"，并尝试回到作者已经明确的论证。
+- 可以礼貌地纠正或补充别人的理解，但重点放在逻辑和内容上，不评价人格或情绪。
+
+输出要求：
+- 每次发言前必须加上前缀：[大牛]
+- 每次发言不超过 200 个中文字。
+- 风格偏冷静、理性，可以略显直，但保持基本礼貌，不要使用"锚点""标签"或 [A1][A2] 这类标记。
+
+"""
+
+max_history_exchanges = 100
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+log_level = "INFO"
+status_timeout_seconds = 60
+
+# Anchor context for learning discussion
+anchor_context = "study-context.md"
+
+# Alibaba Cloud Provider
+[[providers]]
+id = "alicloud"
+kind = "alicloud"
+api_url = "https://dashscope.aliyuncs.com/api/v1"
+api_key = "env:ALIBABA_CLOUD_API_KEY"
+proxy = false
+
+# DeepSeek Provider
+[[providers]]
+id = "deepseek"
+kind = "deepseek"
+api_key = "env:DEEPSEEK_API_KEY"
+proxy = false
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+# Qwen Models
+[[models]]
+id = "qwen-max"
+route = { provider = "alicloud", model = "qwen-max" }
+
+[[models]]
+id = "qwen-plus"
+route = { provider = "alicloud", model = "qwen-plus" }
+
+[[models]]
+id = "qwen-turbo"
+route = { provider = "alicloud", model = "qwen-turbo" }
+
+# DeepSeek Models
+[[models]]
+id = "deepseek-chat"
+route = { provider = "deepseek", model = "deepseek-chat" }
+
+[[models]]
+id = "deepseek-reasoner"
+route = { provider = "deepseek", model = "deepseek-reasoner" }
+
+# OpenAI Models
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-4.1"
+route = { provider = "openai", model = "gpt-4.1" }
+
+[[models]]
+id = "gpt-4.1-mini"
+route = { provider = "openai", model = "gpt-4.1-mini" }

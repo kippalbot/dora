@@ -1,0 +1,43 @@
+[package]
+name = "conference-dashboard"
+version = "0.1.0"
+edition = "2021"
+description = "Visual dashboard for Dora conference system with buffer visualization, participant status, and waveform display"
+
+# Keep this package out of the parent workspace
+[workspace]
+
+[dependencies]
+# Makepad UI framework (includes emoji font support)
+makepad-widgets = { git = "https://github.com/wyeworks/makepad", rev = "b8b65f4fa" }
+
+# Dora integration - use local path for dynamic node support
+dora-node-api = { path = "../../apis/rust/node", default-features = false }
+
+# Audio playback
+cpal = "0.15"
+
+# Async runtime
+tokio = { version = "1", features = ["full", "sync"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+env_logger = "0.11"
+log = "0.4"
+
+# Utilities
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+
+# System monitoring
+sysinfo = "0.32"
+
+# Signal handling
+ctrlc = "3.4"
+
+[[bin]]
+name = "conference-dashboard"
+path = "src/main.rs"
