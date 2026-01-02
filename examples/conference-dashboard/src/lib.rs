@@ -9,11 +9,13 @@
 
 pub mod app;
 pub mod audio_player;
+pub mod data;
 pub mod dora_bridge;
 pub mod widgets;
 
 use std::sync::Arc;
 use parking_lot::Mutex;
+use cpal::traits::{DeviceTrait, HostTrait};
 
 /// Control commands that can be sent from UI to Dora dataflow
 #[derive(Clone, Debug)]
@@ -67,6 +69,16 @@ pub struct SharedState {
     pub total_memory_gb: f32,
     /// Used system memory in GB
     pub used_memory_gb: f32,
+    /// Available input devices (microphones)
+    pub input_devices: Vec<String>,
+    /// Available output devices (speakers)
+    pub output_devices: Vec<String>,
+    /// Selected input device index
+    pub selected_input_device: usize,
+    /// Selected output device index
+    pub selected_output_device: usize,
+    /// Current microphone input level (0.0 - 1.0)
+    pub mic_input_level: f32,
 }
 
 /// Chat message for conversation history
@@ -151,6 +163,9 @@ pub fn create_shared_state() -> SharedStateRef {
         None => log::warn!("DEEPSEEK_API_KEY: NOT SET"),
     }
 
+    // Enumerate audio devices
+    let (input_devices, output_devices) = enumerate_audio_devices();
+
     Arc::new(Mutex::new(SharedState {
         buffer_fill: 0.0,
         buffer_seconds: 0.0,
@@ -168,5 +183,136 @@ pub fn create_shared_state() -> SharedStateRef {
         memory_usage: 0.0,
         total_memory_gb: 0.0,
         used_memory_gb: 0.0,
+        input_devices,
+        output_devices,
+        selected_input_device: 0,
+        selected_output_device: 0,
+        mic_input_level: 0.0,
     }))
+}
+
+/// Start microphone input monitoring thread
+/// Updates mic_input_level in shared state based on actual audio input
+pub fn start_mic_monitor(shared_state: SharedStateRef) {
+    use cpal::traits::StreamTrait;
+
+    std::thread::spawn(move || {
+        let host = cpal::default_host();
+
+        // Get default input device
+        let device = match host.default_input_device() {
+            Some(d) => d,
+            None => {
+                log::warn!("No default input device found for mic monitoring");
+                return;
+            }
+        };
+
+        let device_name = device.name().unwrap_or_else(|_| "Unknown".to_string());
+        log::info!("Starting mic monitor on: {}", device_name);
+
+        // Get default config
+        let config = match device.default_input_config() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("Failed to get input config: {}", e);
+                return;
+            }
+        };
+
+        // Use a simple moving average for level calculation
+        let state_clone = shared_state.clone();
+
+        let stream_config = cpal::StreamConfig {
+            channels: config.channels(),
+            sample_rate: config.sample_rate(),
+            buffer_size: cpal::BufferSize::Default,
+        };
+
+        let stream = device.build_input_stream(
+            &stream_config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                // Calculate RMS level
+                if data.is_empty() {
+                    return;
+                }
+
+                let sum_sq: f32 = data.iter().map(|s| s * s).sum();
+                let rms = (sum_sq / data.len() as f32).sqrt();
+
+                // Scale to 0.0 - 1.0 range (adjust multiplier for sensitivity)
+                // Higher multiplier = more sensitive to quiet sounds
+                let level = (rms * 20.0).clamp(0.0, 1.0);
+
+                // Update shared state
+                let mut state = state_clone.lock();
+                // Smooth the level with exponential moving average (faster response)
+                state.mic_input_level = state.mic_input_level * 0.5 + level * 0.5;
+            },
+            |err| {
+                log::error!("Mic input stream error: {}", err);
+            },
+            None, // No timeout
+        );
+
+        match stream {
+            Ok(s) => {
+                if let Err(e) = s.play() {
+                    log::error!("Failed to start mic stream: {}", e);
+                    return;
+                }
+                log::info!("Mic monitor started successfully");
+
+                // Keep thread alive while monitoring
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to build mic input stream: {}", e);
+            }
+        }
+    });
+}
+
+/// Enumerate available audio input and output devices
+pub fn enumerate_audio_devices() -> (Vec<String>, Vec<String>) {
+    let host = cpal::default_host();
+
+    // Get input devices (microphones)
+    let input_devices: Vec<String> = host.input_devices()
+        .map(|devices| {
+            devices.filter_map(|d| d.name().ok()).collect()
+        })
+        .unwrap_or_else(|_| vec!["Default Microphone".to_string()]);
+
+    // Get output devices (speakers)
+    let output_devices: Vec<String> = host.output_devices()
+        .map(|devices| {
+            devices.filter_map(|d| d.name().ok()).collect()
+        })
+        .unwrap_or_else(|_| vec!["Default Speaker".to_string()]);
+
+    // Ensure we have at least one device in each list
+    let input_devices = if input_devices.is_empty() {
+        vec!["No microphone found".to_string()]
+    } else {
+        input_devices
+    };
+
+    let output_devices = if output_devices.is_empty() {
+        vec!["No speaker found".to_string()]
+    } else {
+        output_devices
+    };
+
+    log::info!("Found {} input devices, {} output devices", input_devices.len(), output_devices.len());
+    for (i, name) in input_devices.iter().enumerate() {
+        log::info!("  Input {}: {}", i, name);
+    }
+    for (i, name) in output_devices.iter().enumerate() {
+        log::info!("  Output {}: {}", i, name);
+    }
+
+    (input_devices, output_devices)
 }

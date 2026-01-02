@@ -309,6 +309,9 @@ async fn main() {
     // Start system monitor in background thread
     start_system_monitor(shared_state.clone());
 
+    // Start microphone input level monitor in background thread
+    conference_dashboard::start_mic_monitor(shared_state.clone());
+
     // Start Dora bridge in background thread
     let state_clone = shared_state.clone();
     let player_clone = audio_player.clone();

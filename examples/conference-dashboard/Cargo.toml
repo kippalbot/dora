@@ -31,6 +31,7 @@ log = "0.4"
 # Utilities
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
+dirs = "5.0"
 
 # System monitoring
 sysinfo = "0.32"

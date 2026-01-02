@@ -1,8 +1,12 @@
 //! Makepad Application setup for Conference Dashboard
 
 use makepad_widgets::*;
+use makepad_widgets::makepad_platform::{AudioDeviceType, AudioDeviceDesc};
 use crate::{SharedStateRef, widgets};
 use std::sync::OnceLock;
+
+// Re-export log macros with explicit crate reference to avoid glob import ambiguity
+use ::log as logger;
 
 /// Extension trait for Event to easily get actions
 trait EventExt {
@@ -38,6 +42,8 @@ live_design! {
 
     use crate::widgets::participant_panel::ParticipantPanel;
     use crate::widgets::log_panel::LogPanel;
+    use crate::widgets::sidebar::Sidebar;
+    use crate::widgets::mofa_hero::MofaHero;
 
     // Font definitions with Chinese and Emoji support
     FONT_REGULAR = {
@@ -72,6 +78,10 @@ live_design! {
     // Logo image
     MOFA_LOGO = dep("crate://self/mofa-logo.png")
 
+    // Action icons
+    ICO_START = dep("crate://self/resources/icons/start.svg")
+    ICO_STOP = dep("crate://self/resources/icons/stop.svg")
+
     // Light color palette
     DARK_BG = #f5f7fa
     PANEL_BG = #ffffff
@@ -80,458 +90,107 @@ live_design! {
     TEXT_PRIMARY = #1f2937
     TEXT_SECONDARY = #6b7280
 
-    // Main Dashboard Layout - Horizontal split with foldable log panel
+    // Main Dashboard Layout - Header on top, sidebar + content below
     Dashboard = {{Dashboard}} <View> {
         width: Fill, height: Fill
-        flow: Right
+        flow: Down
         show_bg: true
         draw_bg: { color: (DARK_BG) }
 
-        // Left side - Main content
-        main_content = <View> {
-            width: Fill, height: Fill
-            flow: Down
-            padding: 20
+        // Header at top (full width)
+        header = <View> {
+            width: Fill, height: Fit
+            flow: Right
+            spacing: 12
+            align: {y: 0.5}
+            padding: {left: 20, right: 20, top: 15, bottom: 15}
+            show_bg: true
+            draw_bg: { color: (PANEL_BG) }
 
-            // Header
-            header = <View> {
-                width: Fill, height: Fit
-                flow: Right
-                spacing: 12
-                align: {y: 0.5}
-                padding: {bottom: 20}
+            // Logo
+            logo = <Image> {
+                width: 40, height: 40
+                source: (MOFA_LOGO)
+            }
 
-                // Logo
-                logo = <Image> {
-                    width: 40, height: 40
-                    source: (MOFA_LOGO)
-                }
-
-                title = <Label> {
-                    text: "MoFA FM"
-                    draw_text: {
-                        color: (TEXT_PRIMARY)
-                        text_style: <FONT_BOLD>{ font_size: 24.0 }
-                    }
-                }
-
-                <View> { width: Fill, height: 1 }
-
-                // Blinking dot for connected status
-                connection_dot = <RoundedView> {
-                    width: 12, height: 12
-                    margin: {right: 8}
-                    draw_bg: {
-                        color: #9ca3af
-                        border_radius: 6.0
-                    }
-                }
-
-                status_indicator = <RoundedView> {
-                    width: Fit, height: Fit
-                    padding: {left: 12, right: 12, top: 6, bottom: 6}
-                    draw_bg: {
-                        color: #9ca3af
-                        border_radius: 6.0
-                    }
-                    status_label = <Label> {
-                        text: "DEMO"
-                        draw_text: {
-                            color: #fff
-                            text_style: <FONT_SEMIBOLD>{ font_size: 12.0 }
-                        }
-                    }
+            title = <Label> {
+                text: "MoFA FM"
+                draw_text: {
+                    color: (TEXT_PRIMARY)
+                    text_style: <FONT_BOLD>{ font_size: 24.0 }
                 }
             }
 
-            // Main content area
+            <View> { width: Fill, height: 1 }
+        }
+
+        // Content area below header (sidebar + main content + log panel)
+        content_area = <View> {
+            width: Fill, height: Fill
+            flow: Right
+
+            // Left sidebar zone (fold button at top, sidebar below)
+            sidebar_zone = <View> {
+                width: Fit, height: Fill
+                flow: Down
+                show_bg: true
+                draw_bg: { color: #f0f2f5 }
+
+                // Fold button at top (40x40, positioned at left)
+                fold_button_panel = <View> {
+                    width: 40, height: 40
+                    align: {x: 0.5, y: 0.5}
+                    show_bg: true
+                    draw_bg: { color: #f0f2f5 }
+
+                    sidebar_trigger = <View> {
+                        width: 32, height: 32
+                        cursor: Hand
+                        show_bg: true
+                        draw_bg: {
+                            instance hover: 0.0
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                let cy = self.rect_size.y * 0.5;
+                                let cx = self.rect_size.x * 0.5;
+                                // Hamburger lines - gray, blue on hover
+                                let line_color = mix(#64748b, #3b82f6, self.hover);
+                                sdf.move_to(cx - 8.0, cy - 6.0);
+                                sdf.line_to(cx + 8.0, cy - 6.0);
+                                sdf.stroke(line_color, 2.0);
+                                sdf.move_to(cx - 8.0, cy);
+                                sdf.line_to(cx + 8.0, cy);
+                                sdf.stroke(line_color, 2.0);
+                                sdf.move_to(cx - 8.0, cy + 6.0);
+                                sdf.line_to(cx + 8.0, cy + 6.0);
+                                sdf.stroke(line_color, 2.0);
+                                return sdf.result;
+                            }
+                        }
+                    }
+                }
+
+                // Sidebar content (starts hidden, expands below the button)
+                sidebar_content = <View> {
+                    width: 0, height: Fill
+                    sidebar = <Sidebar> {}
+                }
+            }
+
+            // Main content
+            main_content = <View> {
+                width: Fill, height: Fill
+                flow: Down
+                padding: 20
+
+            // Content area
             content = <View> {
                 width: Fill, height: Fill
                 flow: Down
                 spacing: 12
 
-            // Top row - Waveform/Buffer stacked + Control buttons (horizontal)
-            control_bar = <View> {
-                width: Fill, height: 70
-                flow: Right
-                spacing: 12
-
-                // Buffer status LED bar (neon blue to red)
-                buffer_section = <RoundedView> {
-                    width: 180, height: Fill
-                    padding: 6
-                    draw_bg: {
-                        color: #f0f0f5
-                        border_radius: 2.0
-                    }
-                    flow: Down
-                    spacing: 4
-                    align: {x: 0.5, y: 0.5}
-
-                    // Header with status dot and label
-                    buffer_header = <View> {
-                        width: Fill, height: Fit
-                        flow: Right
-                        spacing: 6
-                        align: {x: 0.5, y: 0.5}
-
-                        // Status dot: green < 80%, red >= 80%
-                        buffer_status_dot = <View> {
-                            width: 10, height: 10
-                            show_bg: true
-                            draw_bg: {
-                                instance critical: 0.0  // 0=good(green), 1=critical(red)
-
-                                fn pixel(self) -> vec4 {
-                                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                    let center = self.rect_size * 0.5;
-                                    let radius = min(center.x, center.y) - 0.5;
-                                    sdf.circle(center.x, center.y, radius);
-                                    let green = vec4(0.13, 0.77, 0.37, 1.0);
-                                    let red = vec4(0.95, 0.25, 0.25, 1.0);
-                                    sdf.fill(mix(green, red, self.critical));
-                                    return sdf.result;
-                                }
-                            }
-                        }
-
-                        buffer_label = <Label> {
-                            text: "Buffer"
-                            draw_text: {
-                                color: #374151
-                                text_style: { font_size: 10.0 }
-                            }
-                        }
-                    }
-
-                    // LED bar buffer gauge (10 segments, blue to red)
-                    buffer_gauge = <View> {
-                        width: Fill, height: 20
-                        show_bg: true
-                        draw_bg: {
-                            instance fill_pct: 0.0
-
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-
-                                // Light background
-                                sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
-                                sdf.fill(#e5e7eb);
-
-                                let num_segs = 10.0;
-                                let gap = 2.0;
-                                let seg_width = (self.rect_size.x - gap * (num_segs + 1.0)) / num_segs;
-                                let seg_height = self.rect_size.y - 4.0;
-                                let active_segs = self.fill_pct * num_segs;
-                                let dim = vec4(0.85, 0.85, 0.88, 1.0);
-
-                                // Neon colors: blue -> cyan -> green -> yellow -> orange -> red
-                                let c0 = vec4(0.2, 0.4, 0.95, 1.0);   // Blue
-                                let c1 = vec4(0.2, 0.55, 0.95, 1.0);  // Blue-cyan
-                                let c2 = vec4(0.2, 0.75, 0.90, 1.0);  // Cyan
-                                let c3 = vec4(0.2, 0.85, 0.70, 1.0);  // Cyan-green
-                                let c4 = vec4(0.3, 0.85, 0.45, 1.0);  // Green
-                                let c5 = vec4(0.6, 0.85, 0.3, 1.0);   // Green-yellow
-                                let c6 = vec4(0.90, 0.80, 0.2, 1.0);  // Yellow
-                                let c7 = vec4(0.95, 0.60, 0.2, 1.0);  // Orange
-                                let c8 = vec4(0.95, 0.4, 0.2, 1.0);   // Orange-red
-                                let c9 = vec4(0.95, 0.2, 0.2, 1.0);   // Red
-
-                                // Draw 10 segments
-                                let x0 = gap;
-                                sdf.box(x0, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c0, step(0.5, active_segs)));
-
-                                let x1 = gap + (seg_width + gap);
-                                sdf.box(x1, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c1, step(1.5, active_segs)));
-
-                                let x2 = gap + 2.0 * (seg_width + gap);
-                                sdf.box(x2, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c2, step(2.5, active_segs)));
-
-                                let x3 = gap + 3.0 * (seg_width + gap);
-                                sdf.box(x3, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c3, step(3.5, active_segs)));
-
-                                let x4 = gap + 4.0 * (seg_width + gap);
-                                sdf.box(x4, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c4, step(4.5, active_segs)));
-
-                                let x5 = gap + 5.0 * (seg_width + gap);
-                                sdf.box(x5, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c5, step(5.5, active_segs)));
-
-                                let x6 = gap + 6.0 * (seg_width + gap);
-                                sdf.box(x6, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c6, step(6.5, active_segs)));
-
-                                let x7 = gap + 7.0 * (seg_width + gap);
-                                sdf.box(x7, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c7, step(7.5, active_segs)));
-
-                                let x8 = gap + 8.0 * (seg_width + gap);
-                                sdf.box(x8, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c8, step(8.5, active_segs)));
-
-                                let x9 = gap + 9.0 * (seg_width + gap);
-                                sdf.box(x9, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c9, step(9.5, active_segs)));
-
-                                return sdf.result;
-                            }
-                        }
-                    }
-
-                    buffer_pct_label = <Label> {
-                        text: "0%"
-                        draw_text: {
-                            color: #374151
-                            text_style: { font_size: 10.0 }
-                        }
-                    }
-                }
-
-                // CPU usage LED bar
-                cpu_section = <RoundedView> {
-                    width: 180, height: Fill
-                    padding: 6
-                    draw_bg: {
-                        color: #f0f0f5
-                        border_radius: 2.0
-                    }
-                    flow: Down
-                    spacing: 4
-                    align: {x: 0.5, y: 0.5}
-
-                    cpu_header = <View> {
-                        width: Fill, height: Fit
-                        flow: Right
-                        spacing: 6
-                        align: {x: 0.5, y: 0.5}
-
-                        cpu_status_dot = <View> {
-                            width: 10, height: 10
-                            show_bg: true
-                            draw_bg: {
-                                instance critical: 0.0
-
-                                fn pixel(self) -> vec4 {
-                                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                    let center = self.rect_size * 0.5;
-                                    let radius = min(center.x, center.y) - 0.5;
-                                    sdf.circle(center.x, center.y, radius);
-                                    let green = vec4(0.13, 0.77, 0.37, 1.0);
-                                    let red = vec4(0.95, 0.25, 0.25, 1.0);
-                                    sdf.fill(mix(green, red, self.critical));
-                                    return sdf.result;
-                                }
-                            }
-                        }
-
-                        cpu_label = <Label> {
-                            text: "CPU"
-                            draw_text: {
-                                color: #374151
-                                text_style: { font_size: 10.0 }
-                            }
-                        }
-                    }
-
-                    cpu_gauge = <View> {
-                        width: Fill, height: 20
-                        show_bg: true
-                        draw_bg: {
-                            instance fill_pct: 0.0
-
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
-                                sdf.fill(#e5e7eb);
-
-                                let num_segs = 10.0;
-                                let gap = 2.0;
-                                let seg_width = (self.rect_size.x - gap * (num_segs + 1.0)) / num_segs;
-                                let seg_height = self.rect_size.y - 4.0;
-                                let active_segs = self.fill_pct * num_segs;
-                                let dim = vec4(0.85, 0.85, 0.88, 1.0);
-
-                                let c0 = vec4(0.2, 0.4, 0.95, 1.0);
-                                let c1 = vec4(0.2, 0.55, 0.95, 1.0);
-                                let c2 = vec4(0.2, 0.75, 0.90, 1.0);
-                                let c3 = vec4(0.2, 0.85, 0.70, 1.0);
-                                let c4 = vec4(0.3, 0.85, 0.45, 1.0);
-                                let c5 = vec4(0.6, 0.85, 0.3, 1.0);
-                                let c6 = vec4(0.90, 0.80, 0.2, 1.0);
-                                let c7 = vec4(0.95, 0.60, 0.2, 1.0);
-                                let c8 = vec4(0.95, 0.4, 0.2, 1.0);
-                                let c9 = vec4(0.95, 0.2, 0.2, 1.0);
-
-                                let x0 = gap;
-                                sdf.box(x0, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c0, step(0.5, active_segs)));
-                                let x1 = gap + (seg_width + gap);
-                                sdf.box(x1, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c1, step(1.5, active_segs)));
-                                let x2 = gap + 2.0 * (seg_width + gap);
-                                sdf.box(x2, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c2, step(2.5, active_segs)));
-                                let x3 = gap + 3.0 * (seg_width + gap);
-                                sdf.box(x3, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c3, step(3.5, active_segs)));
-                                let x4 = gap + 4.0 * (seg_width + gap);
-                                sdf.box(x4, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c4, step(4.5, active_segs)));
-                                let x5 = gap + 5.0 * (seg_width + gap);
-                                sdf.box(x5, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c5, step(5.5, active_segs)));
-                                let x6 = gap + 6.0 * (seg_width + gap);
-                                sdf.box(x6, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c6, step(6.5, active_segs)));
-                                let x7 = gap + 7.0 * (seg_width + gap);
-                                sdf.box(x7, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c7, step(7.5, active_segs)));
-                                let x8 = gap + 8.0 * (seg_width + gap);
-                                sdf.box(x8, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c8, step(8.5, active_segs)));
-                                let x9 = gap + 9.0 * (seg_width + gap);
-                                sdf.box(x9, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c9, step(9.5, active_segs)));
-
-                                return sdf.result;
-                            }
-                        }
-                    }
-
-                    cpu_pct_label = <Label> {
-                        text: "0%"
-                        draw_text: {
-                            color: #374151
-                            text_style: { font_size: 10.0 }
-                        }
-                    }
-                }
-
-                // Memory usage LED bar
-                memory_section = <RoundedView> {
-                    width: 180, height: Fill
-                    padding: 6
-                    draw_bg: {
-                        color: #f0f0f5
-                        border_radius: 2.0
-                    }
-                    flow: Down
-                    spacing: 4
-                    align: {x: 0.5, y: 0.5}
-
-                    memory_header = <View> {
-                        width: Fill, height: Fit
-                        flow: Right
-                        spacing: 6
-                        align: {x: 0.5, y: 0.5}
-
-                        memory_status_dot = <View> {
-                            width: 10, height: 10
-                            show_bg: true
-                            draw_bg: {
-                                instance critical: 0.0
-
-                                fn pixel(self) -> vec4 {
-                                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                    let center = self.rect_size * 0.5;
-                                    let radius = min(center.x, center.y) - 0.5;
-                                    sdf.circle(center.x, center.y, radius);
-                                    let green = vec4(0.13, 0.77, 0.37, 1.0);
-                                    let red = vec4(0.95, 0.25, 0.25, 1.0);
-                                    sdf.fill(mix(green, red, self.critical));
-                                    return sdf.result;
-                                }
-                            }
-                        }
-
-                        memory_label = <Label> {
-                            text: "Memory"
-                            draw_text: {
-                                color: #374151
-                                text_style: { font_size: 10.0 }
-                            }
-                        }
-                    }
-
-                    memory_gauge = <View> {
-                        width: Fill, height: 20
-                        show_bg: true
-                        draw_bg: {
-                            instance fill_pct: 0.0
-
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
-                                sdf.fill(#e5e7eb);
-
-                                let num_segs = 10.0;
-                                let gap = 2.0;
-                                let seg_width = (self.rect_size.x - gap * (num_segs + 1.0)) / num_segs;
-                                let seg_height = self.rect_size.y - 4.0;
-                                let active_segs = self.fill_pct * num_segs;
-                                let dim = vec4(0.85, 0.85, 0.88, 1.0);
-
-                                let c0 = vec4(0.2, 0.4, 0.95, 1.0);
-                                let c1 = vec4(0.2, 0.55, 0.95, 1.0);
-                                let c2 = vec4(0.2, 0.75, 0.90, 1.0);
-                                let c3 = vec4(0.2, 0.85, 0.70, 1.0);
-                                let c4 = vec4(0.3, 0.85, 0.45, 1.0);
-                                let c5 = vec4(0.6, 0.85, 0.3, 1.0);
-                                let c6 = vec4(0.90, 0.80, 0.2, 1.0);
-                                let c7 = vec4(0.95, 0.60, 0.2, 1.0);
-                                let c8 = vec4(0.95, 0.4, 0.2, 1.0);
-                                let c9 = vec4(0.95, 0.2, 0.2, 1.0);
-
-                                let x0 = gap;
-                                sdf.box(x0, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c0, step(0.5, active_segs)));
-                                let x1 = gap + (seg_width + gap);
-                                sdf.box(x1, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c1, step(1.5, active_segs)));
-                                let x2 = gap + 2.0 * (seg_width + gap);
-                                sdf.box(x2, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c2, step(2.5, active_segs)));
-                                let x3 = gap + 3.0 * (seg_width + gap);
-                                sdf.box(x3, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c3, step(3.5, active_segs)));
-                                let x4 = gap + 4.0 * (seg_width + gap);
-                                sdf.box(x4, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c4, step(4.5, active_segs)));
-                                let x5 = gap + 5.0 * (seg_width + gap);
-                                sdf.box(x5, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c5, step(5.5, active_segs)));
-                                let x6 = gap + 6.0 * (seg_width + gap);
-                                sdf.box(x6, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c6, step(6.5, active_segs)));
-                                let x7 = gap + 7.0 * (seg_width + gap);
-                                sdf.box(x7, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c7, step(7.5, active_segs)));
-                                let x8 = gap + 8.0 * (seg_width + gap);
-                                sdf.box(x8, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c8, step(8.5, active_segs)));
-                                let x9 = gap + 9.0 * (seg_width + gap);
-                                sdf.box(x9, 2.0, seg_width, seg_height, 2.0);
-                                sdf.fill(mix(dim, c9, step(9.5, active_segs)));
-
-                                return sdf.result;
-                            }
-                        }
-                    }
-
-                    memory_pct_label = <Label> {
-                        text: "0%"
-                        draw_text: {
-                            color: #374151
-                            text_style: { font_size: 10.0 }
-                        }
-                    }
-                }
-            }
+            // Top row - System status bar (MofaHero widget)
+            mofa_hero = <MofaHero> {}
 
             // Second row - Participant status cards (horizontal, compact)
             participant_bar = <View> {
@@ -612,6 +271,257 @@ live_design! {
                 }
             }
 
+            // Audio control panel (above prompt input)
+            audio_panel = <RoundedView> {
+                width: Fill, height: Fit
+                padding: 12
+                margin: {bottom: 8}
+                draw_bg: {
+                    color: (PANEL_BG)
+                    border_radius: 4.0
+                }
+                flow: Right
+                spacing: 16
+                align: {y: 0.5}
+
+                // Mic level meter with label
+                <View> {
+                    width: Fit, height: Fit
+                    flow: Right
+                    spacing: 8
+                    align: {y: 0.5}
+
+                    <Label> {
+                        text: "Mic"
+                        draw_text: {
+                            color: (TEXT_SECONDARY)
+                            text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                        }
+                    }
+
+                    // LED level meter (5 bars)
+                    mic_level_meter = <View> {
+                        width: 60, height: 16
+                        flow: Right
+                        spacing: 2
+                        align: {y: 0.5}
+
+                        mic_led_1 = <RoundedView> {
+                            width: 10, height: 12
+                            draw_bg: { color: #d9d9e0, border_radius: 2.0 }
+                        }
+                        mic_led_2 = <RoundedView> {
+                            width: 10, height: 12
+                            draw_bg: { color: #d9d9e0, border_radius: 2.0 }
+                        }
+                        mic_led_3 = <RoundedView> {
+                            width: 10, height: 12
+                            draw_bg: { color: #d9d9e0, border_radius: 2.0 }
+                        }
+                        mic_led_4 = <RoundedView> {
+                            width: 10, height: 12
+                            draw_bg: { color: #d9d9e0, border_radius: 2.0 }
+                        }
+                        mic_led_5 = <RoundedView> {
+                            width: 10, height: 12
+                            draw_bg: { color: #d9d9e0, border_radius: 2.0 }
+                        }
+                    }
+                }
+
+                // Mic mute button - green when unmuted, red when muted, with mic icon
+                mic_mute_btn = <Button> {
+                    width: 48, height: 36
+                    align: {x: 0.5, y: 0.5}
+                    text: ""
+                    icon_walk: {width: 18, height: 18, margin: {left: 10, top: 0}}
+                    draw_icon: {
+                        svg_file: dep("crate://self/resources/icons/mic.svg")
+                        uniform color: #ffffff
+                        fn get_color(self) -> vec4 {
+                            return self.color;
+                        }
+                    }
+                    draw_bg: {
+                        instance hover: 0.0
+                        instance muted: 0.0
+                        uniform color_unmuted: #22c55e    // Green when unmuted
+                        uniform color_muted: #ef4444      // Red when muted
+                        uniform color_hover_unmuted: #16a34a
+                        uniform color_hover_muted: #dc2626
+                        border_radius: 4.0
+
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let base = mix(self.color_unmuted, self.color_muted, self.muted);
+                            let hover_color = mix(self.color_hover_unmuted, self.color_hover_muted, self.muted);
+                            let color = mix(base, hover_color, self.hover);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                            sdf.fill(color);
+                            return sdf.result;
+                        }
+                    }
+                    animator: {
+                        hover = {
+                            default: off
+                            off = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 0.0}} }
+                            on = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 1.0}} }
+                        }
+                    }
+                }
+
+                // Divider
+                <View> { width: 1, height: 24, show_bg: true, draw_bg: { color: #d1d5db } }
+
+                // AEC toggle - green and blinking when ON, gray when OFF (normal rectangular button)
+                aec_toggle_btn = <Button> {
+                    width: 48, height: 36
+                    text: "AEC"
+                    draw_text: {
+                        color: #ffffff
+                        text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
+                        fn get_color(self) -> vec4 {
+                            return self.color;
+                        }
+                    }
+                    draw_bg: {
+                        instance enabled: 1.0
+                        instance hover: 0.0
+                        instance blink: 1.0
+                        uniform color_on: #22c55e
+                        uniform color_on_dim: #16a34a
+                        uniform color_off: #6b7280
+                        uniform color_hover_on: #15803d
+                        uniform color_hover_off: #4b5563
+                        border_radius: 4.0
+
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            // When enabled: blink between color_on and color_on_dim
+                            let on_color = mix(self.color_on_dim, self.color_on, self.blink);
+                            let base = mix(self.color_off, on_color, self.enabled);
+                            let hover_color = mix(self.color_hover_off, self.color_hover_on, self.enabled);
+                            let color = mix(base, hover_color, self.hover);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                            sdf.fill(color);
+                            return sdf.result;
+                        }
+                    }
+                    animator: {
+                        hover = {
+                            default: off
+                            off = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 0.0}} }
+                            on = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 1.0}} }
+                        }
+                    }
+                }
+
+                // Divider
+                <View> { width: 1, height: 24, show_bg: true, draw_bg: { color: #d1d5db } }
+
+                // Input device dropdown
+                <View> {
+                    width: Fit, height: Fit
+                    flow: Right
+                    spacing: 6
+                    align: {y: 0.5}
+
+                    <Label> {
+                        text: "Microphone"
+                        draw_text: {
+                            color: (TEXT_SECONDARY)
+                            text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                        }
+                    }
+
+                    input_device_dropdown = <DropDown> {
+                        width: 240, height: 28
+                        popup_menu_position: BelowInput
+                        draw_text: {
+                            text_style: <FONT_REGULAR>{ font_size: 11.0 }
+                            fn get_color(self) -> vec4 {
+                                return mix(#374151, #1f2937, self.focus);
+                            }
+                        }
+                        popup_menu: {
+                            draw_bg: {
+                                color: #ffffff
+                                border_color: #e5e7eb
+                                border_size: 1.0
+                            }
+                            menu_item: {
+                                draw_bg: {
+                                    color: #ffffff
+                                    color_hover: #f3f4f6
+                                }
+                                draw_text: {
+                                    fn get_color(self) -> vec4 {
+                                        return mix(
+                                            mix(#374151, #1f2937, self.active),
+                                            #1f2937,
+                                            self.hover
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        labels: ["Loading..."]
+                        values: [loading]
+                    }
+                }
+
+                // Output device dropdown
+                <View> {
+                    width: Fit, height: Fit
+                    flow: Right
+                    spacing: 6
+                    align: {y: 0.5}
+
+                    <Label> {
+                        text: "Speaker"
+                        draw_text: {
+                            color: (TEXT_SECONDARY)
+                            text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                        }
+                    }
+
+                    output_device_dropdown = <DropDown> {
+                        width: 240, height: 28
+                        popup_menu_position: BelowInput
+                        draw_text: {
+                            text_style: <FONT_REGULAR>{ font_size: 11.0 }
+                            fn get_color(self) -> vec4 {
+                                return mix(#374151, #1f2937, self.focus);
+                            }
+                        }
+                        popup_menu: {
+                            draw_bg: {
+                                color: #ffffff
+                                border_color: #e5e7eb
+                                border_size: 1.0
+                            }
+                            menu_item: {
+                                draw_bg: {
+                                    color: #ffffff
+                                    color_hover: #f3f4f6
+                                }
+                                draw_text: {
+                                    fn get_color(self) -> vec4 {
+                                        return mix(
+                                            mix(#374151, #1f2937, self.active),
+                                            #1f2937,
+                                            self.hover
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        labels: ["Loading..."]
+                        values: [loading]
+                    }
+                }
+            }
+
             // Prompt input area (bottom)
             prompt_section = <RoundedView> {
                 width: Fill, height: Fit
@@ -629,7 +539,7 @@ live_design! {
                     spacing: 10
 
                     prompt_input = <TextInput> {
-                        width: Fill, height: 40
+                        width: Fill, height: 32
                         empty_text: "Enter prompt to send to tutor..."
                         draw_bg: {
                             color: #ffffff
@@ -643,7 +553,7 @@ live_design! {
                             uniform color_empty: #9ca3af
                             uniform color_empty_hover: #6b7280
                             uniform color_empty_focus: #6b7280
-                            text_style: <FONT_REGULAR>{ font_size: 14.0 }
+                            text_style: <FONT_REGULAR>{ font_size: 11.0 }
                         }
                         draw_cursor: {
                             color: #1f2937
@@ -654,11 +564,14 @@ live_design! {
                     }
 
                     send_prompt_btn = <Button> {
-                        width: 80, height: 40
+                        width: 60, height: 32
                         text: "Send"
                         draw_text: {
                             color: #ffffff
-                            text_style: <FONT_SEMIBOLD>{ font_size: 13.0 }
+                            text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
+                            fn get_color(self) -> vec4 {
+                                return self.color;
+                            }
                         }
                         draw_bg: {
                             instance pressed: 0.0
@@ -692,11 +605,14 @@ live_design! {
                     }
 
                     reset_conf_btn = <Button> {
-                        width: 60, height: 40
+                        width: 60, height: 32
                         text: "Reset"
                         draw_text: {
                             color: #4b5563
-                            text_style: <FONT_MEDIUM>{ font_size: 12.0 }
+                            text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                            fn get_color(self) -> vec4 {
+                                return self.color;
+                            }
                         }
                         draw_bg: {
                             instance pressed: 0.0
@@ -760,12 +676,25 @@ live_design! {
                     width: 24, height: 24
                     text: ">"
                     draw_text: {
-                        color: #4b5563
                         text_style: <FONT_BOLD>{ font_size: 12.0 }
+                        color: #4b5563
+                        fn get_color(self) -> vec4 {
+                            return self.color;
+                        }
                     }
                     draw_bg: {
-                        color: #d1d5db
+                        instance color: #d1d5db
+                        instance color_hover: #c4c9d0
                         border_radius: 4.0
+                        fn get_color(self) -> vec4 {
+                            return mix(self.color, self.color_hover, self.hover);
+                        }
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                            sdf.fill(self.get_color());
+                            return sdf.result;
+                        }
                     }
                 }
             }
@@ -812,7 +741,31 @@ live_design! {
                             popup_menu_position: BelowInput
                             draw_text: {
                                 text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                                color: #374151
+                                fn get_color(self) -> vec4 {
+                                    return mix(#374151, #1f2937, self.focus);
+                                }
+                            }
+                            popup_menu: {
+                                draw_bg: {
+                                    color: #ffffff
+                                    border_color: #e5e7eb
+                                    border_size: 1.0
+                                }
+                                menu_item: {
+                                    draw_bg: {
+                                        color: #ffffff
+                                        color_hover: #f3f4f6
+                                    }
+                                    draw_text: {
+                                        fn get_color(self) -> vec4 {
+                                            return mix(
+                                                mix(#374151, #1f2937, self.active),
+                                                #1f2937,
+                                                self.hover
+                                            );
+                                        }
+                                    }
+                                }
                             }
                             labels: ["ALL", "DEBUG", "INFO", "WARN", "ERROR"]
                             values: [ALL, DEBUG, INFO, WARN, ERROR]
@@ -824,7 +777,31 @@ live_design! {
                             popup_menu_position: BelowInput
                             draw_text: {
                                 text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                                color: #374151
+                                fn get_color(self) -> vec4 {
+                                    return mix(#374151, #1f2937, self.focus);
+                                }
+                            }
+                            popup_menu: {
+                                draw_bg: {
+                                    color: #ffffff
+                                    border_color: #e5e7eb
+                                    border_size: 1.0
+                                }
+                                menu_item: {
+                                    draw_bg: {
+                                        color: #ffffff
+                                        color_hover: #f3f4f6
+                                    }
+                                    draw_text: {
+                                        fn get_color(self) -> vec4 {
+                                            return mix(
+                                                mix(#374151, #1f2937, self.active),
+                                                #1f2937,
+                                                self.hover
+                                            );
+                                        }
+                                    }
+                                }
                             }
                             labels: ["All Nodes", "Daniu", "Yifei", "Laoshi", "Bridge", "Controller", "Segmenter", "TTS", "Dashboard"]
                             values: [ALL, DANIU, YIFEI, LAOSHI, BRIDGE, CONTROLLER, SEGMENTER, TTS, DASHBOARD]
@@ -938,7 +915,8 @@ live_design! {
                 }
             }
         }
-    }
+    } // end log_panel
+    } // end content_area
 
     // Main App Window
     App = {{App}} {
@@ -994,18 +972,69 @@ pub struct Dashboard {
 
     #[rust]
     log_node_filter: usize,   // 0=ALL, 1=Daniu, 2=Yifei, 3=Laoshi, 4=Bridge, 5=Controller, 6=Segmenter, 7=TTS, 8=Dashboard
+
+    #[rust]
+    sidebar_collapsed: bool,  // true = sidebar hidden (default)
+
+    #[rust]
+    sidebar_pinned: bool,     // true = sidebar locked open by click
+
+    #[rust]
+    sidebar_hover_active: bool,  // Track if mouse is in sidebar zone
+
+    #[rust]
+    sidebar_content_hover: bool,  // Track if mouse is over sidebar content
+
+    #[rust]
+    hover_zone_active: bool,  // Track if mouse is over hamburger button
+
+    #[rust]
+    sidebar_show_grace_period: u8,  // Counter to prevent immediate hide after show
+
+    #[rust]
+    sidebar_hide_pending: bool,  // True when waiting to hide sidebar
+    
+    #[rust]
+    sidebar_hide_counter: u8,  // Counter for delayed hide
+
+    #[rust]
+    mic_muted: bool,  // Microphone mute state
+
+    #[rust]
+    aec_enabled: bool,  // AEC (Acoustic Echo Cancellation) enabled state
+
+    #[rust]
+    mic_level: f32,  // Current microphone input level (0.0 - 1.0)
+
+    #[rust]
+    aec_blink_state: bool,  // For AEC button blinking animation
+
+    #[rust]
+    audio_devices: Vec<AudioDeviceDesc>,  // All available audio devices from Makepad
+
+    #[rust]
+    action_running: bool,  // Action button state (start/stop)
 }
 
 impl Widget for Dashboard {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
 
-        // Start update timer on startup and initialize log panel width
+        // Start update timer on startup and initialize defaults
         if let Event::Startup = event {
             self.update_timer = cx.start_interval(1.0 / 30.0); // 30 FPS updates
             if self.log_panel_width == 0.0 {
                 self.log_panel_width = 350.0; // Default width
             }
+            // Default audio settings
+            self.aec_enabled = true;
+            self.mic_muted = false;
+
+            // Request default audio devices to trigger Makepad's audio device enumeration
+            // This causes handle_audio_devices callback to be called with full device list
+            cx.use_audio_inputs(&[]);
+            cx.use_audio_outputs(&[]);
         }
 
         // Handle splitter drag events
@@ -1048,6 +1077,37 @@ impl Widget for Dashboard {
         // Handle timer for UI updates
         if self.update_timer.is_event(event).is_some() {
             self.update_from_shared_state(cx);
+
+            // Update AEC blink animation (only when enabled)
+            if self.aec_enabled {
+                self.aec_blink_state = !self.aec_blink_state;
+                let blink_val = if self.aec_blink_state { 1.0 } else { 0.6 };
+                self.view.button(ids!(aec_toggle_btn)).apply_over(cx, live!{
+                    draw_bg: { blink: (blink_val) }
+                });
+            }
+
+            // Decrement grace period
+            if self.sidebar_show_grace_period > 0 {
+                self.sidebar_show_grace_period -= 1;
+            }
+
+            // Handle delayed sidebar hide (checked each timer tick ~100ms)
+            if self.sidebar_hide_pending {
+                if self.sidebar_hover_active {
+                    // Mouse re-entered, cancel hide
+                    self.sidebar_hide_pending = false;
+                    self.sidebar_hide_counter = 0;
+                } else {
+                    self.sidebar_hide_counter += 1;
+                    if self.sidebar_hide_counter > 3 {  // ~300ms delay
+                        self.hide_sidebar(cx);
+                        self.sidebar_hide_pending = false;
+                        self.sidebar_hide_counter = 0;
+                    }
+                }
+            }
+
         }
 
         // Handle button click actions using event.actions() pattern
@@ -1056,6 +1116,92 @@ impl Widget for Dashboard {
         // Handle log panel toggle button click
         if self.view.button(ids!(toggle_log_btn)).clicked(actions) {
             self.on_toggle_log_panel(cx);
+        }
+
+        // Handle sidebar hover - track both the trigger zone and the sidebar content
+        let sidebar_zone = self.view.view(ids!(sidebar_zone));
+        let sidebar_content = self.view.view(ids!(sidebar_zone.sidebar_content));
+        let trigger = self.view.view(ids!(sidebar_zone.fold_button_panel.sidebar_trigger));
+
+        // Track hover on sidebar content (the actual expanded sidebar)
+        // Only check when sidebar is expanded to avoid issues with zero-width area
+        if !self.sidebar_collapsed {
+            match event.hits(cx, sidebar_content.area()) {
+                Hit::FingerHoverIn(_) => {
+                    self.sidebar_content_hover = true;
+                }
+                Hit::FingerHoverOut(_) => {
+                    self.sidebar_content_hover = false;
+                    // Only hide if also not hovering the trigger zone
+                    if !self.hover_zone_active {
+                        self.hide_sidebar(cx);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Check zone events (for tracking overall state)
+        match event.hits(cx, sidebar_zone.area()) {
+            Hit::FingerHoverIn(_) => {
+                self.sidebar_hover_active = true;
+                // Cancel any pending hide when mouse re-enters
+                self.sidebar_hide_pending = false;
+            }
+            Hit::FingerHoverOut(_) => {
+                // Ignore HoverOut during grace period (layout shift causes false events)
+                if self.sidebar_show_grace_period > 0 {
+                    return;
+                }
+                self.sidebar_hover_active = false;
+                // Mark hide as pending - will be executed after delay in timer
+                self.sidebar_hide_pending = true;
+                self.sidebar_hide_counter = 0;
+            }
+            _ => {}
+        }
+
+        // Check trigger events (hamburger button)
+        match event.hits(cx, trigger.area()) {
+            Hit::FingerDown(_) => {
+                self.toggle_sidebar(cx);
+            }
+            Hit::FingerHoverIn(_) => {
+                // Update hover visual
+                trigger.apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
+                self.hover_zone_active = true;
+                // Show sidebar on hover
+                self.show_sidebar(cx);
+            }
+            Hit::FingerHoverOut(_) => {
+                // Reset hover visual
+                trigger.apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
+                self.hover_zone_active = false;
+            }
+            _ => {}
+        }
+
+        // Handle audio control buttons
+        if self.view.button(ids!(mic_mute_btn)).clicked(actions) {
+            self.mic_muted = !self.mic_muted;
+            let btn = self.view.button(ids!(mic_mute_btn));
+            if self.mic_muted {
+                btn.apply_over(cx, live!{ draw_bg: { muted: 1.0 } });
+            } else {
+                btn.apply_over(cx, live!{ draw_bg: { muted: 0.0 } });
+            }
+            self.view.redraw(cx);
+        }
+
+        if self.view.button(ids!(aec_toggle_btn)).clicked(actions) {
+            self.aec_enabled = !self.aec_enabled;
+            let btn = self.view.button(ids!(aec_toggle_btn));
+            if self.aec_enabled {
+                btn.apply_over(cx, live!{ draw_bg: { enabled: 1.0, blink: 1.0 } });
+            } else {
+                btn.apply_over(cx, live!{ draw_bg: { enabled: 0.0, blink: 1.0 } });
+            }
+            self.view.redraw(cx);
         }
 
         // Handle prompt section buttons
@@ -1081,6 +1227,20 @@ impl Widget for Dashboard {
             self.on_copy_logs_clicked(cx);
         }
 
+        // Handle action button click (start/stop toggle)
+        if self.view.button(ids!(mofa_hero.action_btn_container.start_btn)).clicked(actions) {
+            self.action_running = true;
+            self.view.button(ids!(mofa_hero.action_btn_container.start_btn)).apply_over(cx, live! { visible: false });
+            self.view.button(ids!(mofa_hero.action_btn_container.stop_btn)).apply_over(cx, live! { visible: true });
+            self.view.redraw(cx);
+        }
+        if self.view.button(ids!(mofa_hero.action_btn_container.stop_btn)).clicked(actions) {
+            self.action_running = false;
+            self.view.button(ids!(mofa_hero.action_btn_container.start_btn)).apply_over(cx, live! { visible: true });
+            self.view.button(ids!(mofa_hero.action_btn_container.stop_btn)).apply_over(cx, live! { visible: false });
+            self.view.redraw(cx);
+        }
+
         // Handle text input changes
         if let Event::TextInput(te) = event {
             self.prompt_text.push_str(&te.input);
@@ -1092,6 +1252,82 @@ impl Widget for Dashboard {
     }
 }
 
+impl WidgetMatchEvent for Dashboard {
+    /// Handle audio device enumeration from Makepad's audio system
+    fn handle_audio_devices(&mut self, cx: &mut Cx, devices: &AudioDevicesEvent, _scope: &mut Scope) {
+        let mut input_names = Vec::new();
+        let mut output_names = Vec::new();
+        let mut default_input_name = String::new();
+        let mut default_output_name = String::new();
+
+        // Collect device names by type
+        for desc in &devices.descs {
+            match desc.device_type {
+                AudioDeviceType::Input => {
+                    input_names.push(desc.name.clone());
+                    if desc.is_default {
+                        default_input_name = desc.name.clone();
+                    }
+                }
+                AudioDeviceType::Output => {
+                    output_names.push(desc.name.clone());
+                    if desc.is_default {
+                        default_output_name = desc.name.clone();
+                    }
+                }
+            }
+        }
+
+        logger::info!("Makepad audio devices: {} inputs, {} outputs", input_names.len(), output_names.len());
+        for name in &input_names {
+            logger::info!("  Input: {}", name);
+        }
+        for name in &output_names {
+            logger::info!("  Output: {}", name);
+        }
+
+        // Update input device dropdown
+        if !input_names.is_empty() {
+            let input_dropdown = self.view.drop_down(ids!(input_device_dropdown));
+            input_dropdown.set_labels(cx, input_names.clone());
+            input_dropdown.set_selected_by_label(&default_input_name, cx);
+        }
+
+        // Update output device dropdown
+        if !output_names.is_empty() {
+            let output_dropdown = self.view.drop_down(ids!(output_device_dropdown));
+            output_dropdown.set_labels(cx, output_names.clone());
+            output_dropdown.set_selected_by_label(&default_output_name, cx);
+        }
+
+        // Store device list for later use
+        self.audio_devices = devices.descs.clone();
+
+        self.view.redraw(cx);
+    }
+
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+        // Handle device selection changes
+        let input_dropdown = self.view.drop_down(ids!(input_device_dropdown));
+        if input_dropdown.changed(actions).is_some() {
+            let selected_label = input_dropdown.selected_label();
+            if let Some(device) = self.audio_devices.iter().find(|d| d.name == selected_label && d.device_type == AudioDeviceType::Input) {
+                cx.use_audio_inputs(&[device.device_id]);
+                logger::info!("Selected input device: {}", selected_label);
+            }
+        }
+
+        let output_dropdown = self.view.drop_down(ids!(output_device_dropdown));
+        if output_dropdown.changed(actions).is_some() {
+            let selected_label = output_dropdown.selected_label();
+            if let Some(device) = self.audio_devices.iter().find(|d| d.name == selected_label && d.device_type == AudioDeviceType::Output) {
+                cx.use_audio_outputs(&[device.device_id]);
+                logger::info!("Selected output device: {}", selected_label);
+            }
+        }
+    }
+}
+
 impl Dashboard {
     fn update_from_shared_state(&mut self, cx: &mut Cx) {
         let Some(state_ref) = get_shared_state() else { return };
@@ -1100,71 +1336,65 @@ impl Dashboard {
         // Toggle blink state for connected indicator
         self.blink_state = !self.blink_state;
 
-        // Update connection status indicator
-        if state.is_connected {
-            // Connected: show "Connected" with blinking red dot
-            self.view.label(ids!(status_label))
-                .set_text_with(|t| *t = "Connected".to_string());
-            self.view.view(ids!(status_indicator)).apply_over(cx, live! {
-                draw_bg: { color: (vec4(0.863, 0.149, 0.149, 1.0)) }
-            });
-            // Blinking dot - alternate between bright red and dark red
+        // Update dataflow status button
+        // Status: 0=Ready(gray), 1=Connected(green), 2=Error(red)
+        let (status_val, status_text, dot_color) = if state.is_connected {
+            // Connected: green with blinking dot
             let (r, g, b) = if self.blink_state {
-                (0.863, 0.149, 0.149)
+                (0.13, 0.77, 0.37)  // Bright green
             } else {
-                (0.498, 0.114, 0.114)
+                (0.08, 0.55, 0.25)  // Dim green
             };
-            self.view.view(ids!(connection_dot)).apply_over(cx, live! {
-                draw_bg: { color: (vec4(r, g, b, 1.0)) }
-            });
+            (1.0, "Connected", (r, g, b))
         } else {
-            // Demo mode: gray indicator
-            self.view.label(ids!(status_label))
-                .set_text_with(|t| *t = "Demo".to_string());
-            self.view.view(ids!(status_indicator)).apply_over(cx, live! {
-                draw_bg: { color: (vec4(0.612, 0.639, 0.686, 1.0)) }
-            });
-            self.view.view(ids!(connection_dot)).apply_over(cx, live! {
-                draw_bg: { color: (vec4(0.612, 0.639, 0.686, 1.0)) }
-            });
-        }
+            // Ready: gray (default state)
+            (0.0, "Ready", (0.612, 0.639, 0.686))
+        };
+
+        self.view.button(ids!(mofa_hero.dataflow_btn_container.dataflow_btn)).set_text(cx, status_text);
+        self.view.button(ids!(mofa_hero.dataflow_btn_container.dataflow_btn)).apply_over(cx, live! {
+            draw_bg: { status: (status_val) }
+        });
+        self.view.view(ids!(mofa_hero.connection_dot)).apply_over(cx, live! {
+            draw_bg: { color: (vec4(dot_color.0, dot_color.1, dot_color.2, 1.0)) }
+        });
 
         // Update buffer gauge, percentage label, and status dot
         let buffer_pct = state.buffer_fill / 100.0;
         let buffer_critical = if state.buffer_fill >= 80.0 { 1.0 } else { 0.0 };
-        self.view.view(ids!(buffer_gauge)).apply_over(cx, live! {
+        self.view.view(ids!(mofa_hero.buffer_gauge)).apply_over(cx, live! {
             draw_bg: { fill_pct: (buffer_pct) }
         });
-        self.view.view(ids!(buffer_status_dot)).apply_over(cx, live! {
+        self.view.view(ids!(mofa_hero.buffer_status_dot)).apply_over(cx, live! {
             draw_bg: { critical: (buffer_critical) }
         });
-        self.view.label(ids!(buffer_pct_label)).set_text_with(|t| {
+        self.view.label(ids!(mofa_hero.buffer_pct_label)).set_text_with(|t| {
             *t = format!("{:.0}%", state.buffer_fill)
         });
 
         // Update CPU gauge, percentage label, and status dot
         let cpu_pct = (state.cpu_usage / 100.0) as f64;
         let cpu_critical = if state.cpu_usage >= 80.0 { 1.0 } else { 0.0 };
-        self.view.view(ids!(cpu_gauge)).apply_over(cx, live! {
+        self.view.view(ids!(mofa_hero.cpu_gauge)).apply_over(cx, live! {
             draw_bg: { fill_pct: (cpu_pct) }
         });
-        self.view.view(ids!(cpu_status_dot)).apply_over(cx, live! {
+        self.view.view(ids!(mofa_hero.cpu_status_dot)).apply_over(cx, live! {
             draw_bg: { critical: (cpu_critical) }
         });
-        self.view.label(ids!(cpu_pct_label)).set_text_with(|t| {
+        self.view.label(ids!(mofa_hero.cpu_pct_label)).set_text_with(|t| {
             *t = format!("{:.0}%", state.cpu_usage)
         });
 
         // Update Memory gauge, percentage label, and status dot
         let memory_pct = (state.memory_usage / 100.0) as f64;
         let memory_critical = if state.memory_usage >= 80.0 { 1.0 } else { 0.0 };
-        self.view.view(ids!(memory_gauge)).apply_over(cx, live! {
+        self.view.view(ids!(mofa_hero.memory_gauge)).apply_over(cx, live! {
             draw_bg: { fill_pct: (memory_pct) }
         });
-        self.view.view(ids!(memory_status_dot)).apply_over(cx, live! {
+        self.view.view(ids!(mofa_hero.memory_status_dot)).apply_over(cx, live! {
             draw_bg: { critical: (memory_critical) }
         });
-        self.view.label(ids!(memory_pct_label)).set_text_with(|t| {
+        self.view.label(ids!(mofa_hero.memory_pct_label)).set_text_with(|t| {
             *t = format!("{:.1}/{:.0}G", state.used_memory_gb, state.total_memory_gb)
         });
 
@@ -1349,6 +1579,11 @@ impl Dashboard {
             self.view.view(ids!(log_scroll)).set_scroll_pos(cx, DVec2 { x: 0.0, y: 1e10 });
         }
 
+        // Update mic level LED meter from shared state
+        let mic_level = state.mic_input_level;
+        drop(state); // Release lock before updating UI
+        self.update_mic_level_meter(cx, mic_level);
+
         self.view.redraw(cx);
     }
 
@@ -1487,6 +1722,105 @@ impl Dashboard {
         }
 
         self.view.redraw(cx);
+    }
+
+    /// Toggle sidebar visibility (pin/unpin)
+    fn toggle_sidebar(&mut self, cx: &mut Cx) {
+        self.sidebar_pinned = !self.sidebar_pinned;
+        if self.sidebar_pinned {
+            self.show_sidebar(cx);
+        } else {
+            // If unpinning, check if we should still show due to hover
+            if !self.sidebar_hover_active && !self.sidebar_content_hover && !self.hover_zone_active {
+                self.hide_sidebar(cx);
+            }
+        }
+    }
+
+    /// Show sidebar
+    fn show_sidebar(&mut self, cx: &mut Cx) {
+        if self.sidebar_collapsed {
+            self.sidebar_collapsed = false;
+            // Set grace period to ignore the next few HoverOut events (layout shift causes false ones)
+            // Need enough to survive the flickering as mouse moves from trigger to sidebar content
+            self.sidebar_show_grace_period = 10;
+            self.view.view(ids!(sidebar_zone.sidebar_content)).apply_over(cx, live!{
+                width: 234
+            });
+            self.view.redraw(cx);
+        }
+    }
+
+    /// Hide sidebar (unless pinned)
+    fn hide_sidebar(&mut self, cx: &mut Cx) {
+        if self.sidebar_pinned {
+            return;
+        }
+        if !self.sidebar_collapsed {
+            self.sidebar_collapsed = true;
+            self.sidebar_content_hover = false;
+            self.view.view(ids!(sidebar_zone.sidebar_content)).apply_over(cx, live!{
+                width: 0
+            });
+            self.view.redraw(cx);
+        }
+    }
+
+    /// Populate audio device dropdowns from cpal enumeration in shared state
+    fn populate_device_dropdowns_from_cpal(&mut self, cx: &mut Cx) {
+        let Some(state_ref) = SHARED_STATE.get() else { return };
+        let state = state_ref.lock();
+
+        // Update input device dropdown
+        if !state.input_devices.is_empty() {
+            let input_dropdown = self.view.drop_down(ids!(input_device_dropdown));
+            input_dropdown.set_labels(cx, state.input_devices.clone());
+            input_dropdown.set_selected_item(cx, state.selected_input_device);
+        }
+
+        // Update output device dropdown
+        if !state.output_devices.is_empty() {
+            let output_dropdown = self.view.drop_down(ids!(output_device_dropdown));
+            output_dropdown.set_labels(cx, state.output_devices.clone());
+            output_dropdown.set_selected_item(cx, state.selected_output_device);
+        }
+
+        self.view.redraw(cx);
+    }
+
+    /// Update mic level LED meter based on input level (0.0 - 1.0)
+    fn update_mic_level_meter(&mut self, cx: &mut Cx, level: f32) {
+        // Calculate which LEDs should be lit based on level
+        // LED 1: 0-20%, LED 2: 20-40%, LED 3: 40-60%, LED 4: 60-80%, LED 5: 80-100%
+        let level = level.clamp(0.0, 1.0);
+
+        // Colors for lit and dim states (matches buffer gauge: blue -> cyan -> green -> yellow -> red)
+        let lit_colors = [0x3366f2u32, 0x33bfe6u32, 0x4dd973u32, 0xe6cc33u32, 0xf23333u32];
+        let dim_color = 0xd9d9e0u32; // Light gray when not lit (matches CPU gauge)
+
+        // Update each LED
+        for i in 0..5 {
+            let is_lit = level >= (i as f32 * 0.2);
+            let color = if is_lit { lit_colors[i] } else { dim_color };
+
+            let led_id = match i {
+                0 => ids!(mic_led_1),
+                1 => ids!(mic_led_2),
+                2 => ids!(mic_led_3),
+                3 => ids!(mic_led_4),
+                4 => ids!(mic_led_5),
+                _ => continue,
+            };
+
+            // Convert u32 color to vec4
+            let r = ((color >> 16) & 0xFF) as f32 / 255.0;
+            let g = ((color >> 8) & 0xFF) as f32 / 255.0;
+            let b = (color & 0xFF) as f32 / 255.0;
+
+            self.view.view(led_id).apply_over(cx, live!{
+                draw_bg: { color: (vec4(r, g, b, 1.0)) }
+            });
+        }
     }
 }
 
