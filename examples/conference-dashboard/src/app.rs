@@ -1303,15 +1303,7 @@ impl Widget for Dashboard {
             self.on_toggle_log_panel(cx);
         }
 
-        // Handle sidebar toggle - click only (no hover)
-        let trigger = self.view.view(ids!(sidebar_zone.fold_button_panel.sidebar_trigger));
-
-        match event.hits(cx, trigger.area()) {
-            Hit::FingerDown(_) => {
-                self.toggle_sidebar(cx);
-            }
-            _ => {}
-        }
+        // Note: Sidebar hover handling is done at App level
 
         // Handle sidebar navigation button clicks
         if self.view.button(ids!(sidebar_zone.sidebar_content.sidebar.mofa_fm_tab)).clicked(actions) {
@@ -1990,6 +1982,9 @@ pub struct App {
 
     #[rust]
     user_menu_open: bool,
+
+    #[rust]
+    sidebar_menu_open: bool,
 }
 
 impl LiveRegister for App {
@@ -2040,6 +2035,48 @@ impl AppMain for App {
                 if !in_btn && !in_menu {
                     self.user_menu_open = false;
                     user_menu.set_visible(cx, false);
+                    self.ui.redraw(cx);
+                }
+            }
+        }
+
+        // Handle sidebar hover at App level
+        let sidebar_trigger = self.ui.view(ids!(body.sidebar_zone.fold_button_panel.sidebar_trigger));
+        let sidebar_content = self.ui.view(ids!(body.sidebar_zone.sidebar_content));
+
+        // Show sidebar when hovering over trigger (hamburger button)
+        match event.hits(cx, sidebar_trigger.area()) {
+            Hit::FingerHoverIn(_) => {
+                if !self.sidebar_menu_open {
+                    self.sidebar_menu_open = true;
+                    sidebar_content.apply_over(cx, live!{ width: 180 });
+                    self.ui.redraw(cx);
+                }
+            }
+            _ => {}
+        }
+
+        // Hide sidebar when mouse moves away from both trigger and sidebar
+        if self.sidebar_menu_open {
+            if let Event::MouseMove(mm) = event {
+                let trigger_rect = sidebar_trigger.area().rect(cx);
+                let sidebar_rect = sidebar_content.area().rect(cx);
+
+                // Check if mouse is in trigger area (with tolerance)
+                let in_trigger = mm.abs.x >= trigger_rect.pos.x - 5.0
+                    && mm.abs.x <= trigger_rect.pos.x + trigger_rect.size.x + 5.0
+                    && mm.abs.y >= trigger_rect.pos.y - 5.0
+                    && mm.abs.y <= trigger_rect.pos.y + trigger_rect.size.y + 5.0;
+
+                // Check if mouse is in sidebar area (with tolerance)
+                let in_sidebar = mm.abs.x >= sidebar_rect.pos.x - 5.0
+                    && mm.abs.x <= sidebar_rect.pos.x + sidebar_rect.size.x + 10.0
+                    && mm.abs.y >= sidebar_rect.pos.y - 5.0
+                    && mm.abs.y <= sidebar_rect.pos.y + sidebar_rect.size.y + 5.0;
+
+                if !in_trigger && !in_sidebar {
+                    self.sidebar_menu_open = false;
+                    sidebar_content.apply_over(cx, live!{ width: 0 });
                     self.ui.redraw(cx);
                 }
             }
