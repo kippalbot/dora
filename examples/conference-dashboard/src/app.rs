@@ -76,6 +76,87 @@ live_design! {
     TEXT_PRIMARY = #1f2937
     TEXT_SECONDARY = #6b7280
 
+    // Tab colors
+    TAB_BG = #e5e7eb
+    TAB_ACTIVE_BG = #ffffff
+    TAB_HOVER_BG = #d1d5db
+    TAB_BAR_BG = #f3f4f6
+
+    // Tab close button - X icon with hover effect
+    TabCloseButton = <View> {
+        width: 16, height: 16
+        align: {x: 0.5, y: 0.5}
+        cursor: Hand
+        show_bg: true
+        draw_bg: {
+            instance hover: 0.0
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                let mid = self.rect_size / 2.0;
+                let size = 4.0;
+                let min = mid - vec2(size);
+                let max = mid + vec2(size);
+                // Draw X
+                sdf.move_to(min.x, min.y);
+                sdf.line_to(max.x, max.y);
+                sdf.move_to(min.x, max.y);
+                sdf.line_to(max.x, min.y);
+                let color = mix(#9ca3af, #ef4444, self.hover);
+                return sdf.stroke(color, 1.5);
+            }
+        }
+    }
+
+    // Single tab widget with close button
+    TabWidget = <View> {
+        width: Fit, height: 36
+        flow: Right
+        align: {y: 0.5}
+        padding: {left: 12, right: 4, top: 0, bottom: 0}
+        spacing: 6
+        cursor: Hand
+        show_bg: true
+        draw_bg: {
+            instance hover: 0.0
+            instance active: 0.0
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                // Rounded top corners only
+                sdf.box(0., 0., self.rect_size.x, self.rect_size.y + 4.0, 6.0);
+                let inactive = (TAB_BG);
+                let active_col = (TAB_ACTIVE_BG);
+                let hover_col = (TAB_HOVER_BG);
+                let base = mix(inactive, active_col, self.active);
+                let col = mix(base, hover_col, self.hover * (1.0 - self.active));
+                sdf.fill(col);
+                return sdf.result;
+            }
+        }
+
+        tab_label = <Label> {
+            draw_text: {
+                instance active: 0.0
+                text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                fn get_color(self) -> vec4 {
+                    return mix(#6b7280, #1f2937, self.active);
+                }
+            }
+        }
+
+        close_btn = <TabCloseButton> {}
+    }
+
+    // Tab bar container
+    TabBar = <View> {
+        width: Fill, height: 36
+        flow: Right
+        align: {y: 1.0}
+        padding: {left: 0, right: 0, top: 0, bottom: 0}
+        spacing: 2
+        show_bg: true
+        draw_bg: { color: (TAB_BAR_BG) }
+    }
+
     // Main Dashboard Layout
     Dashboard = {{Dashboard}} <View> {
         width: Fill, height: Fill
@@ -100,7 +181,7 @@ live_design! {
             }
 
             title = <Label> {
-                text: "MoFA Desktop"
+                text: "MoFA Studio"
                 draw_text: {
                     color: (TEXT_PRIMARY)
                     text_style: <FONT_BOLD>{ font_size: 24.0 }
@@ -219,15 +300,28 @@ live_design! {
             main_content = <View> {
                 width: Fill, height: Fill
                 flow: Down
-                padding: 20
+                padding: {left: 20, right: 20, top: 0, bottom: 20}
+
+            // Tab bar at top
+            tab_bar = <TabBar> {
+                // Tabs will be added dynamically, but we need placeholder views
+                profile_tab = <TabWidget> {
+                    visible: false
+                    tab_label = { text: "Profile" }
+                }
+                settings_tab = <TabWidget> {
+                    visible: false
+                    tab_label = { text: "Settings" }
+                }
+            }
 
             // Content area with switchable pages
             content = <View> {
                 width: Fill, height: Fill
-                flow: Down
-                spacing: 12
+                flow: Overlay
+                padding: {top: 12}
 
-            // FM Page (default visible)
+            // FM Page (default visible - home page, no tab)
             fm_page = <View> {
                 width: Fill, height: Fill
                 flow: Down
@@ -701,6 +795,85 @@ live_design! {
                     }
                 }
             }
+
+            // Profile Page (opened from user menu)
+            profile_page = <RoundedView> {
+                width: Fill, height: Fill
+                visible: false
+                show_bg: true
+                draw_bg: { color: (PANEL_BG), border_radius: 8.0 }
+                padding: 24
+                flow: Down
+                spacing: 16
+
+                <Label> {
+                    text: "User Profile"
+                    draw_text: {
+                        color: (TEXT_PRIMARY)
+                        text_style: <FONT_BOLD>{ font_size: 20.0 }
+                    }
+                }
+                <View> { width: Fill, height: 1, show_bg: true, draw_bg: { color: #e5e7eb } }
+                <Label> {
+                    text: "Manage your account settings and preferences"
+                    draw_text: {
+                        color: (TEXT_SECONDARY)
+                        text_style: <FONT_REGULAR>{ font_size: 13.0 }
+                    }
+                }
+                // Profile content placeholder
+                <View> {
+                    width: Fill, height: Fill
+                    align: {x: 0.5, y: 0.5}
+                    <Label> {
+                        text: "Profile settings will appear here"
+                        draw_text: {
+                            color: #9ca3af
+                            text_style: <FONT_REGULAR>{ font_size: 14.0 }
+                        }
+                    }
+                }
+            }
+
+            // Settings Page (opened from user menu)
+            settings_page = <RoundedView> {
+                width: Fill, height: Fill
+                visible: false
+                show_bg: true
+                draw_bg: { color: (PANEL_BG), border_radius: 8.0 }
+                padding: 24
+                flow: Down
+                spacing: 16
+
+                <Label> {
+                    text: "Settings"
+                    draw_text: {
+                        color: (TEXT_PRIMARY)
+                        text_style: <FONT_BOLD>{ font_size: 20.0 }
+                    }
+                }
+                <View> { width: Fill, height: 1, show_bg: true, draw_bg: { color: #e5e7eb } }
+                <Label> {
+                    text: "Configure application settings"
+                    draw_text: {
+                        color: (TEXT_SECONDARY)
+                        text_style: <FONT_REGULAR>{ font_size: 13.0 }
+                    }
+                }
+                // Settings content placeholder
+                <View> {
+                    width: Fill, height: Fill
+                    align: {x: 0.5, y: 0.5}
+                    <Label> {
+                        text: "Application settings will appear here"
+                        draw_text: {
+                            color: #9ca3af
+                            text_style: <FONT_REGULAR>{ font_size: 14.0 }
+                        }
+                    }
+                }
+            }
+
             } // end content
         } // end main_content
 
@@ -1970,6 +2143,12 @@ pub struct App {
 
     #[rust]
     sidebar_menu_open: bool,
+
+    #[rust]
+    open_tabs: Vec<String>,  // List of open tab IDs: "profile", "settings"
+
+    #[rust]
+    active_tab: Option<String>,  // Currently active tab
 }
 
 impl LiveRegister for App {
@@ -2076,18 +2255,24 @@ impl AppMain for App {
         if self.ui.button(ids!(user_menu.menu_profile_btn)).clicked(actions) {
             self.user_menu_open = false;
             self.ui.view(ids!(user_menu)).set_visible(cx, false);
-            self.ui.redraw(cx);
+            self.open_or_switch_tab(cx, "profile");
         }
         if self.ui.button(ids!(user_menu.menu_settings_btn)).clicked(actions) {
             self.user_menu_open = false;
             self.ui.view(ids!(user_menu)).set_visible(cx, false);
-            self.ui.redraw(cx);
+            self.open_or_switch_tab(cx, "settings");
         }
         if self.ui.button(ids!(user_menu.menu_logout_btn)).clicked(actions) {
             self.user_menu_open = false;
             self.ui.view(ids!(user_menu)).set_visible(cx, false);
             self.ui.redraw(cx);
         }
+
+        // Handle tab clicks
+        self.handle_tab_clicks(cx, actions);
+
+        // Handle tab close button clicks
+        self.handle_tab_close_clicks(cx, event);
 
         // Handle sidebar menu item clicks (sidebar is overlay at Window level)
         if self.ui.button(ids!(sidebar_menu_overlay.sidebar_content.mofa_fm_tab)).clicked(actions) {
@@ -2138,6 +2323,149 @@ impl AppMain for App {
                 break;
             }
         }
+    }
+}
+
+impl App {
+    /// Open a tab or switch to it if already open
+    fn open_or_switch_tab(&mut self, cx: &mut Cx, tab_id: &str) {
+        let tab_id_string = tab_id.to_string();
+
+        // Check if tab is already open
+        if !self.open_tabs.iter().any(|t| t == tab_id) {
+            self.open_tabs.push(tab_id_string.clone());
+        }
+
+        // Set as active tab
+        self.active_tab = Some(tab_id_string);
+
+        // Update UI
+        self.update_tab_ui(cx);
+    }
+
+    /// Handle tab widget clicks (switch to tab)
+    fn handle_tab_clicks(&mut self, cx: &mut Cx, actions: &[Action]) {
+        // Check if profile tab was clicked
+        if self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab)).finger_up(actions).is_some() {
+            if self.open_tabs.iter().any(|t| t == "profile") {
+                self.active_tab = Some("profile".to_string());
+                self.update_tab_ui(cx);
+            }
+        }
+
+        // Check if settings tab was clicked
+        if self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab)).finger_up(actions).is_some() {
+            if self.open_tabs.iter().any(|t| t == "settings") {
+                self.active_tab = Some("settings".to_string());
+                self.update_tab_ui(cx);
+            }
+        }
+    }
+
+    /// Handle tab close button clicks
+    fn handle_tab_close_clicks(&mut self, cx: &mut Cx, event: &Event) {
+        // Check profile tab close button
+        let profile_close = self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab.close_btn));
+        match event.hits(cx, profile_close.area()) {
+            Hit::FingerUp(_) => {
+                self.close_tab(cx, "profile");
+                return;
+            }
+            Hit::FingerHoverIn(_) => {
+                self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab.close_btn))
+                    .apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
+                self.ui.redraw(cx);
+            }
+            Hit::FingerHoverOut(_) => {
+                self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab.close_btn))
+                    .apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
+                self.ui.redraw(cx);
+            }
+            _ => {}
+        }
+
+        // Check settings tab close button
+        let settings_close = self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab.close_btn));
+        match event.hits(cx, settings_close.area()) {
+            Hit::FingerUp(_) => {
+                self.close_tab(cx, "settings");
+                return;
+            }
+            Hit::FingerHoverIn(_) => {
+                self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab.close_btn))
+                    .apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
+                self.ui.redraw(cx);
+            }
+            Hit::FingerHoverOut(_) => {
+                self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab.close_btn))
+                    .apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
+                self.ui.redraw(cx);
+            }
+            _ => {}
+        }
+    }
+
+    /// Close a tab
+    fn close_tab(&mut self, cx: &mut Cx, tab_id: &str) {
+        // Remove from open tabs
+        self.open_tabs.retain(|t| t != tab_id);
+
+        // If closing active tab, switch to another or go home
+        if self.active_tab.as_deref() == Some(tab_id) {
+            self.active_tab = self.open_tabs.last().cloned();
+        }
+
+        // Update UI
+        self.update_tab_ui(cx);
+    }
+
+    /// Update tab bar and content visibility based on state
+    fn update_tab_ui(&mut self, cx: &mut Cx) {
+        // Hide all pages first
+        self.ui.view(ids!(body.content_area.main_content.content.fm_page)).set_visible(cx, false);
+        self.ui.view(ids!(body.content_area.main_content.content.app_page)).set_visible(cx, false);
+        self.ui.view(ids!(body.content_area.main_content.content.profile_page)).set_visible(cx, false);
+        self.ui.view(ids!(body.content_area.main_content.content.settings_page)).set_visible(cx, false);
+
+        // Update tab visibility and active state
+        let profile_open = self.open_tabs.iter().any(|t| t == "profile");
+        let settings_open = self.open_tabs.iter().any(|t| t == "settings");
+        let profile_active = self.active_tab.as_deref() == Some("profile");
+        let settings_active = self.active_tab.as_deref() == Some("settings");
+
+        // Show/hide tabs
+        self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab)).set_visible(cx, profile_open);
+        self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab)).set_visible(cx, settings_open);
+
+        // Set active state on tabs
+        let profile_active_val = if profile_active { 1.0 } else { 0.0 };
+        let settings_active_val = if settings_active { 1.0 } else { 0.0 };
+
+        self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab))
+            .apply_over(cx, live!{ draw_bg: { active: (profile_active_val) } });
+        self.ui.label(ids!(body.content_area.main_content.tab_bar.profile_tab.tab_label))
+            .apply_over(cx, live!{ draw_text: { active: (profile_active_val) } });
+
+        self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab))
+            .apply_over(cx, live!{ draw_bg: { active: (settings_active_val) } });
+        self.ui.label(ids!(body.content_area.main_content.tab_bar.settings_tab.tab_label))
+            .apply_over(cx, live!{ draw_text: { active: (settings_active_val) } });
+
+        // Show the appropriate page based on active tab
+        match self.active_tab.as_deref() {
+            Some("profile") => {
+                self.ui.view(ids!(body.content_area.main_content.content.profile_page)).set_visible(cx, true);
+            }
+            Some("settings") => {
+                self.ui.view(ids!(body.content_area.main_content.content.settings_page)).set_visible(cx, true);
+            }
+            _ => {
+                // No tab active or unknown tab - show FM page (home)
+                self.ui.view(ids!(body.content_area.main_content.content.fm_page)).set_visible(cx, true);
+            }
+        }
+
+        self.ui.redraw(cx);
     }
 }
 
