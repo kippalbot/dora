@@ -3,6 +3,8 @@
 use makepad_widgets::*;
 use makepad_widgets::makepad_platform::{AudioDeviceType, AudioDeviceDesc};
 use crate::{SharedStateRef, widgets};
+use crate::data::Preferences;
+use crate::widgets::settings_screen::SettingsScreenWidgetExt;
 use std::sync::OnceLock;
 
 // Re-export log macros with explicit crate reference to avoid glob import ambiguity
@@ -30,6 +32,7 @@ live_design! {
     use crate::widgets::log_panel::LogPanel;
     use crate::widgets::sidebar::Sidebar;
     use crate::widgets::mofa_hero::MofaHero;
+    use crate::widgets::settings_screen::SettingsScreen;
 
     // Font definitions with Chinese and Emoji support
     FONT_REGULAR = {
@@ -550,7 +553,7 @@ live_design! {
                     }
 
                     input_device_dropdown = <DropDown> {
-                        width: 240, height: 28
+                        width: 280, height: 28
                         popup_menu_position: BelowInput
                         draw_text: {
                             text_style: <FONT_REGULAR>{ font_size: 11.0 }
@@ -559,12 +562,14 @@ live_design! {
                             }
                         }
                         popup_menu: {
+                            width: 280
                             draw_bg: {
                                 color: #ffffff
                                 border_color: #e5e7eb
                                 border_size: 1.0
                             }
                             menu_item: {
+                                width: 280
                                 draw_bg: {
                                     color: #ffffff
                                     color_hover: #f3f4f6
@@ -601,7 +606,7 @@ live_design! {
                     }
 
                     output_device_dropdown = <DropDown> {
-                        width: 240, height: 28
+                        width: 280, height: 28
                         popup_menu_position: BelowInput
                         draw_text: {
                             text_style: <FONT_REGULAR>{ font_size: 11.0 }
@@ -610,12 +615,14 @@ live_design! {
                             }
                         }
                         popup_menu: {
+                            width: 280
                             draw_bg: {
                                 color: #ffffff
                                 border_color: #e5e7eb
                                 border_size: 1.0
                             }
                             menu_item: {
+                                width: 280
                                 draw_bg: {
                                     color: #ffffff
                                     color_hover: #f3f4f6
@@ -1059,7 +1066,20 @@ live_design! {
         } // end content_area
         } // end dashboard_base
 
-        // Tab overlay layer - covers entire content area including log panel
+        // Settings overlay - covers entire content area including log panel
+        settings_overlay = <View> {
+            width: Fill, height: Fill
+            flow: Down
+            visible: false
+            margin: {top: 70, left: 40}  // Position below header and right of hamburger button
+            show_bg: true
+            draw_bg: { color: #f8fafc }
+
+            settings_page = <SettingsScreen> {}
+        } // end settings_overlay
+
+
+        // Tab overlay layer - on top of all other overlays
         tab_overlay = <View> {
             width: Fill, height: Fill
             flow: Down
@@ -1317,7 +1337,7 @@ live_design! {
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
-                        sdf.fill(#ffffff);
+                        sdf.fill(#f8fafc);
                         sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
                         sdf.stroke(#e2e8f0, 1.0);
                         return sdf.result;
@@ -1343,6 +1363,9 @@ pub struct Dashboard {
 
     #[rust]
     blink_state: bool,
+
+    #[rust]
+    blink_counter: u8,  // Counter to slow down blink rate
 
     #[rust]
     last_log_count: usize,
@@ -1439,6 +1462,10 @@ impl Widget for Dashboard {
             // This causes handle_audio_devices callback to be called with full device list
             cx.use_audio_inputs(&[]);
             cx.use_audio_outputs(&[]);
+
+            // Load preferences and initialize settings screen
+            let preferences = Preferences::load();
+            self.view.settings_screen(ids!(settings_overlay.settings_page)).init(cx, preferences);
         }
 
         // Handle splitter drag events
@@ -1680,8 +1707,12 @@ impl Dashboard {
         let Some(state_ref) = get_shared_state() else { return };
         let state = state_ref.lock();
 
-        // Toggle blink state for connected indicator
-        self.blink_state = !self.blink_state;
+        // Update blink state for connected indicator (at slower rate)
+        self.blink_counter += 1;
+        if self.blink_counter >= 15 {  // Toggle every 15 ticks (~0.5s at 30fps)
+            self.blink_counter = 0;
+            self.blink_state = !self.blink_state;
+        }
 
         // Update dataflow status button
         // Status: 0=Ready(gray), 1=Connected(green), 2=Error(red)
@@ -2320,11 +2351,17 @@ impl AppMain for App {
             self.base_page = "fm".to_string();
             self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, true);
             self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, false);
+            self.ui.view(ids!(body.settings_overlay)).set_visible(cx, false);
             self.ui.redraw(cx);
         }
         if self.ui.button(ids!(sidebar_menu_overlay.sidebar_content.settings_tab)).clicked(actions) {
             self.sidebar_menu_open = false;
             self.ui.view(ids!(sidebar_menu_overlay)).set_visible(cx, false);
+            // Track base page and show settings overlay
+            self.base_page = "settings".to_string();
+            self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, false);
+            self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, false);
+            self.ui.view(ids!(body.settings_overlay)).set_visible(cx, true);
             self.ui.redraw(cx);
         }
 
@@ -2359,6 +2396,7 @@ impl AppMain for App {
                 self.base_page = "app".to_string();
                 self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, false);
                 self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, true);
+                self.ui.view(ids!(body.settings_overlay)).set_visible(cx, false);
                 self.ui.redraw(cx);
                 break;
             }
@@ -2503,12 +2541,16 @@ impl App {
             }
             _ => {
                 // No tab active - restore the correct base page
+                self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, false);
+                self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, false);
+                self.ui.view(ids!(body.settings_overlay)).set_visible(cx, false);
+
                 if self.base_page == "app" {
-                    self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, false);
                     self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, true);
+                } else if self.base_page == "settings" {
+                    self.ui.view(ids!(body.settings_overlay)).set_visible(cx, true);
                 } else {
                     self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, true);
-                    self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, false);
                 }
             }
         }

@@ -62,9 +62,9 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
 
-                // Main rectangle with subtle rounded corners
+                // Main rectangle with subtle rounded corners - light gray like user dropdown
                 sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 4.0);
-                sdf.fill(#ffffff);
+                sdf.fill(#f8fafc);
 
                 return sdf.result;
             }
