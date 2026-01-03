@@ -160,9 +160,14 @@ live_design! {
     // Main Dashboard Layout
     Dashboard = {{Dashboard}} <View> {
         width: Fill, height: Fill
-        flow: Down
+        flow: Overlay
         show_bg: true
         draw_bg: { color: (DARK_BG) }
+
+        // Base layer - header + content area
+        dashboard_base = <View> {
+            width: Fill, height: Fill
+            flow: Down
 
         // Header at top (full width)
         header = <View> {
@@ -300,26 +305,12 @@ live_design! {
             main_content = <View> {
                 width: Fill, height: Fill
                 flow: Down
-                padding: {left: 20, right: 20, top: 0, bottom: 20}
-
-            // Tab bar at top
-            tab_bar = <TabBar> {
-                // Tabs will be added dynamically, but we need placeholder views
-                profile_tab = <TabWidget> {
-                    visible: false
-                    tab_label = { text: "Profile" }
-                }
-                settings_tab = <TabWidget> {
-                    visible: false
-                    tab_label = { text: "Settings" }
-                }
-            }
+                padding: 20
 
             // Content area with switchable pages
             content = <View> {
                 width: Fill, height: Fill
                 flow: Overlay
-                padding: {top: 12}
 
             // FM Page (default visible - home page, no tab)
             fm_page = <View> {
@@ -796,84 +787,6 @@ live_design! {
                 }
             }
 
-            // Profile Page (opened from user menu)
-            profile_page = <RoundedView> {
-                width: Fill, height: Fill
-                visible: false
-                show_bg: true
-                draw_bg: { color: (PANEL_BG), border_radius: 8.0 }
-                padding: 24
-                flow: Down
-                spacing: 16
-
-                <Label> {
-                    text: "User Profile"
-                    draw_text: {
-                        color: (TEXT_PRIMARY)
-                        text_style: <FONT_BOLD>{ font_size: 20.0 }
-                    }
-                }
-                <View> { width: Fill, height: 1, show_bg: true, draw_bg: { color: #e5e7eb } }
-                <Label> {
-                    text: "Manage your account settings and preferences"
-                    draw_text: {
-                        color: (TEXT_SECONDARY)
-                        text_style: <FONT_REGULAR>{ font_size: 13.0 }
-                    }
-                }
-                // Profile content placeholder
-                <View> {
-                    width: Fill, height: Fill
-                    align: {x: 0.5, y: 0.5}
-                    <Label> {
-                        text: "Profile settings will appear here"
-                        draw_text: {
-                            color: #9ca3af
-                            text_style: <FONT_REGULAR>{ font_size: 14.0 }
-                        }
-                    }
-                }
-            }
-
-            // Settings Page (opened from user menu)
-            settings_page = <RoundedView> {
-                width: Fill, height: Fill
-                visible: false
-                show_bg: true
-                draw_bg: { color: (PANEL_BG), border_radius: 8.0 }
-                padding: 24
-                flow: Down
-                spacing: 16
-
-                <Label> {
-                    text: "Settings"
-                    draw_text: {
-                        color: (TEXT_PRIMARY)
-                        text_style: <FONT_BOLD>{ font_size: 20.0 }
-                    }
-                }
-                <View> { width: Fill, height: 1, show_bg: true, draw_bg: { color: #e5e7eb } }
-                <Label> {
-                    text: "Configure application settings"
-                    draw_text: {
-                        color: (TEXT_SECONDARY)
-                        text_style: <FONT_REGULAR>{ font_size: 13.0 }
-                    }
-                }
-                // Settings content placeholder
-                <View> {
-                    width: Fill, height: Fill
-                    align: {x: 0.5, y: 0.5}
-                    <Label> {
-                        text: "Application settings will appear here"
-                        draw_text: {
-                            color: #9ca3af
-                            text_style: <FONT_REGULAR>{ font_size: 14.0 }
-                        }
-                    }
-                }
-            }
-
             } // end content
         } // end main_content
 
@@ -1142,9 +1055,116 @@ live_design! {
                     }
                 }
             }
-        }
         } // end log_panel
         } // end content_area
+        } // end dashboard_base
+
+        // Tab overlay layer - covers entire content area including log panel
+        tab_overlay = <View> {
+            width: Fill, height: Fill
+            flow: Down
+            visible: false
+            margin: {top: 70}  // Position below header (header is ~70px tall)
+            show_bg: true
+            draw_bg: { color: (DARK_BG) }
+
+            // Tab bar at top of overlay
+            tab_bar = <TabBar> {
+                profile_tab = <TabWidget> {
+                    visible: false
+                    tab_label = { text: "Profile" }
+                }
+                settings_tab = <TabWidget> {
+                    visible: false
+                    tab_label = { text: "Settings" }
+                }
+            }
+
+            // Tab content area
+            tab_content = <View> {
+                width: Fill, height: Fill
+                flow: Overlay
+                padding: 20
+
+                // Profile Page
+                profile_page = <RoundedView> {
+                    width: Fill, height: Fill
+                    visible: false
+                    show_bg: true
+                    draw_bg: { color: (PANEL_BG), border_radius: 8.0 }
+                    padding: 24
+                    flow: Down
+                    spacing: 16
+
+                    <Label> {
+                        text: "User Profile"
+                        draw_text: {
+                            color: (TEXT_PRIMARY)
+                            text_style: <FONT_BOLD>{ font_size: 20.0 }
+                        }
+                    }
+                    <View> { width: Fill, height: 1, show_bg: true, draw_bg: { color: #e5e7eb } }
+                    <Label> {
+                        text: "Manage your account settings and preferences"
+                        draw_text: {
+                            color: (TEXT_SECONDARY)
+                            text_style: <FONT_REGULAR>{ font_size: 13.0 }
+                        }
+                    }
+                    <View> {
+                        width: Fill, height: Fill
+                        align: {x: 0.5, y: 0.5}
+                        <Label> {
+                            text: "Profile settings will appear here"
+                            draw_text: {
+                                color: #9ca3af
+                                text_style: <FONT_REGULAR>{ font_size: 14.0 }
+                            }
+                        }
+                    }
+                }
+
+                // Settings Page
+                settings_page = <RoundedView> {
+                    width: Fill, height: Fill
+                    visible: false
+                    show_bg: true
+                    draw_bg: { color: (PANEL_BG), border_radius: 8.0 }
+                    padding: 24
+                    flow: Down
+                    spacing: 16
+
+                    <Label> {
+                        text: "Settings"
+                        draw_text: {
+                            color: (TEXT_PRIMARY)
+                            text_style: <FONT_BOLD>{ font_size: 20.0 }
+                        }
+                    }
+                    <View> { width: Fill, height: 1, show_bg: true, draw_bg: { color: #e5e7eb } }
+                    <Label> {
+                        text: "Configure application settings"
+                        draw_text: {
+                            color: (TEXT_SECONDARY)
+                            text_style: <FONT_REGULAR>{ font_size: 13.0 }
+                        }
+                    }
+                    <View> {
+                        width: Fill, height: Fill
+                        align: {x: 0.5, y: 0.5}
+                        <Label> {
+                            text: "Application settings will appear here"
+                            draw_text: {
+                                color: #9ca3af
+                                text_style: <FONT_REGULAR>{ font_size: 14.0 }
+                            }
+                        }
+                    }
+                }
+            }
+        } // end tab_overlay
+
+    } // end Dashboard
 
     // Main App Window
     App = {{App}} {
@@ -1545,17 +1565,25 @@ impl Widget for Dashboard {
         }
 
         // Handle action button click (start/stop toggle)
-        if self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.start_btn)).clicked(actions) {
-            self.action_running = true;
-            self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.start_btn)).apply_over(cx, live! { visible: false });
-            self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.stop_btn)).apply_over(cx, live! { visible: true });
-            self.view.redraw(cx);
+        let start_view = self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.action_section.start_view));
+        match event.hits(cx, start_view.area()) {
+            Hit::FingerUp(_) => {
+                self.action_running = true;
+                self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.action_section.start_view)).set_visible(cx, false);
+                self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.action_section.stop_view)).set_visible(cx, true);
+                self.view.redraw(cx);
+            }
+            _ => {}
         }
-        if self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.stop_btn)).clicked(actions) {
-            self.action_running = false;
-            self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.start_btn)).apply_over(cx, live! { visible: true });
-            self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.stop_btn)).apply_over(cx, live! { visible: false });
-            self.view.redraw(cx);
+        let stop_view = self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.action_section.stop_view));
+        match event.hits(cx, stop_view.area()) {
+            Hit::FingerUp(_) => {
+                self.action_running = false;
+                self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.action_section.start_view)).set_visible(cx, true);
+                self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.action_section.stop_view)).set_visible(cx, false);
+                self.view.redraw(cx);
+            }
+            _ => {}
         }
 
         // Note: User menu click handling is done at App level since user_menu is at Window level
@@ -2149,6 +2177,9 @@ pub struct App {
 
     #[rust]
     active_tab: Option<String>,  // Currently active tab
+
+    #[rust]
+    base_page: String,  // Which base page is active: "fm" or "app"
 }
 
 impl LiveRegister for App {
@@ -2161,6 +2192,13 @@ impl LiveRegister for App {
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         self.ui.handle_event(cx, event, &mut Scope::empty());
+
+        // Initialize base_page on startup
+        if let Event::Startup = event {
+            if self.base_page.is_empty() {
+                self.base_page = "fm".to_string();
+            }
+        }
 
         // Handle user menu hover at App level
         let user_btn = self.ui.view(ids!(user_btn_overlay));
@@ -2278,9 +2316,10 @@ impl AppMain for App {
         if self.ui.button(ids!(sidebar_menu_overlay.sidebar_content.mofa_fm_tab)).clicked(actions) {
             self.sidebar_menu_open = false;
             self.ui.view(ids!(sidebar_menu_overlay)).set_visible(cx, false);
-            // Show FM page
-            self.ui.view(ids!(body.content_area.main_content.content.fm_page)).set_visible(cx, true);
-            self.ui.view(ids!(body.content_area.main_content.content.app_page)).set_visible(cx, false);
+            // Track base page and show FM page
+            self.base_page = "fm".to_string();
+            self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, true);
+            self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, false);
             self.ui.redraw(cx);
         }
         if self.ui.button(ids!(sidebar_menu_overlay.sidebar_content.settings_tab)).clicked(actions) {
@@ -2316,9 +2355,10 @@ impl AppMain for App {
             if self.ui.button(app_id).clicked(actions) {
                 self.sidebar_menu_open = false;
                 self.ui.view(ids!(sidebar_menu_overlay)).set_visible(cx, false);
-                // Show app page
-                self.ui.view(ids!(body.content_area.main_content.content.fm_page)).set_visible(cx, false);
-                self.ui.view(ids!(body.content_area.main_content.content.app_page)).set_visible(cx, true);
+                // Track base page and show app page
+                self.base_page = "app".to_string();
+                self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, false);
+                self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, true);
                 self.ui.redraw(cx);
                 break;
             }
@@ -2346,7 +2386,7 @@ impl App {
     /// Handle tab widget clicks (switch to tab)
     fn handle_tab_clicks(&mut self, cx: &mut Cx, actions: &[Action]) {
         // Check if profile tab was clicked
-        if self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab)).finger_up(actions).is_some() {
+        if self.ui.view(ids!(body.tab_overlay.tab_bar.profile_tab)).finger_up(actions).is_some() {
             if self.open_tabs.iter().any(|t| t == "profile") {
                 self.active_tab = Some("profile".to_string());
                 self.update_tab_ui(cx);
@@ -2354,7 +2394,7 @@ impl App {
         }
 
         // Check if settings tab was clicked
-        if self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab)).finger_up(actions).is_some() {
+        if self.ui.view(ids!(body.tab_overlay.tab_bar.settings_tab)).finger_up(actions).is_some() {
             if self.open_tabs.iter().any(|t| t == "settings") {
                 self.active_tab = Some("settings".to_string());
                 self.update_tab_ui(cx);
@@ -2365,19 +2405,19 @@ impl App {
     /// Handle tab close button clicks
     fn handle_tab_close_clicks(&mut self, cx: &mut Cx, event: &Event) {
         // Check profile tab close button
-        let profile_close = self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab.close_btn));
+        let profile_close = self.ui.view(ids!(body.tab_overlay.tab_bar.profile_tab.close_btn));
         match event.hits(cx, profile_close.area()) {
             Hit::FingerUp(_) => {
                 self.close_tab(cx, "profile");
                 return;
             }
             Hit::FingerHoverIn(_) => {
-                self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab.close_btn))
+                self.ui.view(ids!(body.tab_overlay.tab_bar.profile_tab.close_btn))
                     .apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
                 self.ui.redraw(cx);
             }
             Hit::FingerHoverOut(_) => {
-                self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab.close_btn))
+                self.ui.view(ids!(body.tab_overlay.tab_bar.profile_tab.close_btn))
                     .apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
                 self.ui.redraw(cx);
             }
@@ -2385,19 +2425,19 @@ impl App {
         }
 
         // Check settings tab close button
-        let settings_close = self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab.close_btn));
+        let settings_close = self.ui.view(ids!(body.tab_overlay.tab_bar.settings_tab.close_btn));
         match event.hits(cx, settings_close.area()) {
             Hit::FingerUp(_) => {
                 self.close_tab(cx, "settings");
                 return;
             }
             Hit::FingerHoverIn(_) => {
-                self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab.close_btn))
+                self.ui.view(ids!(body.tab_overlay.tab_bar.settings_tab.close_btn))
                     .apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
                 self.ui.redraw(cx);
             }
             Hit::FingerHoverOut(_) => {
-                self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab.close_btn))
+                self.ui.view(ids!(body.tab_overlay.tab_bar.settings_tab.close_btn))
                     .apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
                 self.ui.redraw(cx);
             }
@@ -2421,47 +2461,55 @@ impl App {
 
     /// Update tab bar and content visibility based on state
     fn update_tab_ui(&mut self, cx: &mut Cx) {
-        // Hide all pages first
-        self.ui.view(ids!(body.content_area.main_content.content.fm_page)).set_visible(cx, false);
-        self.ui.view(ids!(body.content_area.main_content.content.app_page)).set_visible(cx, false);
-        self.ui.view(ids!(body.content_area.main_content.content.profile_page)).set_visible(cx, false);
-        self.ui.view(ids!(body.content_area.main_content.content.settings_page)).set_visible(cx, false);
-
         // Update tab visibility and active state
         let profile_open = self.open_tabs.iter().any(|t| t == "profile");
         let settings_open = self.open_tabs.iter().any(|t| t == "settings");
+        let any_tabs_open = !self.open_tabs.is_empty();
         let profile_active = self.active_tab.as_deref() == Some("profile");
         let settings_active = self.active_tab.as_deref() == Some("settings");
 
-        // Show/hide tabs
-        self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab)).set_visible(cx, profile_open);
-        self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab)).set_visible(cx, settings_open);
+        // Show/hide tab overlay based on whether any tabs are open
+        self.ui.view(ids!(body.tab_overlay)).set_visible(cx, any_tabs_open);
+
+        // Show/hide individual tabs in tab_bar
+        self.ui.view(ids!(body.tab_overlay.tab_bar.profile_tab)).set_visible(cx, profile_open);
+        self.ui.view(ids!(body.tab_overlay.tab_bar.settings_tab)).set_visible(cx, settings_open);
 
         // Set active state on tabs
         let profile_active_val = if profile_active { 1.0 } else { 0.0 };
         let settings_active_val = if settings_active { 1.0 } else { 0.0 };
 
-        self.ui.view(ids!(body.content_area.main_content.tab_bar.profile_tab))
+        self.ui.view(ids!(body.tab_overlay.tab_bar.profile_tab))
             .apply_over(cx, live!{ draw_bg: { active: (profile_active_val) } });
-        self.ui.label(ids!(body.content_area.main_content.tab_bar.profile_tab.tab_label))
+        self.ui.label(ids!(body.tab_overlay.tab_bar.profile_tab.tab_label))
             .apply_over(cx, live!{ draw_text: { active: (profile_active_val) } });
 
-        self.ui.view(ids!(body.content_area.main_content.tab_bar.settings_tab))
+        self.ui.view(ids!(body.tab_overlay.tab_bar.settings_tab))
             .apply_over(cx, live!{ draw_bg: { active: (settings_active_val) } });
-        self.ui.label(ids!(body.content_area.main_content.tab_bar.settings_tab.tab_label))
+        self.ui.label(ids!(body.tab_overlay.tab_bar.settings_tab.tab_label))
             .apply_over(cx, live!{ draw_text: { active: (settings_active_val) } });
 
-        // Show the appropriate page based on active tab
+        // Hide all tab content pages first
+        self.ui.view(ids!(body.tab_overlay.tab_content.profile_page)).set_visible(cx, false);
+        self.ui.view(ids!(body.tab_overlay.tab_content.settings_page)).set_visible(cx, false);
+
+        // Show the appropriate tab content page based on active tab
         match self.active_tab.as_deref() {
             Some("profile") => {
-                self.ui.view(ids!(body.content_area.main_content.content.profile_page)).set_visible(cx, true);
+                self.ui.view(ids!(body.tab_overlay.tab_content.profile_page)).set_visible(cx, true);
             }
             Some("settings") => {
-                self.ui.view(ids!(body.content_area.main_content.content.settings_page)).set_visible(cx, true);
+                self.ui.view(ids!(body.tab_overlay.tab_content.settings_page)).set_visible(cx, true);
             }
             _ => {
-                // No tab active or unknown tab - show FM page (home)
-                self.ui.view(ids!(body.content_area.main_content.content.fm_page)).set_visible(cx, true);
+                // No tab active - restore the correct base page
+                if self.base_page == "app" {
+                    self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, false);
+                    self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, true);
+                } else {
+                    self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page)).set_visible(cx, true);
+                    self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.app_page)).set_visible(cx, false);
+                }
             }
         }
 

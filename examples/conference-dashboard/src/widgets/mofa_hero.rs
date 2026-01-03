@@ -200,67 +200,66 @@ live_design! {
             spacing: 4
             align: {x: 0.5, y: 0.0}
 
-            action_header = <View> {
-                width: Fill, height: Fit
-                flow: Right
-                spacing: 6
-                align: {x: 0.5, y: 0.5}
+            // Start state (visible when not running)
+            start_view = <View> {
+                width: Fill, height: Fill
+                flow: Down
+                spacing: 4
+                align: {x: 0.5, y: 0.0}
+                cursor: Hand
 
-                <Label> {
-                    text: "Action"
+                action_start_label = <Label> {
+                    text: "Start MoFA"
                     draw_text: {
                         color: #374151
                         text_style: { font_size: 10.0 }
                     }
                 }
-            }
 
-            action_btn_container = <View> {
-                width: Fill, height: 20
-                align: {x: 0.5, y: 0.5}
-
-                // Start button (visible when not running)
-                start_btn = <Button> {
+                start_btn = <View> {
                     width: 24, height: 20
-                    icon_walk: {width: 20, height: 20}
-                    draw_icon: {
-                        svg_file: (ICO_START)
-                        fn get_color(self) -> vec4 {
-                            return vec4(0.133, 0.773, 0.373, 1.0);  // Green #22c55e
+                    align: {x: 0.5, y: 0.5}
+                    <Icon> {
+                        draw_icon: {
+                            svg_file: (ICO_START)
+                            fn get_color(self) -> vec4 {
+                                return vec4(0.133, 0.773, 0.373, 1.0);  // Green #22c55e
+                            }
                         }
-                    }
-                    draw_bg: {
-                        fn pixel(self) -> vec4 {
-                            return vec4(0.0, 0.0, 0.0, 0.0);
-                        }
-                    }
-                }
-
-                // Stop button (hidden by default, shown when running)
-                stop_btn = <Button> {
-                    visible: false
-                    width: 24, height: 20
-                    icon_walk: {width: 20, height: 20}
-                    draw_icon: {
-                        svg_file: (ICO_STOP)
-                        fn get_color(self) -> vec4 {
-                            return vec4(0.937, 0.267, 0.267, 1.0);  // Red #ef4444
-                        }
-                    }
-                    draw_bg: {
-                        fn pixel(self) -> vec4 {
-                            return vec4(0.0, 0.0, 0.0, 0.0);
-                        }
+                        icon_walk: {width: 20, height: 20}
                     }
                 }
             }
 
-            // Spacer to match 3-row layout
-            <Label> {
-                text: " "
-                draw_text: {
-                    color: #374151
-                    text_style: { font_size: 10.0 }
+            // Stop state (hidden by default, shown when running)
+            stop_view = <View> {
+                visible: false
+                width: Fill, height: Fill
+                flow: Down
+                spacing: 4
+                align: {x: 0.5, y: 0.0}
+                cursor: Hand
+
+                action_stop_label = <Label> {
+                    text: "Stop MoFA"
+                    draw_text: {
+                        color: #374151
+                        text_style: { font_size: 10.0 }
+                    }
+                }
+
+                stop_btn = <View> {
+                    width: 24, height: 20
+                    align: {x: 0.5, y: 0.5}
+                    <Icon> {
+                        draw_icon: {
+                            svg_file: (ICO_STOP)
+                            fn get_color(self) -> vec4 {
+                                return vec4(0.937, 0.267, 0.267, 1.0);  // Red #ef4444
+                            }
+                        }
+                        icon_walk: {width: 20, height: 20}
+                    }
                 }
             }
         }
