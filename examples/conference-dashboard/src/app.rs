@@ -8,20 +8,6 @@ use std::sync::OnceLock;
 // Re-export log macros with explicit crate reference to avoid glob import ambiguity
 use ::log as logger;
 
-/// Extension trait for Event to easily get actions
-trait EventExt {
-    fn actions(&self) -> &[Action];
-}
-
-impl EventExt for Event {
-    fn actions(&self) -> &[Action] {
-        match self {
-            Event::Actions(actions) => actions.as_slice(),
-            _ => &[],
-        }
-    }
-}
-
 // Global static for shared state - accessible across threads
 static SHARED_STATE: OnceLock<SharedStateRef> = OnceLock::new();
 
@@ -90,7 +76,7 @@ live_design! {
     TEXT_PRIMARY = #1f2937
     TEXT_SECONDARY = #6b7280
 
-    // Main Dashboard Layout - Header on top, sidebar + content below
+    // Main Dashboard Layout
     Dashboard = {{Dashboard}} <View> {
         width: Fill, height: Fill
         flow: Down
@@ -122,6 +108,58 @@ live_design! {
             }
 
             <View> { width: Fill, height: 1 }
+
+            // User profile dropdown button container
+            user_profile_container = <View> {
+                width: Fit, height: Fill
+                flow: Right
+                align: {x: 0.5, y: 0.5}
+                spacing: 4
+                cursor: Hand
+
+                // User icon button - circular with centered SVG icon
+                user_profile_btn = <View> {
+                    width: 32, height: 32
+                    padding: {left: 6, top: 8, right: 10, bottom: 8}
+                    show_bg: true
+                    draw_bg: {
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let cx = self.rect_size.x * 0.5;
+                            let cy = self.rect_size.y * 0.5;
+                            sdf.circle(cx, cy, 15.0);
+                            sdf.fill(#f1f5f9);
+                            return sdf.result;
+                        }
+                    }
+
+                    <Icon> {
+                        draw_icon: {
+                            svg_file: dep("crate://self/resources/icons/user.svg")
+                            fn get_color(self) -> vec4 { return #4b5563; }
+                        }
+                        icon_walk: {width: 16, height: 16}
+                    }
+                }
+
+                // Dropdown arrow indicator
+                dropdown_arrow = <View> {
+                    width: 12, height: Fill
+                    draw_bg: {
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let cx = self.rect_size.x * 0.5;
+                            let cy = self.rect_size.y * 0.5;
+                            // Chevron down arrow
+                            sdf.move_to(cx - 4.0, cy - 2.0);
+                            sdf.line_to(cx, cy + 2.0);
+                            sdf.line_to(cx + 4.0, cy - 2.0);
+                            sdf.stroke(#9ca3af, 1.5);
+                            return sdf.result;
+                        }
+                    }
+                }
+            }
         }
 
         // Content area below header (sidebar + main content + log panel)
@@ -183,11 +221,18 @@ live_design! {
                 flow: Down
                 padding: 20
 
-            // Content area
+            // Content area with switchable pages
             content = <View> {
                 width: Fill, height: Fill
                 flow: Down
                 spacing: 12
+
+            // FM Page (default visible)
+            fm_page = <View> {
+                width: Fill, height: Fill
+                flow: Down
+                spacing: 12
+                visible: true
 
             // Top row - System status bar (MofaHero widget)
             mofa_hero = <MofaHero> {}
@@ -646,6 +691,31 @@ live_design! {
                     }
                 }
             }
+            } // end fm_page
+
+            // App Page (hidden by default, shown when clicking app buttons)
+            app_page = <View> {
+                width: Fill, height: Fill
+                flow: Down
+                spacing: 12
+                visible: false
+                align: {x: 0.5, y: 0.5}
+
+                <Label> {
+                    text: "App Page"
+                    draw_text: {
+                        color: #9ca3af
+                        text_style: <FONT_SEMIBOLD>{ font_size: 18.0 }
+                    }
+                }
+                <Label> {
+                    text: "Select an app from the sidebar"
+                    draw_text: {
+                        color: #d1d5db
+                        text_style: <FONT_REGULAR>{ font_size: 13.0 }
+                    }
+                }
+            }
             } // end content
         } // end main_content
 
@@ -915,16 +985,142 @@ live_design! {
                 }
             }
         }
-    } // end log_panel
-    } // end content_area
+        } // end log_panel
+        } // end content_area
 
     // Main App Window
     App = {{App}} {
         ui: <Window> {
             window: { inner_size: vec2(1400, 900) }
             pass: { clear_color: (DARK_BG) }
+            flow: Overlay
 
             body = <Dashboard> {}
+
+            // Invisible click zone for user button (covers entire user_profile_container area)
+            user_btn_overlay = <View> {
+                width: 60, height: 44
+                abs_pos: vec2(1320.0, 10.0)
+                cursor: Hand
+            }
+
+            // User dropdown menu - at Window level for proper overlay
+            user_menu = <View> {
+                width: 140, height: Fit
+                abs_pos: vec2(1250.0, 55.0)
+                visible: false
+                padding: 6
+                show_bg: true
+                draw_bg: {
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                        sdf.fill(#f8fafc);
+                        sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                        sdf.stroke(#e2e8f0, 1.0);
+                        return sdf.result;
+                    }
+                }
+                flow: Down
+                spacing: 2
+
+                menu_profile_btn = <Button> {
+                    width: Fill, height: Fit
+                    padding: {top: 10, bottom: 10, left: 10, right: 10}
+                    align: {x: 0.0, y: 0.5}
+                    text: "Profile"
+                    icon_walk: {width: 14, height: 14, margin: {right: 8}}
+                    draw_icon: {
+                        svg_file: dep("crate://self/resources/icons/user.svg")
+                        fn get_color(self) -> vec4 { return #64748b; }
+                    }
+                    draw_text: {
+                        text_style: { font_size: 11.0 }
+                        fn get_color(self) -> vec4 { return #374151; }
+                    }
+                    draw_bg: {
+                        instance hover: 0.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let color = mix(#f8fafc, #e2e8f0, self.hover);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                            sdf.fill(color);
+                            return sdf.result;
+                        }
+                    }
+                    animator: {
+                        hover = {
+                            default: off
+                            off = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 0.0}} }
+                            on = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 1.0}} }
+                        }
+                    }
+                }
+                menu_settings_btn = <Button> {
+                    width: Fill, height: Fit
+                    padding: {top: 10, bottom: 10, left: 10, right: 10}
+                    align: {x: 0.0, y: 0.5}
+                    text: "Settings"
+                    icon_walk: {width: 14, height: 14, margin: {right: 8}}
+                    draw_icon: {
+                        svg_file: dep("crate://self/resources/icons/settings.svg")
+                        fn get_color(self) -> vec4 { return #64748b; }
+                    }
+                    draw_text: {
+                        text_style: { font_size: 11.0 }
+                        fn get_color(self) -> vec4 { return #374151; }
+                    }
+                    draw_bg: {
+                        instance hover: 0.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let color = mix(#f8fafc, #e2e8f0, self.hover);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                            sdf.fill(color);
+                            return sdf.result;
+                        }
+                    }
+                    animator: {
+                        hover = {
+                            default: off
+                            off = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 0.0}} }
+                            on = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 1.0}} }
+                        }
+                    }
+                }
+                menu_logout_btn = <Button> {
+                    width: Fill, height: Fit
+                    padding: {top: 10, bottom: 10, left: 10, right: 10}
+                    align: {x: 0.0, y: 0.5}
+                    text: "Logout"
+                    icon_walk: {width: 14, height: 14, margin: {right: 8}}
+                    draw_icon: {
+                        svg_file: dep("crate://self/resources/icons/logout.svg")
+                        fn get_color(self) -> vec4 { return #64748b; }
+                    }
+                    draw_text: {
+                        text_style: { font_size: 11.0 }
+                        fn get_color(self) -> vec4 { return #374151; }
+                    }
+                    draw_bg: {
+                        instance hover: 0.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let color = mix(#f8fafc, #e2e8f0, self.hover);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                            sdf.fill(color);
+                            return sdf.result;
+                        }
+                    }
+                    animator: {
+                        hover = {
+                            default: off
+                            off = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 0.0}} }
+                            on = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 1.0}} }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1010,6 +1206,9 @@ pub struct Dashboard {
     aec_blink_state: bool,  // For AEC button blinking animation
 
     #[rust]
+    aec_blink_counter: u8,  // Counter to slow down blink rate
+
+    #[rust]
     audio_devices: Vec<AudioDeviceDesc>,  // All available audio devices from Makepad
 
     #[rust]
@@ -1038,7 +1237,7 @@ impl Widget for Dashboard {
         }
 
         // Handle splitter drag events
-        let splitter_area = self.view.view(ids!(splitter)).area();
+        let splitter_area = self.view.view(ids!(content_area.splitter)).area();
         match event.hits(cx, splitter_area) {
             Hit::FingerDown(fe) => {
                 self.is_dragging_splitter = true;
@@ -1054,7 +1253,7 @@ impl Widget for Dashboard {
                     self.log_panel_width = new_width;
 
                     // Apply width to log panel
-                    self.view.view(ids!(log_panel)).apply_over(cx, live!{
+                    self.view.view(ids!(content_area.log_panel)).apply_over(cx, live!{
                         width: (new_width)
                     });
                     self.view.redraw(cx);
@@ -1078,113 +1277,81 @@ impl Widget for Dashboard {
         if self.update_timer.is_event(event).is_some() {
             self.update_from_shared_state(cx);
 
-            // Update AEC blink animation (only when enabled)
+            // Update AEC blink animation (only when enabled, at stable rate)
             if self.aec_enabled {
-                self.aec_blink_state = !self.aec_blink_state;
-                let blink_val = if self.aec_blink_state { 1.0 } else { 0.6 };
-                self.view.button(ids!(aec_toggle_btn)).apply_over(cx, live!{
-                    draw_bg: { blink: (blink_val) }
-                });
-            }
-
-            // Decrement grace period
-            if self.sidebar_show_grace_period > 0 {
-                self.sidebar_show_grace_period -= 1;
-            }
-
-            // Handle delayed sidebar hide (checked each timer tick ~100ms)
-            if self.sidebar_hide_pending {
-                if self.sidebar_hover_active {
-                    // Mouse re-entered, cancel hide
-                    self.sidebar_hide_pending = false;
-                    self.sidebar_hide_counter = 0;
-                } else {
-                    self.sidebar_hide_counter += 1;
-                    if self.sidebar_hide_counter > 3 {  // ~300ms delay
-                        self.hide_sidebar(cx);
-                        self.sidebar_hide_pending = false;
-                        self.sidebar_hide_counter = 0;
-                    }
+                self.aec_blink_counter += 1;
+                if self.aec_blink_counter >= 30 {  // Toggle every 30 ticks (1s at 30fps)
+                    self.aec_blink_counter = 0;
+                    self.aec_blink_state = !self.aec_blink_state;
+                    let blink_val = if self.aec_blink_state { 1.0 } else { 0.6 };
+                    self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn)).apply_over(cx, live!{
+                        draw_bg: { blink: (blink_val) }
+                    });
                 }
             }
 
         }
 
-        // Handle button click actions using event.actions() pattern
-        let actions = event.actions();
+        // Handle button click actions
+        let actions = match event {
+            Event::Actions(actions) => actions.as_slice(),
+            _ => &[],
+        };
 
         // Handle log panel toggle button click
-        if self.view.button(ids!(toggle_log_btn)).clicked(actions) {
+        if self.view.button(ids!(content_area.log_panel.toggle_column.toggle_log_btn)).clicked(actions) {
             self.on_toggle_log_panel(cx);
         }
 
-        // Handle sidebar hover - track both the trigger zone and the sidebar content
-        let sidebar_zone = self.view.view(ids!(sidebar_zone));
-        let sidebar_content = self.view.view(ids!(sidebar_zone.sidebar_content));
+        // Handle sidebar toggle - click only (no hover)
         let trigger = self.view.view(ids!(sidebar_zone.fold_button_panel.sidebar_trigger));
 
-        // Track hover on sidebar content (the actual expanded sidebar)
-        // Only check when sidebar is expanded to avoid issues with zero-width area
-        if !self.sidebar_collapsed {
-            match event.hits(cx, sidebar_content.area()) {
-                Hit::FingerHoverIn(_) => {
-                    self.sidebar_content_hover = true;
-                }
-                Hit::FingerHoverOut(_) => {
-                    self.sidebar_content_hover = false;
-                    // Only hide if also not hovering the trigger zone
-                    if !self.hover_zone_active {
-                        self.hide_sidebar(cx);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Check zone events (for tracking overall state)
-        match event.hits(cx, sidebar_zone.area()) {
-            Hit::FingerHoverIn(_) => {
-                self.sidebar_hover_active = true;
-                // Cancel any pending hide when mouse re-enters
-                self.sidebar_hide_pending = false;
-            }
-            Hit::FingerHoverOut(_) => {
-                // Ignore HoverOut during grace period (layout shift causes false events)
-                if self.sidebar_show_grace_period > 0 {
-                    return;
-                }
-                self.sidebar_hover_active = false;
-                // Mark hide as pending - will be executed after delay in timer
-                self.sidebar_hide_pending = true;
-                self.sidebar_hide_counter = 0;
-            }
-            _ => {}
-        }
-
-        // Check trigger events (hamburger button)
         match event.hits(cx, trigger.area()) {
             Hit::FingerDown(_) => {
                 self.toggle_sidebar(cx);
             }
-            Hit::FingerHoverIn(_) => {
-                // Update hover visual
-                trigger.apply_over(cx, live!{ draw_bg: { hover: 1.0 } });
-                self.hover_zone_active = true;
-                // Show sidebar on hover
-                self.show_sidebar(cx);
-            }
-            Hit::FingerHoverOut(_) => {
-                // Reset hover visual
-                trigger.apply_over(cx, live!{ draw_bg: { hover: 0.0 } });
-                self.hover_zone_active = false;
-            }
             _ => {}
         }
 
+        // Handle sidebar navigation button clicks
+        if self.view.button(ids!(sidebar_zone.sidebar_content.sidebar.mofa_fm_tab)).clicked(actions) {
+            self.show_fm_page(cx);
+        }
+
+        // Handle app button clicks (show blank app page)
+        let app_buttons = [
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app1_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app2_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app3_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app4_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app5_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app6_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app7_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app8_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app9_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app10_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app11_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app12_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app13_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app14_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app15_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app16_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app17_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app18_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app19_btn),
+            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app20_btn),
+        ];
+        for app_id in app_buttons {
+            if self.view.button(app_id).clicked(actions) {
+                self.show_app_page(cx);
+                break;
+            }
+        }
+
         // Handle audio control buttons
-        if self.view.button(ids!(mic_mute_btn)).clicked(actions) {
+        if self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.mic_mute_btn)).clicked(actions) {
             self.mic_muted = !self.mic_muted;
-            let btn = self.view.button(ids!(mic_mute_btn));
+            let btn = self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.mic_mute_btn));
             if self.mic_muted {
                 btn.apply_over(cx, live!{ draw_bg: { muted: 1.0 } });
             } else {
@@ -1193,9 +1360,9 @@ impl Widget for Dashboard {
             self.view.redraw(cx);
         }
 
-        if self.view.button(ids!(aec_toggle_btn)).clicked(actions) {
+        if self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn)).clicked(actions) {
             self.aec_enabled = !self.aec_enabled;
-            let btn = self.view.button(ids!(aec_toggle_btn));
+            let btn = self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn));
             if self.aec_enabled {
                 btn.apply_over(cx, live!{ draw_bg: { enabled: 1.0, blink: 1.0 } });
             } else {
@@ -1205,41 +1372,43 @@ impl Widget for Dashboard {
         }
 
         // Handle prompt section buttons
-        if self.view.button(ids!(send_prompt_btn)).clicked(actions) {
+        if self.view.button(ids!(content_area.main_content.content.fm_page.prompt_section.send_prompt_btn)).clicked(actions) {
             self.on_send_prompt_clicked(cx);
         }
-        if self.view.button(ids!(reset_conf_btn)).clicked(actions) {
+        if self.view.button(ids!(content_area.main_content.content.fm_page.prompt_section.reset_conf_btn)).clicked(actions) {
             self.on_reset_clicked();
         }
 
         // Handle log filter dropdown changes
-        if let Some(selected) = self.view.drop_down(ids!(level_filter)).selected(actions) {
+        if let Some(selected) = self.view.drop_down(ids!(content_area.log_panel.log_content_column.log_header.log_filter_row.level_filter)).selected(actions) {
             self.log_level_filter = selected;
             self.last_log_count = 0; // Force refresh
         }
-        if let Some(selected) = self.view.drop_down(ids!(node_filter)).selected(actions) {
+        if let Some(selected) = self.view.drop_down(ids!(content_area.log_panel.log_content_column.log_header.log_filter_row.node_filter)).selected(actions) {
             self.log_node_filter = selected;
             self.last_log_count = 0; // Force refresh
         }
 
         // Handle copy log button click
-        if self.view.button(ids!(copy_log_btn)).clicked(actions) {
+        if self.view.button(ids!(content_area.log_panel.log_content_column.log_header.log_filter_row.copy_log_btn)).clicked(actions) {
             self.on_copy_logs_clicked(cx);
         }
 
         // Handle action button click (start/stop toggle)
-        if self.view.button(ids!(mofa_hero.action_btn_container.start_btn)).clicked(actions) {
+        if self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.start_btn)).clicked(actions) {
             self.action_running = true;
-            self.view.button(ids!(mofa_hero.action_btn_container.start_btn)).apply_over(cx, live! { visible: false });
-            self.view.button(ids!(mofa_hero.action_btn_container.stop_btn)).apply_over(cx, live! { visible: true });
+            self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.start_btn)).apply_over(cx, live! { visible: false });
+            self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.stop_btn)).apply_over(cx, live! { visible: true });
             self.view.redraw(cx);
         }
-        if self.view.button(ids!(mofa_hero.action_btn_container.stop_btn)).clicked(actions) {
+        if self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.stop_btn)).clicked(actions) {
             self.action_running = false;
-            self.view.button(ids!(mofa_hero.action_btn_container.start_btn)).apply_over(cx, live! { visible: true });
-            self.view.button(ids!(mofa_hero.action_btn_container.stop_btn)).apply_over(cx, live! { visible: false });
+            self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.start_btn)).apply_over(cx, live! { visible: true });
+            self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.action_btn_container.stop_btn)).apply_over(cx, live! { visible: false });
             self.view.redraw(cx);
         }
+
+        // Note: User menu click handling is done at App level since user_menu is at Window level
 
         // Handle text input changes
         if let Event::TextInput(te) = event {
@@ -1288,14 +1457,14 @@ impl WidgetMatchEvent for Dashboard {
 
         // Update input device dropdown
         if !input_names.is_empty() {
-            let input_dropdown = self.view.drop_down(ids!(input_device_dropdown));
+            let input_dropdown = self.view.drop_down(ids!(content_area.main_content.content.fm_page.audio_panel.input_device_dropdown));
             input_dropdown.set_labels(cx, input_names.clone());
             input_dropdown.set_selected_by_label(&default_input_name, cx);
         }
 
         // Update output device dropdown
         if !output_names.is_empty() {
-            let output_dropdown = self.view.drop_down(ids!(output_device_dropdown));
+            let output_dropdown = self.view.drop_down(ids!(content_area.main_content.content.fm_page.audio_panel.output_device_dropdown));
             output_dropdown.set_labels(cx, output_names.clone());
             output_dropdown.set_selected_by_label(&default_output_name, cx);
         }
@@ -1308,7 +1477,7 @@ impl WidgetMatchEvent for Dashboard {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         // Handle device selection changes
-        let input_dropdown = self.view.drop_down(ids!(input_device_dropdown));
+        let input_dropdown = self.view.drop_down(ids!(content_area.main_content.content.fm_page.audio_panel.input_device_dropdown));
         if input_dropdown.changed(actions).is_some() {
             let selected_label = input_dropdown.selected_label();
             if let Some(device) = self.audio_devices.iter().find(|d| d.name == selected_label && d.device_type == AudioDeviceType::Input) {
@@ -1317,7 +1486,7 @@ impl WidgetMatchEvent for Dashboard {
             }
         }
 
-        let output_dropdown = self.view.drop_down(ids!(output_device_dropdown));
+        let output_dropdown = self.view.drop_down(ids!(content_area.main_content.content.fm_page.audio_panel.output_device_dropdown));
         if output_dropdown.changed(actions).is_some() {
             let selected_label = output_dropdown.selected_label();
             if let Some(device) = self.audio_devices.iter().find(|d| d.name == selected_label && d.device_type == AudioDeviceType::Output) {
@@ -1351,50 +1520,50 @@ impl Dashboard {
             (0.0, "Ready", (0.612, 0.639, 0.686))
         };
 
-        self.view.button(ids!(mofa_hero.dataflow_btn_container.dataflow_btn)).set_text(cx, status_text);
-        self.view.button(ids!(mofa_hero.dataflow_btn_container.dataflow_btn)).apply_over(cx, live! {
+        self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.dataflow_btn_container.dataflow_btn)).set_text(cx, status_text);
+        self.view.button(ids!(content_area.main_content.content.fm_page.mofa_hero.dataflow_btn_container.dataflow_btn)).apply_over(cx, live! {
             draw_bg: { status: (status_val) }
         });
-        self.view.view(ids!(mofa_hero.connection_dot)).apply_over(cx, live! {
+        self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.connection_dot)).apply_over(cx, live! {
             draw_bg: { color: (vec4(dot_color.0, dot_color.1, dot_color.2, 1.0)) }
         });
 
         // Update buffer gauge, percentage label, and status dot
         let buffer_pct = state.buffer_fill / 100.0;
         let buffer_critical = if state.buffer_fill >= 80.0 { 1.0 } else { 0.0 };
-        self.view.view(ids!(mofa_hero.buffer_gauge)).apply_over(cx, live! {
+        self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.buffer_gauge)).apply_over(cx, live! {
             draw_bg: { fill_pct: (buffer_pct) }
         });
-        self.view.view(ids!(mofa_hero.buffer_status_dot)).apply_over(cx, live! {
+        self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.buffer_status_dot)).apply_over(cx, live! {
             draw_bg: { critical: (buffer_critical) }
         });
-        self.view.label(ids!(mofa_hero.buffer_pct_label)).set_text_with(|t| {
+        self.view.label(ids!(content_area.main_content.content.fm_page.mofa_hero.buffer_pct_label)).set_text_with(|t| {
             *t = format!("{:.0}%", state.buffer_fill)
         });
 
         // Update CPU gauge, percentage label, and status dot
         let cpu_pct = (state.cpu_usage / 100.0) as f64;
         let cpu_critical = if state.cpu_usage >= 80.0 { 1.0 } else { 0.0 };
-        self.view.view(ids!(mofa_hero.cpu_gauge)).apply_over(cx, live! {
+        self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.cpu_gauge)).apply_over(cx, live! {
             draw_bg: { fill_pct: (cpu_pct) }
         });
-        self.view.view(ids!(mofa_hero.cpu_status_dot)).apply_over(cx, live! {
+        self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.cpu_status_dot)).apply_over(cx, live! {
             draw_bg: { critical: (cpu_critical) }
         });
-        self.view.label(ids!(mofa_hero.cpu_pct_label)).set_text_with(|t| {
+        self.view.label(ids!(content_area.main_content.content.fm_page.mofa_hero.cpu_pct_label)).set_text_with(|t| {
             *t = format!("{:.0}%", state.cpu_usage)
         });
 
         // Update Memory gauge, percentage label, and status dot
         let memory_pct = (state.memory_usage / 100.0) as f64;
         let memory_critical = if state.memory_usage >= 80.0 { 1.0 } else { 0.0 };
-        self.view.view(ids!(mofa_hero.memory_gauge)).apply_over(cx, live! {
+        self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.memory_gauge)).apply_over(cx, live! {
             draw_bg: { fill_pct: (memory_pct) }
         });
-        self.view.view(ids!(mofa_hero.memory_status_dot)).apply_over(cx, live! {
+        self.view.view(ids!(content_area.main_content.content.fm_page.mofa_hero.memory_status_dot)).apply_over(cx, live! {
             draw_bg: { critical: (memory_critical) }
         });
-        self.view.label(ids!(mofa_hero.memory_pct_label)).set_text_with(|t| {
+        self.view.label(ids!(content_area.main_content.content.fm_page.mofa_hero.memory_pct_label)).set_text_with(|t| {
             *t = format!("{:.1}/{:.0}G", state.used_memory_gb, state.total_memory_gb)
         });
 
@@ -1424,7 +1593,7 @@ impl Dashboard {
         let is_audio_playing = state.playback_status.is_playing;
         let active_idx = state.playback_status.active_participant_idx;
 
-        let panel_ids: [&[LiveId]; 3] = [ids!(student1_panel), ids!(student2_panel), ids!(tutor_panel)];
+        let panel_ids: [&[LiveId]; 3] = [ids!(content_area.main_content.content.fm_page.participant_bar.student1_panel), ids!(content_area.main_content.content.fm_page.participant_bar.student2_panel), ids!(content_area.main_content.content.fm_page.participant_bar.tutor_panel)];
 
         for (i, panel_id) in panel_ids.into_iter().enumerate() {
             if let Some(participant) = state.participants.get(i) {
@@ -1495,12 +1664,12 @@ impl Dashboard {
                 .collect::<Vec<_>>()
                 .join("\n\n---\n\n")
         };
-        self.view.markdown(ids!(chat_content)).set_text(cx, &chat_text);
+        self.view.markdown(ids!(content_area.main_content.content.fm_page.chat_section.chat_scroll.chat_content)).set_text(cx, &chat_text);
 
         // Auto-scroll chat to bottom only when NEW messages arrive
         let chat_count = filtered_messages.len();
         if chat_count > self.last_chat_count {
-            self.view.view(ids!(chat_scroll)).set_scroll_pos(cx, DVec2 { x: 0.0, y: 1e10 });
+            self.view.view(ids!(content_area.main_content.content.fm_page.chat_section.chat_scroll)).set_scroll_pos(cx, DVec2 { x: 0.0, y: 1e10 });
             self.last_chat_count = chat_count;
         }
 
@@ -1509,7 +1678,7 @@ impl Dashboard {
         let node_filter = self.log_node_filter;
 
         // Get search text from input field
-        let search_text = self.view.text_input(ids!(log_search)).text().to_lowercase();
+        let search_text = self.view.text_input(ids!(content_area.log_panel.log_content_column.log_header.log_filter_row.log_search)).text().to_lowercase();
         let search_filter = search_text.trim();
 
         let filtered_logs: Vec<_> = state.log_messages.iter()
@@ -1570,13 +1739,13 @@ impl Dashboard {
                 .join("  \n")
         };
         // Update log content (using Markdown widget for emoji support)
-        self.view.markdown(ids!(log_content)).set_text(cx, &log_text);
+        self.view.markdown(ids!(content_area.log_panel.log_content_column.log_body.log_scroll.log_content)).set_text(cx, &log_text);
 
         // Only auto-scroll when NEW logs arrive (not on filter changes)
         // This allows users to scroll up and read old logs
         if log_count > self.last_log_count {
             self.last_log_count = log_count;
-            self.view.view(ids!(log_scroll)).set_scroll_pos(cx, DVec2 { x: 0.0, y: 1e10 });
+            self.view.view(ids!(content_area.log_panel.log_content_column.log_body.log_scroll)).set_scroll_pos(cx, DVec2 { x: 0.0, y: 1e10 });
         }
 
         // Update mic level LED meter from shared state
@@ -1590,7 +1759,7 @@ impl Dashboard {
     /// Handle send prompt button click
     fn on_send_prompt_clicked(&mut self, cx: &mut Cx) {
         // Get text from input widget, use default if empty
-        let input_text = self.view.text_input(ids!(prompt_input)).text();
+        let input_text = self.view.text_input(ids!(content_area.main_content.content.fm_page.prompt_section.prompt_input)).text();
         let text = if input_text.trim().is_empty() {
             "Let's start".to_string()
         } else {
@@ -1606,7 +1775,7 @@ impl Dashboard {
         }
 
         // Clear input field
-        self.view.text_input(ids!(prompt_input)).set_text(cx, "");
+        self.view.text_input(ids!(content_area.main_content.content.fm_page.prompt_section.prompt_input)).set_text(cx, "");
         self.prompt_text.clear();
     }
 
@@ -1632,7 +1801,7 @@ impl Dashboard {
         // Apply current filters to get the logs to copy
         let level_filter = self.log_level_filter;
         let node_filter = self.log_node_filter;
-        let search_text = self.view.text_input(ids!(log_search)).text().to_lowercase();
+        let search_text = self.view.text_input(ids!(content_area.log_panel.log_content_column.log_header.log_filter_row.log_search)).text().to_lowercase();
         let search_filter = search_text.trim();
 
         let filtered_logs: Vec<_> = state.log_messages.iter()
@@ -1696,74 +1865,64 @@ impl Dashboard {
         // Update panel width and button text
         if self.log_panel_collapsed {
             // Collapsed: narrow panel (just toggle button), show "<" to expand
-            self.view.view(ids!(log_panel)).apply_over(cx, live!{
+            self.view.view(ids!(content_area.log_panel)).apply_over(cx, live!{
                 width: 32
             });
-            self.view.view(ids!(splitter)).apply_over(cx, live!{
+            self.view.view(ids!(content_area.splitter)).apply_over(cx, live!{
                 width: 0
             });
-            self.view.view(ids!(log_content_column)).apply_over(cx, live!{
+            self.view.view(ids!(content_area.log_panel.log_content_column)).apply_over(cx, live!{
                 visible: false
             });
-            self.view.button(ids!(toggle_log_btn)).set_text(cx, "<");
+            self.view.button(ids!(content_area.log_panel.toggle_column.toggle_log_btn)).set_text(cx, "<");
         } else {
             // Expanded: restore to saved width, show ">" to collapse
             let width = self.log_panel_width;
-            self.view.view(ids!(log_panel)).apply_over(cx, live!{
+            self.view.view(ids!(content_area.log_panel)).apply_over(cx, live!{
                 width: (width)
             });
-            self.view.view(ids!(splitter)).apply_over(cx, live!{
+            self.view.view(ids!(content_area.splitter)).apply_over(cx, live!{
                 width: 6
             });
-            self.view.view(ids!(log_content_column)).apply_over(cx, live!{
+            self.view.view(ids!(content_area.log_panel.log_content_column)).apply_over(cx, live!{
                 visible: true
             });
-            self.view.button(ids!(toggle_log_btn)).set_text(cx, ">");
+            self.view.button(ids!(content_area.log_panel.toggle_column.toggle_log_btn)).set_text(cx, ">");
         }
 
         self.view.redraw(cx);
     }
 
-    /// Toggle sidebar visibility (pin/unpin)
+    /// Toggle sidebar visibility (click to show/hide)
     fn toggle_sidebar(&mut self, cx: &mut Cx) {
-        self.sidebar_pinned = !self.sidebar_pinned;
-        if self.sidebar_pinned {
-            self.show_sidebar(cx);
-        } else {
-            // If unpinning, check if we should still show due to hover
-            if !self.sidebar_hover_active && !self.sidebar_content_hover && !self.hover_zone_active {
-                self.hide_sidebar(cx);
-            }
-        }
-    }
-
-    /// Show sidebar
-    fn show_sidebar(&mut self, cx: &mut Cx) {
         if self.sidebar_collapsed {
+            // Show sidebar
             self.sidebar_collapsed = false;
-            // Set grace period to ignore the next few HoverOut events (layout shift causes false ones)
-            // Need enough to survive the flickering as mouse moves from trigger to sidebar content
-            self.sidebar_show_grace_period = 10;
             self.view.view(ids!(sidebar_zone.sidebar_content)).apply_over(cx, live!{
                 width: 234
             });
-            self.view.redraw(cx);
-        }
-    }
-
-    /// Hide sidebar (unless pinned)
-    fn hide_sidebar(&mut self, cx: &mut Cx) {
-        if self.sidebar_pinned {
-            return;
-        }
-        if !self.sidebar_collapsed {
+        } else {
+            // Hide sidebar
             self.sidebar_collapsed = true;
-            self.sidebar_content_hover = false;
             self.view.view(ids!(sidebar_zone.sidebar_content)).apply_over(cx, live!{
                 width: 0
             });
-            self.view.redraw(cx);
         }
+        self.view.redraw(cx);
+    }
+
+    /// Show FM page
+    fn show_fm_page(&mut self, cx: &mut Cx) {
+        self.view.view(ids!(content_area.main_content.content.fm_page)).apply_over(cx, live!{ visible: true });
+        self.view.view(ids!(content_area.main_content.content.app_page)).apply_over(cx, live!{ visible: false });
+        self.view.redraw(cx);
+    }
+
+    /// Show App page (blank)
+    fn show_app_page(&mut self, cx: &mut Cx) {
+        self.view.view(ids!(content_area.main_content.content.fm_page)).apply_over(cx, live!{ visible: false });
+        self.view.view(ids!(content_area.main_content.content.app_page)).apply_over(cx, live!{ visible: true });
+        self.view.redraw(cx);
     }
 
     /// Populate audio device dropdowns from cpal enumeration in shared state
@@ -1773,14 +1932,14 @@ impl Dashboard {
 
         // Update input device dropdown
         if !state.input_devices.is_empty() {
-            let input_dropdown = self.view.drop_down(ids!(input_device_dropdown));
+            let input_dropdown = self.view.drop_down(ids!(content_area.main_content.content.fm_page.audio_panel.input_device_dropdown));
             input_dropdown.set_labels(cx, state.input_devices.clone());
             input_dropdown.set_selected_item(cx, state.selected_input_device);
         }
 
         // Update output device dropdown
         if !state.output_devices.is_empty() {
-            let output_dropdown = self.view.drop_down(ids!(output_device_dropdown));
+            let output_dropdown = self.view.drop_down(ids!(content_area.main_content.content.fm_page.audio_panel.output_device_dropdown));
             output_dropdown.set_labels(cx, state.output_devices.clone());
             output_dropdown.set_selected_item(cx, state.selected_output_device);
         }
@@ -1804,11 +1963,11 @@ impl Dashboard {
             let color = if is_lit { lit_colors[i] } else { dim_color };
 
             let led_id = match i {
-                0 => ids!(mic_led_1),
-                1 => ids!(mic_led_2),
-                2 => ids!(mic_led_3),
-                3 => ids!(mic_led_4),
-                4 => ids!(mic_led_5),
+                0 => ids!(content_area.main_content.content.fm_page.audio_panel.mic_level_meter.mic_led_1),
+                1 => ids!(content_area.main_content.content.fm_page.audio_panel.mic_level_meter.mic_led_2),
+                2 => ids!(content_area.main_content.content.fm_page.audio_panel.mic_level_meter.mic_led_3),
+                3 => ids!(content_area.main_content.content.fm_page.audio_panel.mic_level_meter.mic_led_4),
+                4 => ids!(content_area.main_content.content.fm_page.audio_panel.mic_level_meter.mic_led_5),
                 _ => continue,
             };
 
@@ -1828,6 +1987,9 @@ impl Dashboard {
 pub struct App {
     #[live]
     ui: WidgetRef,
+
+    #[rust]
+    user_menu_open: bool,
 }
 
 impl LiveRegister for App {
@@ -1840,6 +2002,52 @@ impl LiveRegister for App {
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         self.ui.handle_event(cx, event, &mut Scope::empty());
+
+        // Handle user menu at App level (since user_menu is at Window level, not Dashboard level)
+        let user_btn = self.ui.view(ids!(user_btn_overlay));
+        match event.hits(cx, user_btn.area()) {
+            Hit::FingerDown(_) => {
+                self.user_menu_open = !self.user_menu_open;
+                self.ui.view(ids!(user_menu)).set_visible(cx, self.user_menu_open);
+                self.ui.redraw(cx);
+            }
+            _ => {}
+        }
+
+        // Handle user menu item clicks
+        let actions = match event {
+            Event::Actions(actions) => actions.as_slice(),
+            _ => &[],
+        };
+
+        if self.ui.button(ids!(user_menu.menu_profile_btn)).clicked(actions) {
+            self.user_menu_open = false;
+            self.ui.view(ids!(user_menu)).set_visible(cx, false);
+            self.ui.redraw(cx);
+        }
+        if self.ui.button(ids!(user_menu.menu_settings_btn)).clicked(actions) {
+            self.user_menu_open = false;
+            self.ui.view(ids!(user_menu)).set_visible(cx, false);
+            self.ui.redraw(cx);
+        }
+        if self.ui.button(ids!(user_menu.menu_logout_btn)).clicked(actions) {
+            self.user_menu_open = false;
+            self.ui.view(ids!(user_menu)).set_visible(cx, false);
+            self.ui.redraw(cx);
+        }
+
+        // Close menu when clicking outside - detect click on Dashboard body
+        if self.user_menu_open {
+            let body = self.ui.view(ids!(body));
+            match event.hits(cx, body.area()) {
+                Hit::FingerDown(_) => {
+                    self.user_menu_open = false;
+                    self.ui.view(ids!(user_menu)).set_visible(cx, false);
+                    self.ui.redraw(cx);
+                }
+                _ => {}
+            }
+        }
     }
 }
 
