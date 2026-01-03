@@ -14,6 +14,8 @@ live_design! {
         width: Fill, height: Fit
         padding: {top: 12, bottom: 12, left: 10, right: 10}
         margin: 0
+        align: {x: 0.0, y: 0.5}
+        icon_walk: {width: 16, height: 16, margin: {right: 10}}
 
         draw_bg: {
             instance hover: 0.0
@@ -29,11 +31,6 @@ live_design! {
                 );
                 sdf.box(2.0, 2.0, self.rect_size.x - 4.0, self.rect_size.y - 4.0, 6.0);
                 sdf.fill(color);
-                // Add left accent bar when selected
-                if self.selected > 0.5 {
-                    sdf.box(2.0, 2.0, 3.0, self.rect_size.y - 4.0, 1.0);
-                    sdf.fill(#3b82f6);
-                }
                 return sdf.result;
             }
         }
@@ -79,20 +76,13 @@ live_design! {
         }
 
         // Navigation buttons
-        conference_tab = <SidebarMenuButton> {
-            text: "Chat"
+        mofa_fm_tab = <SidebarMenuButton> {
+            text: "MoFA FM"
             draw_bg: { selected: 1.0 }
             draw_text: { color: #1e40af }
             draw_icon: {
-                svg_file: dep("crate://self/resources/icons/chat.svg")
+                svg_file: dep("crate://self/resources/icons/fm.svg")
                 color: #1e40af
-            }
-        }
-
-        mofa_fm_tab = <SidebarMenuButton> {
-            text: "FM"
-            draw_icon: {
-                svg_file: dep("crate://self/resources/icons/radio.svg")
             }
         }
 
@@ -124,26 +114,26 @@ live_design! {
                 show_scroll_y: true
             }
 
-            app1_btn = <SidebarMenuButton> { text: "App 1" }
-            app2_btn = <SidebarMenuButton> { text: "App 2" }
-            app3_btn = <SidebarMenuButton> { text: "App 3" }
-            app4_btn = <SidebarMenuButton> { text: "App 4" }
-            app5_btn = <SidebarMenuButton> { text: "App 5" }
-            app6_btn = <SidebarMenuButton> { text: "App 6" }
-            app7_btn = <SidebarMenuButton> { text: "App 7" }
-            app8_btn = <SidebarMenuButton> { text: "App 8" }
-            app9_btn = <SidebarMenuButton> { text: "App 9" }
-            app10_btn = <SidebarMenuButton> { text: "App 10" }
-            app11_btn = <SidebarMenuButton> { text: "App 11" }
-            app12_btn = <SidebarMenuButton> { text: "App 12" }
-            app13_btn = <SidebarMenuButton> { text: "App 13" }
-            app14_btn = <SidebarMenuButton> { text: "App 14" }
-            app15_btn = <SidebarMenuButton> { text: "App 15" }
-            app16_btn = <SidebarMenuButton> { text: "App 16" }
-            app17_btn = <SidebarMenuButton> { text: "App 17" }
-            app18_btn = <SidebarMenuButton> { text: "App 18" }
-            app19_btn = <SidebarMenuButton> { text: "App 19" }
-            app20_btn = <SidebarMenuButton> { text: "App 20" }
+            app1_btn = <SidebarMenuButton> { text: "App 1", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app2_btn = <SidebarMenuButton> { text: "App 2", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app3_btn = <SidebarMenuButton> { text: "App 3", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app4_btn = <SidebarMenuButton> { text: "App 4", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app5_btn = <SidebarMenuButton> { text: "App 5", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app6_btn = <SidebarMenuButton> { text: "App 6", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app7_btn = <SidebarMenuButton> { text: "App 7", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app8_btn = <SidebarMenuButton> { text: "App 8", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app9_btn = <SidebarMenuButton> { text: "App 9", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app10_btn = <SidebarMenuButton> { text: "App 10", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app11_btn = <SidebarMenuButton> { text: "App 11", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app12_btn = <SidebarMenuButton> { text: "App 12", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app13_btn = <SidebarMenuButton> { text: "App 13", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app14_btn = <SidebarMenuButton> { text: "App 14", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app15_btn = <SidebarMenuButton> { text: "App 15", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app16_btn = <SidebarMenuButton> { text: "App 16", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app17_btn = <SidebarMenuButton> { text: "App 17", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app18_btn = <SidebarMenuButton> { text: "App 18", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app19_btn = <SidebarMenuButton> { text: "App 19", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
+            app20_btn = <SidebarMenuButton> { text: "App 20", draw_icon: { svg_file: dep("crate://self/resources/icons/app.svg") } }
         }
 
         // Divider before settings

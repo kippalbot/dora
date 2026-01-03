@@ -100,7 +100,7 @@ live_design! {
             }
 
             title = <Label> {
-                text: "MoFA FM"
+                text: "MoFA Desktop"
                 draw_text: {
                     color: (TEXT_PRIMARY)
                     text_style: <FONT_BOLD>{ font_size: 24.0 }
@@ -329,18 +329,39 @@ live_design! {
                 spacing: 16
                 align: {y: 0.5}
 
-                // Mic level meter with label
+                // Mic level meter with clickable mic icon
                 <View> {
                     width: Fit, height: Fit
                     flow: Right
                     spacing: 8
                     align: {y: 0.5}
 
-                    <Label> {
-                        text: "Mic"
-                        draw_text: {
-                            color: (TEXT_SECONDARY)
-                            text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                    mic_mute_btn = <View> {
+                        width: 18, height: 18
+                        flow: Overlay
+                        cursor: Hand
+
+                        mic_icon_on = <View> {
+                            width: 18, height: 18
+                            <Icon> {
+                                draw_icon: {
+                                    svg_file: dep("crate://self/resources/icons/mic.svg")
+                                    fn get_color(self) -> vec4 { return #64748b; }
+                                }
+                                icon_walk: {width: 18, height: 18}
+                            }
+                        }
+
+                        mic_icon_off = <View> {
+                            width: 18, height: 18
+                            visible: false
+                            <Icon> {
+                                draw_icon: {
+                                    svg_file: dep("crate://self/resources/icons/mic-off.svg")
+                                    fn get_color(self) -> vec4 { return #ef4444; }
+                                }
+                                icon_walk: {width: 18, height: 18}
+                            }
                         }
                     }
 
@@ -374,89 +395,53 @@ live_design! {
                     }
                 }
 
-                // Mic mute button - green when unmuted, red when muted, with mic icon
-                mic_mute_btn = <Button> {
-                    width: 48, height: 36
-                    align: {x: 0.5, y: 0.5}
-                    text: ""
-                    icon_walk: {width: 18, height: 18, margin: {left: 10, top: 0}}
-                    draw_icon: {
-                        svg_file: dep("crate://self/resources/icons/mic.svg")
-                        uniform color: #ffffff
-                        fn get_color(self) -> vec4 {
-                            return self.color;
-                        }
-                    }
-                    draw_bg: {
-                        instance hover: 0.0
-                        instance muted: 0.0
-                        uniform color_unmuted: #22c55e    // Green when unmuted
-                        uniform color_muted: #ef4444      // Red when muted
-                        uniform color_hover_unmuted: #16a34a
-                        uniform color_hover_muted: #dc2626
-                        border_radius: 4.0
-
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            let base = mix(self.color_unmuted, self.color_muted, self.muted);
-                            let hover_color = mix(self.color_hover_unmuted, self.color_hover_muted, self.muted);
-                            let color = mix(base, hover_color, self.hover);
-                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
-                            sdf.fill(color);
-                            return sdf.result;
-                        }
-                    }
-                    animator: {
-                        hover = {
-                            default: off
-                            off = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 0.0}} }
-                            on = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 1.0}} }
-                        }
-                    }
-                }
-
                 // Divider
                 <View> { width: 1, height: 24, show_bg: true, draw_bg: { color: #d1d5db } }
 
-                // AEC toggle - green and blinking when ON, gray when OFF (normal rectangular button)
-                aec_toggle_btn = <Button> {
-                    width: 48, height: 36
-                    text: "AEC"
-                    draw_text: {
-                        color: #ffffff
-                        text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-                        fn get_color(self) -> vec4 {
-                            return self.color;
-                        }
-                    }
+                // AEC toggle - white icon on neon green background when ON, gray when OFF
+                aec_toggle_btn = <View> {
+                    width: 32, height: 32
+                    flow: Overlay
+                    cursor: Hand
+                    show_bg: true
                     draw_bg: {
+                        instance blink: 0.0
                         instance enabled: 1.0
-                        instance hover: 0.0
-                        instance blink: 1.0
-                        uniform color_on: #22c55e
-                        uniform color_on_dim: #16a34a
-                        uniform color_off: #6b7280
-                        uniform color_hover_on: #15803d
-                        uniform color_hover_off: #4b5563
-                        border_radius: 4.0
-
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            // When enabled: blink between color_on and color_on_dim
-                            let on_color = mix(self.color_on_dim, self.color_on, self.blink);
-                            let base = mix(self.color_off, on_color, self.enabled);
-                            let hover_color = mix(self.color_hover_off, self.color_hover_on, self.enabled);
-                            let color = mix(base, hover_color, self.hover);
-                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
-                            sdf.fill(color);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                            // Neon green when enabled, gray when disabled
+                            let green = vec4(0.13, 0.77, 0.37, 1.0);
+                            let bright_green = vec4(0.2, 0.9, 0.5, 1.0);
+                            let gray = vec4(0.9, 0.91, 0.92, 1.0);
+                            let base = mix(gray, green, self.enabled);
+                            let col = mix(base, bright_green, self.blink * 0.5 * self.enabled);
+                            sdf.fill(col);
                             return sdf.result;
                         }
                     }
-                    animator: {
-                        hover = {
-                            default: off
-                            off = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 0.0}} }
-                            on = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 1.0}} }
+                    align: {x: 0.5, y: 0.5}
+
+                    aec_icon_on = <View> {
+                        width: Fit, height: Fit
+                        <Icon> {
+                            draw_icon: {
+                                svg_file: dep("crate://self/resources/icons/aec.svg")
+                                fn get_color(self) -> vec4 { return #ffffff; }
+                            }
+                            icon_walk: {width: 20, height: 20}
+                        }
+                    }
+
+                    aec_icon_off = <View> {
+                        width: Fit, height: Fit
+                        visible: false
+                        <Icon> {
+                            draw_icon: {
+                                svg_file: dep("crate://self/resources/icons/aec.svg")
+                                fn get_color(self) -> vec4 { return #6b7280; }
+                            }
+                            icon_walk: {width: 20, height: 20}
                         }
                     }
                 }
@@ -1121,6 +1106,33 @@ live_design! {
                     }
                 }
             }
+
+            // Invisible hover zone for sidebar trigger (hamburger button)
+            sidebar_trigger_overlay = <View> {
+                width: 40, height: 40
+                abs_pos: vec2(4.0, 74.0)
+                cursor: Hand
+            }
+
+            // Sidebar menu overlay - positioned below hamburger button
+            sidebar_menu_overlay = <View> {
+                width: 180, height: 700
+                abs_pos: vec2(0.0, 110.0)
+                visible: false
+                show_bg: true
+                draw_bg: {
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                        sdf.fill(#ffffff);
+                        sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                        sdf.stroke(#e2e8f0, 1.0);
+                        return sdf.result;
+                    }
+                }
+
+                sidebar_content = <Sidebar> {}
+            }
         }
     }
 }
@@ -1284,7 +1296,7 @@ impl Widget for Dashboard {
                     self.aec_blink_counter = 0;
                     self.aec_blink_state = !self.aec_blink_state;
                     let blink_val = if self.aec_blink_state { 1.0 } else { 0.6 };
-                    self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn)).apply_over(cx, live!{
+                    self.view.view(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn)).apply_over(cx, live!{
                         draw_bg: { blink: (blink_val) }
                     });
                 }
@@ -1303,64 +1315,37 @@ impl Widget for Dashboard {
             self.on_toggle_log_panel(cx);
         }
 
-        // Note: Sidebar hover handling is done at App level
+        // Note: Sidebar hover and click handling is done at App level (sidebar is overlay)
 
-        // Handle sidebar navigation button clicks
-        if self.view.button(ids!(sidebar_zone.sidebar_content.sidebar.mofa_fm_tab)).clicked(actions) {
-            self.show_fm_page(cx);
+        // Handle mic mute button click
+        let mic_btn = self.view.view(ids!(content_area.main_content.content.fm_page.audio_panel.mic_mute_btn));
+        match event.hits(cx, mic_btn.area()) {
+            Hit::FingerUp(_) => {
+                self.mic_muted = !self.mic_muted;
+                self.view.view(ids!(content_area.main_content.content.fm_page.audio_panel.mic_mute_btn.mic_icon_on))
+                    .set_visible(cx, !self.mic_muted);
+                self.view.view(ids!(content_area.main_content.content.fm_page.audio_panel.mic_mute_btn.mic_icon_off))
+                    .set_visible(cx, self.mic_muted);
+                self.view.redraw(cx);
+            }
+            _ => {}
         }
 
-        // Handle app button clicks (show blank app page)
-        let app_buttons = [
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app1_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app2_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app3_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app4_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app5_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app6_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app7_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app8_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app9_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app10_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app11_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app12_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app13_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app14_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app15_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app16_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app17_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app18_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app19_btn),
-            ids!(sidebar_zone.sidebar_content.sidebar.apps_scroll.app20_btn),
-        ];
-        for app_id in app_buttons {
-            if self.view.button(app_id).clicked(actions) {
-                self.show_app_page(cx);
-                break;
+        // Handle AEC toggle click
+        let aec_btn = self.view.view(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn));
+        match event.hits(cx, aec_btn.area()) {
+            Hit::FingerUp(_) => {
+                self.aec_enabled = !self.aec_enabled;
+                let enabled_val = if self.aec_enabled { 1.0 } else { 0.0 };
+                self.view.view(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn))
+                    .apply_over(cx, live!{ draw_bg: { enabled: (enabled_val) } });
+                self.view.view(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn.aec_icon_on))
+                    .set_visible(cx, self.aec_enabled);
+                self.view.view(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn.aec_icon_off))
+                    .set_visible(cx, !self.aec_enabled);
+                self.view.redraw(cx);
             }
-        }
-
-        // Handle audio control buttons
-        if self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.mic_mute_btn)).clicked(actions) {
-            self.mic_muted = !self.mic_muted;
-            let btn = self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.mic_mute_btn));
-            if self.mic_muted {
-                btn.apply_over(cx, live!{ draw_bg: { muted: 1.0 } });
-            } else {
-                btn.apply_over(cx, live!{ draw_bg: { muted: 0.0 } });
-            }
-            self.view.redraw(cx);
-        }
-
-        if self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn)).clicked(actions) {
-            self.aec_enabled = !self.aec_enabled;
-            let btn = self.view.button(ids!(content_area.main_content.content.fm_page.audio_panel.aec_toggle_btn));
-            if self.aec_enabled {
-                btn.apply_over(cx, live!{ draw_bg: { enabled: 1.0, blink: 1.0 } });
-            } else {
-                btn.apply_over(cx, live!{ draw_bg: { enabled: 0.0, blink: 1.0 } });
-            }
-            self.view.redraw(cx);
+            _ => {}
         }
 
         // Handle prompt section buttons
@@ -2040,16 +2025,16 @@ impl AppMain for App {
             }
         }
 
-        // Handle sidebar hover at App level
-        let sidebar_trigger = self.ui.view(ids!(body.sidebar_zone.fold_button_panel.sidebar_trigger));
-        let sidebar_content = self.ui.view(ids!(body.sidebar_zone.sidebar_content));
+        // Handle sidebar hover at App level (using overlay)
+        let sidebar_trigger = self.ui.view(ids!(sidebar_trigger_overlay));
+        let sidebar_menu = self.ui.view(ids!(sidebar_menu_overlay));
 
         // Show sidebar when hovering over trigger (hamburger button)
         match event.hits(cx, sidebar_trigger.area()) {
             Hit::FingerHoverIn(_) => {
                 if !self.sidebar_menu_open {
                     self.sidebar_menu_open = true;
-                    sidebar_content.apply_over(cx, live!{ width: 180 });
+                    sidebar_menu.set_visible(cx, true);
                     self.ui.redraw(cx);
                 }
             }
@@ -2060,7 +2045,7 @@ impl AppMain for App {
         if self.sidebar_menu_open {
             if let Event::MouseMove(mm) = event {
                 let trigger_rect = sidebar_trigger.area().rect(cx);
-                let sidebar_rect = sidebar_content.area().rect(cx);
+                let sidebar_rect = sidebar_menu.area().rect(cx);
 
                 // Check if mouse is in trigger area (with tolerance)
                 let in_trigger = mm.abs.x >= trigger_rect.pos.x - 5.0
@@ -2076,7 +2061,7 @@ impl AppMain for App {
 
                 if !in_trigger && !in_sidebar {
                     self.sidebar_menu_open = false;
-                    sidebar_content.apply_over(cx, live!{ width: 0 });
+                    sidebar_menu.set_visible(cx, false);
                     self.ui.redraw(cx);
                 }
             }
@@ -2102,6 +2087,56 @@ impl AppMain for App {
             self.user_menu_open = false;
             self.ui.view(ids!(user_menu)).set_visible(cx, false);
             self.ui.redraw(cx);
+        }
+
+        // Handle sidebar menu item clicks (sidebar is overlay at Window level)
+        if self.ui.button(ids!(sidebar_menu_overlay.sidebar_content.mofa_fm_tab)).clicked(actions) {
+            self.sidebar_menu_open = false;
+            self.ui.view(ids!(sidebar_menu_overlay)).set_visible(cx, false);
+            // Show FM page
+            self.ui.view(ids!(body.content_area.main_content.content.fm_page)).set_visible(cx, true);
+            self.ui.view(ids!(body.content_area.main_content.content.app_page)).set_visible(cx, false);
+            self.ui.redraw(cx);
+        }
+        if self.ui.button(ids!(sidebar_menu_overlay.sidebar_content.settings_tab)).clicked(actions) {
+            self.sidebar_menu_open = false;
+            self.ui.view(ids!(sidebar_menu_overlay)).set_visible(cx, false);
+            self.ui.redraw(cx);
+        }
+
+        // Handle sidebar app button clicks
+        let app_buttons = [
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app1_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app2_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app3_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app4_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app5_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app6_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app7_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app8_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app9_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app10_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app11_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app12_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app13_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app14_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app15_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app16_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app17_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app18_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app19_btn),
+            ids!(sidebar_menu_overlay.sidebar_content.apps_scroll.app20_btn),
+        ];
+        for app_id in app_buttons {
+            if self.ui.button(app_id).clicked(actions) {
+                self.sidebar_menu_open = false;
+                self.ui.view(ids!(sidebar_menu_overlay)).set_visible(cx, false);
+                // Show app page
+                self.ui.view(ids!(body.content_area.main_content.content.fm_page)).set_visible(cx, false);
+                self.ui.view(ids!(body.content_area.main_content.content.app_page)).set_visible(cx, true);
+                self.ui.redraw(cx);
+                break;
+            }
         }
     }
 }
