@@ -2003,15 +2003,46 @@ impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         self.ui.handle_event(cx, event, &mut Scope::empty());
 
-        // Handle user menu at App level (since user_menu is at Window level, not Dashboard level)
+        // Handle user menu hover at App level
         let user_btn = self.ui.view(ids!(user_btn_overlay));
+        let user_menu = self.ui.view(ids!(user_menu));
+
+        // Show menu when hovering over button
         match event.hits(cx, user_btn.area()) {
-            Hit::FingerDown(_) => {
-                self.user_menu_open = !self.user_menu_open;
-                self.ui.view(ids!(user_menu)).set_visible(cx, self.user_menu_open);
-                self.ui.redraw(cx);
+            Hit::FingerHoverIn(_) => {
+                if !self.user_menu_open {
+                    self.user_menu_open = true;
+                    user_menu.set_visible(cx, true);
+                    self.ui.redraw(cx);
+                }
             }
             _ => {}
+        }
+
+        // Hide menu when mouse moves away from both button and menu
+        if self.user_menu_open {
+            // Check if we need to close - only on MouseMove events
+            if let Event::MouseMove(mm) = event {
+                let btn_rect = user_btn.area().rect(cx);
+                let menu_rect = user_menu.area().rect(cx);
+
+                // Expand rects slightly for tolerance
+                let in_btn = mm.abs.x >= btn_rect.pos.x - 5.0
+                    && mm.abs.x <= btn_rect.pos.x + btn_rect.size.x + 5.0
+                    && mm.abs.y >= btn_rect.pos.y - 5.0
+                    && mm.abs.y <= btn_rect.pos.y + btn_rect.size.y + 10.0;
+
+                let in_menu = mm.abs.x >= menu_rect.pos.x - 5.0
+                    && mm.abs.x <= menu_rect.pos.x + menu_rect.size.x + 5.0
+                    && mm.abs.y >= menu_rect.pos.y - 5.0
+                    && mm.abs.y <= menu_rect.pos.y + menu_rect.size.y + 5.0;
+
+                if !in_btn && !in_menu {
+                    self.user_menu_open = false;
+                    user_menu.set_visible(cx, false);
+                    self.ui.redraw(cx);
+                }
+            }
         }
 
         // Handle user menu item clicks
@@ -2034,19 +2065,6 @@ impl AppMain for App {
             self.user_menu_open = false;
             self.ui.view(ids!(user_menu)).set_visible(cx, false);
             self.ui.redraw(cx);
-        }
-
-        // Close menu when clicking outside - detect click on Dashboard body
-        if self.user_menu_open {
-            let body = self.ui.view(ids!(body));
-            match event.hits(cx, body.area()) {
-                Hit::FingerDown(_) => {
-                    self.user_menu_open = false;
-                    self.ui.view(ids!(user_menu)).set_visible(cx, false);
-                    self.ui.redraw(cx);
-                }
-                _ => {}
-            }
         }
     }
 }
