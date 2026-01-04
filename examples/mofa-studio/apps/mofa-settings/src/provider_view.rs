@@ -8,10 +8,7 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    use mofa_widgets::theme::FONT_FAMILY;
-    use mofa_widgets::theme::FONT_REGULAR;
-    use mofa_widgets::theme::FONT_BOLD;
-    use mofa_widgets::theme::FONT_SEMIBOLD;
+    use mofa_widgets::theme::*;
 
     // Custom text input style
     SettingsTextInput = <TextInput> {
@@ -21,7 +18,7 @@ live_design! {
         draw_bg: {
             instance radius: 6.0
             instance border_width: 1.0
-            instance border_color: #cbd5e1
+            instance dark_mode: 0.0
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -32,37 +29,51 @@ live_design! {
                     self.rect_size.y - self.border_width * 2.0,
                     max(1.0, self.radius - self.border_width)
                 );
-                sdf.fill(#e2e8f0);
-                sdf.stroke(self.border_color, self.border_width);
+                let bg = mix((SLATE_200), (SLATE_700), self.dark_mode);
+                let border = mix((SLATE_300), (SLATE_600), self.dark_mode);
+                sdf.fill(bg);
+                sdf.stroke(border, self.border_width);
                 return sdf.result;
             }
         }
 
         draw_text: {
+            instance dark_mode: 0.0
             text_style: <FONT_REGULAR>{ font_size: 11.0 }
-            color: #1f2937
 
             fn get_color(self) -> vec4 {
-                return #1f2937;
-            }
-        }
-
-        // Empty/placeholder text styling
-        draw_label: {
-            text_style: <FONT_REGULAR>{ font_size: 11.0 }
-            color: #6b7280
-
-            fn get_color(self) -> vec4 {
-                return #6b7280;
+                return mix((TEXT_PRIMARY), (TEXT_PRIMARY_DARK), self.dark_mode);
             }
         }
 
         draw_selection: {
-            color: #bfdbfe
+            color: (BLUE_200)
         }
 
         draw_cursor: {
-            color: #3b82f6
+            color: (ACCENT_BLUE)
+        }
+    }
+
+    // Settings label with dark mode
+    SettingsLabel = <Label> {
+        draw_text: {
+            instance dark_mode: 0.0
+            text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
+            fn get_color(self) -> vec4 {
+                return mix((GRAY_700), (TEXT_PRIMARY_DARK), self.dark_mode);
+            }
+        }
+    }
+
+    // Settings hint label with dark mode
+    SettingsHint = <Label> {
+        draw_text: {
+            instance dark_mode: 0.0
+            text_style: <FONT_REGULAR>{ font_size: 10.0 }
+            fn get_color(self) -> vec4 {
+                return mix((GRAY_500), (TEXT_SECONDARY_DARK), self.dark_mode);
+            }
         }
     }
 
@@ -79,8 +90,8 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = mix(
-                    mix(#3b82f6, #2563ff, self.hover),
-                    #1d4fff,
+                    mix((ACCENT_BLUE), (BLUE_600), self.hover),
+                    (BLUE_700),
                     self.pressed
                 );
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.radius);
@@ -91,10 +102,10 @@ live_design! {
 
         draw_text: {
             text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-            color: #ffffff
+            color: (WHITE)
 
             fn get_color(self) -> vec4 {
-                return #ffffff;
+                return (WHITE);
             }
         }
 
@@ -114,23 +125,23 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = mix(
-                    mix(#fef2f2, #fee2e2, self.hover),
-                    #fecaca,
+                    mix((RED_50), (RED_100), self.hover),
+                    (RED_200),
                     self.pressed
                 );
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.radius);
                 sdf.fill(color);
-                sdf.stroke(#ef4444, 1.0);
+                sdf.stroke((ACCENT_RED), 1.0);
                 return sdf.result;
             }
         }
 
         draw_text: {
             text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-            color: #ef4444
+            color: (ACCENT_RED)
 
             fn get_color(self) -> vec4 {
-                return #ef4444;
+                return (ACCENT_RED);
             }
         }
 
@@ -151,11 +162,11 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let active_color = mix(
-                    mix(#10b981, #059669, self.hover),
-                    #047857,
+                    mix((EMERALD_500), (EMERALD_600), self.hover),
+                    (EMERALD_700),
                     self.pressed
                 );
-                let disabled_color = #d1d5db;
+                let disabled_color = (GRAY_300);
                 let color = mix(active_color, disabled_color, self.disabled);
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.radius);
                 sdf.fill(color);
@@ -165,10 +176,10 @@ live_design! {
 
         draw_text: {
             text_style: <FONT_SEMIBOLD>{ font_size: 10.0 }
-            color: #ffffff
+            color: (WHITE)
 
             fn get_color(self) -> vec4 {
-                return #ffffff;
+                return (WHITE);
             }
         }
 
@@ -197,12 +208,12 @@ live_design! {
 
                     // Outer circle
                     sdf.circle(center.x, center.y, radius);
-                    sdf.stroke(mix(#9ca3af, #3b82f6, self.selected), 1.5);
+                    sdf.stroke(mix((GRAY_400), (ACCENT_BLUE), self.selected), 1.5);
 
                     // Inner dot when selected
                     if self.selected > 0.5 {
                         sdf.circle(center.x, center.y, radius * 0.5);
-                        sdf.fill(#3b82f6);
+                        sdf.fill((ACCENT_BLUE));
                     }
 
                     return sdf.result;
@@ -213,7 +224,7 @@ live_design! {
         model_name = <Label> {
             text: "model-name"
             draw_text: {
-                color: #374151
+                color: (GRAY_700)
                 text_style: <FONT_REGULAR>{ font_size: 11.0 }
             }
         }
@@ -228,7 +239,10 @@ live_design! {
 
         show_bg: true
         draw_bg: {
-            color: #f8fafc
+            instance dark_mode: 0.0
+            fn get_color(self) -> vec4 {
+                return mix((SLATE_50), (SLATE_900), self.dark_mode);
+            }
         }
 
         // Header
@@ -241,8 +255,11 @@ live_design! {
             provider_name = <Label> {
                 text: "Select a Provider"
                 draw_text: {
-                    color: #1e293b
+                    instance dark_mode: 0.0
                     text_style: <FONT_BOLD>{ font_size: 20.0 }
+                    fn get_color(self) -> vec4 {
+                        return mix((SLATE_800), (TEXT_PRIMARY_DARK), self.dark_mode);
+                    }
                 }
             }
 
@@ -250,8 +267,11 @@ live_design! {
             status_label = <Label> {
                 text: ""
                 draw_text: {
-                    color: #6b7280
+                    instance dark_mode: 0.0
                     text_style: <FONT_REGULAR>{ font_size: 11.0 }
+                    fn get_color(self) -> vec4 {
+                        return mix((GRAY_500), (TEXT_SECONDARY_DARK), self.dark_mode);
+                    }
                 }
             }
         }
@@ -268,24 +288,16 @@ live_design! {
                 flow: Down
                 spacing: 6
 
-                <Label> {
+                host_label = <SettingsLabel> {
                     text: "API Host"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-                    }
                 }
 
                 api_host_input = <SettingsTextInput> {
                     empty_text: "https://api.example.com/v1"
                 }
 
-                <Label> {
+                host_hint = <SettingsHint> {
                     text: "The base URL for API requests"
-                    draw_text: {
-                        color: #6b7280
-                        text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                    }
                 }
             }
 
@@ -295,12 +307,8 @@ live_design! {
                 flow: Down
                 spacing: 6
 
-                <Label> {
+                key_label = <SettingsLabel> {
                     text: "API Key"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-                    }
                 }
 
                 api_key_input = <SettingsTextInput> {
@@ -308,12 +316,8 @@ live_design! {
                     is_password: true
                 }
 
-                <Label> {
+                key_hint = <SettingsHint> {
                     text: "Your API key (stored locally)"
-                    draw_text: {
-                        color: #6b7280
-                        text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                    }
                 }
             }
 
@@ -330,12 +334,8 @@ live_design! {
                     align: {y: 0.5}
                     spacing: 12
 
-                    <Label> {
+                    models_label = <SettingsLabel> {
                         text: "Available Models"
-                        draw_text: {
-                            color: #374151
-                            text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-                        }
                     }
 
                     <View> { width: Fill, height: 1 }
@@ -344,13 +344,9 @@ live_design! {
                 }
 
                 // Sync status message
-                sync_status = <Label> {
+                sync_status = <SettingsHint> {
                     width: Fill
                     text: ""
-                    draw_text: {
-                        color: #6b7280
-                        text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                    }
                 }
 
                 // Models list container (scrollable)
@@ -361,13 +357,9 @@ live_design! {
                     padding: {top: 4}
 
                     // Placeholder when no models
-                    no_models_label = <Label> {
+                    no_models_label = <SettingsHint> {
                         width: Fill
                         text: "Click 'Sync Models' to fetch available models"
-                        draw_text: {
-                            color: #9ca3af
-                            text_style: <FONT_REGULAR>{ font_size: 11.0 }
-                        }
                     }
 
                     // Dynamic model list using PortalList
@@ -408,19 +400,25 @@ live_design! {
                 align: {x: 0.5, y: 0.5}
                 spacing: 8
 
-                <Label> {
+                empty_title = <Label> {
                     text: "Select a Provider"
                     draw_text: {
-                        color: #94a3b8
+                        instance dark_mode: 0.0
                         text_style: <FONT_SEMIBOLD>{ font_size: 14.0 }
+                        fn get_color(self) -> vec4 {
+                            return mix((SLATE_400), (SLATE_500), self.dark_mode);
+                        }
                     }
                 }
 
-                <Label> {
+                empty_subtitle = <Label> {
                     text: "Choose a provider from the list to configure"
                     draw_text: {
-                        color: #cbd5e1
+                        instance dark_mode: 0.0
                         text_style: <FONT_REGULAR>{ font_size: 11.0 }
+                        fn get_color(self) -> vec4 {
+                            return mix((SLATE_300), (SLATE_600), self.dark_mode);
+                        }
                     }
                 }
             }
@@ -638,5 +636,62 @@ impl ProviderViewRef {
 
             (api_host, api_key)
         })
+    }
+
+    /// Update dark mode for this widget
+    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            // Main container background
+            inner.view.apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Header labels
+            inner.view.label(ids!(header.provider_name)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(header.status_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Host section
+            inner.view.label(ids!(content.host_section.host_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            // NOTE: TextInput apply_over causes "target class not found" errors
+            inner.view.label(ids!(content.host_section.host_hint)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Key section
+            inner.view.label(ids!(content.key_section.key_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            // NOTE: TextInput apply_over causes "target class not found" errors
+            inner.view.label(ids!(content.key_section.key_hint)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Models section
+            inner.view.label(ids!(content.models_section.models_header.models_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(content.models_section.sync_status)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(content.models_section.models_list_container.no_models_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Empty state labels
+            inner.view.label(ids!(empty_state.empty_title)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(empty_state.empty_subtitle)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            inner.view.redraw(cx);
+        }
     }
 }

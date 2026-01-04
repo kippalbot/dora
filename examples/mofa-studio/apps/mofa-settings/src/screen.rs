@@ -2,27 +2,29 @@
 
 use makepad_widgets::*;
 use crate::data::{Provider, ProviderId, Preferences};
-use crate::providers_panel::ProvidersPanelAction;
+use crate::providers_panel::{ProvidersPanelAction, ProvidersPanelWidgetExt};
+use crate::provider_view::ProviderViewWidgetExt;
 
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
 
-    use mofa_widgets::theme::FONT_FAMILY;
-    use mofa_widgets::theme::FONT_REGULAR;
-    use mofa_widgets::theme::FONT_BOLD;
+    use mofa_widgets::theme::*;
 
     use crate::providers_panel::ProvidersPanel;
     use crate::provider_view::ProviderView;
     use crate::add_provider_modal::AddProviderModal;
 
-    // Divider line
+    // Divider line with dark mode support
     VerticalDivider = <View> {
         width: 1, height: Fill
         show_bg: true
         draw_bg: {
-            color: #e5e7eb
+            instance dark_mode: 0.0
+            fn pixel(self) -> vec4 {
+                return mix((BORDER), (BORDER_DARK), self.dark_mode);
+            }
         }
     }
 
@@ -30,6 +32,13 @@ live_design! {
     pub SettingsScreen = {{SettingsScreen}} {
         width: Fill, height: Fill
         flow: Overlay
+        show_bg: true
+        draw_bg: {
+            instance dark_mode: 0.0
+            fn pixel(self) -> vec4 {
+                return mix((DARK_BG), (DARK_BG_DARK), self.dark_mode);
+            }
+        }
 
         // Main content
         content = <View> {
@@ -40,7 +49,7 @@ live_design! {
             providers_panel = <ProvidersPanel> {}
 
             // Divider
-            <VerticalDivider> {}
+            vertical_divider = <VerticalDivider> {}
 
             // Right panel - provider details
             provider_view = <ProviderView> {}
@@ -409,6 +418,31 @@ impl SettingsScreenRef {
     pub fn reload_preferences(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.preferences = Some(Preferences::load());
+            inner.view.redraw(cx);
+        }
+    }
+
+    /// Update dark mode for this screen
+    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            // Apply dark mode to screen background
+            inner.view.apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to vertical divider
+            inner.view.view(ids!(content.vertical_divider)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to providers panel
+            inner.view.providers_panel(ids!(content.providers_panel))
+                .update_dark_mode(cx, dark_mode);
+
+            // Apply dark mode to provider view
+            inner.view.provider_view(ids!(content.provider_view))
+                .update_dark_mode(cx, dark_mode);
+
             inner.view.redraw(cx);
         }
     }

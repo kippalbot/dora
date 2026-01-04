@@ -5,27 +5,31 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    // Font definitions for this widget
-    FONT_REGULAR = {
-        font_family: {
-            latin = font("crate://self/resources/Manrope-Regular.ttf", 0.0, 0.0),
-            chinese = font("crate://makepad-widgets/fonts/chinese_regular/resources/LXGWWenKaiRegular.ttf", 0.0, 0.0),
-            emoji = font("crate://makepad_fonts_emoji/resources/NotoColorEmoji.ttf", 0.0, 0.0),
-        }
-    }
-    FONT_BOLD = {
-        font_family: {
-            latin = font("crate://self/resources/Manrope-Bold.ttf", 0.0, 0.0),
-            chinese = font("crate://makepad-widgets/fonts/chinese_bold/resources/LXGWWenKaiBold.ttf", 0.0, 0.0),
-            emoji = font("crate://makepad_fonts_emoji/resources/NotoColorEmoji.ttf", 0.0, 0.0),
-        }
-    }
+    // Import fonts and colors from shared theme (single source of truth)
+    use mofa_widgets::theme::FONT_REGULAR;
+    use mofa_widgets::theme::FONT_BOLD;
+    use mofa_widgets::theme::SLATE_50;
+    use mofa_widgets::theme::SLATE_200;
+    use mofa_widgets::theme::SLATE_400;
+    use mofa_widgets::theme::SLATE_500;
+    use mofa_widgets::theme::SLATE_600;
+    use mofa_widgets::theme::SLATE_700;
+    use mofa_widgets::theme::SLATE_800;
+    use mofa_widgets::theme::SLATE_900;
+    use mofa_widgets::theme::BLUE_100;
+    use mofa_widgets::theme::BLUE_900;
+    use mofa_widgets::theme::DIVIDER;
+    use mofa_widgets::theme::DIVIDER_DARK;
+    use mofa_widgets::theme::AMBER_500;
+    use mofa_widgets::theme::INDIGO_500;
+    use mofa_widgets::theme::TEXT_PRIMARY_DARK;
+    use mofa_widgets::theme::TEXT_SECONDARY_DARK;
 
     // Chevron icon for expand/collapse
     ChevronRight = <Icon> {
         draw_icon: {
             svg_file: dep("crate://makepad-widgets/resources/icons/arrow.svg")
-            color: #94a3b8
+            color: (SLATE_400)
         }
         icon_walk: {width: 10, height: 10}
     }
@@ -34,7 +38,7 @@ live_design! {
     ChevronDown = <Icon> {
         draw_icon: {
             svg_file: dep("crate://makepad-widgets/resources/icons/arrow.svg")
-            color: #94a3b8
+            color: (SLATE_400)
             fn get_rotation_z(self) -> f64 {
                 return 90.0;
             }
@@ -42,24 +46,36 @@ live_design! {
         icon_walk: {width: 10, height: 10}
     }
 
-    // Custom sidebar button using Button instead of RadioButton - light theme
+    // Custom sidebar button using Button instead of RadioButton - with dark mode
     pub SidebarMenuButton = <Button> {
         width: Fill, height: Fit
-        padding: {top: 12, bottom: 12, left: 10, right: 10}
+        padding: {top: 12, bottom: 12, left: 12, right: 12}
         margin: 0
         align: {x: 0.0, y: 0.5}
-        icon_walk: {width: 16, height: 16, margin: {right: 10}}
+        icon_walk: {width: 20, height: 20, margin: {right: 12}}
 
         draw_bg: {
             instance hover: 0.0
             instance pressed: 0.0
             instance selected: 0.0
+            instance dark_mode: 0.0
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                // Light mode: SLATE_50 -> SLATE_200 (hover) -> BLUE_100 (selected)
+                // Dark mode: SLATE_800 -> SLATE_700 (hover) -> BLUE_900 (selected)
+                let light_normal = (SLATE_50);
+                let light_hover = (SLATE_200);
+                let light_selected = (BLUE_100);
+                let dark_normal = (SLATE_800);
+                let dark_hover = (SLATE_700);
+                let dark_selected = (BLUE_900);
+                let normal = mix(light_normal, dark_normal, self.dark_mode);
+                let hover_color = mix(light_hover, dark_hover, self.dark_mode);
+                let selected_color = mix(light_selected, dark_selected, self.dark_mode);
                 let color = mix(
-                    mix(#f8fafc, #e2e8f0, self.hover),
-                    #dbeafe,
+                    mix(normal, hover_color, self.hover),
+                    selected_color,
                     self.selected
                 );
                 sdf.box(2.0, 2.0, self.rect_size.x - 4.0, self.rect_size.y - 4.0, 6.0);
@@ -69,16 +85,18 @@ live_design! {
         }
 
         draw_text: {
-            text_style: <FONT_REGULAR>{ font_size: 9.0 }
-            color: #64748b
+            instance dark_mode: 0.0
+            text_style: <FONT_REGULAR>{ font_size: 12.0 }
 
             fn get_color(self) -> vec4 {
-                return #64748b;
+                return mix((SLATE_500), (SLATE_400), self.dark_mode);
             }
         }
 
         draw_icon: {
-            color: #64748b
+            fn get_color(self) -> vec4 {
+                return (SLATE_500);
+            }
         }
     }
 
@@ -95,10 +113,17 @@ live_design! {
             show_bg: true
             draw_bg: {
                 instance hover: 0.0
+                instance dark_mode: 0.0
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    let color = mix(#f8fafc, #e2e8f0, self.hover);
+                    let light_normal = (SLATE_50);
+                    let light_hover = (SLATE_200);
+                    let dark_normal = (SLATE_800);
+                    let dark_hover = (SLATE_700);
+                    let normal = mix(light_normal, dark_normal, self.dark_mode);
+                    let hover_color = mix(light_hover, dark_hover, self.dark_mode);
+                    let color = mix(normal, hover_color, self.hover);
                     sdf.box(2.0, 2.0, self.rect_size.x - 4.0, self.rect_size.y - 4.0, 6.0);
                     sdf.fill(color);
                     return sdf.result;
@@ -109,11 +134,11 @@ live_design! {
                 padding: {top: 12, bottom: 12, left: 10}
                 text: "Show More"
                 draw_text: {
-                    text_style: <FONT_REGULAR>{ font_size: 9.0 }
-                    color: #1e293b
+                    instance dark_mode: 0.0
+                    text_style: <FONT_REGULAR>{ font_size: 12.0 }
 
                     fn get_color(self) -> vec4 {
-                        return #1e293b;
+                        return mix((SLATE_800), (SLATE_200), self.dark_mode);
                     }
                 }
             }
@@ -123,17 +148,17 @@ live_design! {
             padding: {top: 12, bottom: 12, right: 10}
             text: ">"
             draw_text: {
-                text_style: <FONT_REGULAR>{ font_size: 11.0 }
-                color: #1e293b
+                instance dark_mode: 0.0
+                text_style: <FONT_REGULAR>{ font_size: 15.0 }
 
                 fn get_color(self) -> vec4 {
-                    return #1e293b;
+                    return mix((SLATE_800), (SLATE_200), self.dark_mode);
                 }
             }
         }
     }
 
-    // Main sidebar container - light theme with subtle rounded corners
+    // Main sidebar container - with dark mode support
     // Height is Fit so sidebar adapts to content (compact when collapsed)
     pub Sidebar = {{Sidebar}} {
         width: Fill, height: Fit
@@ -144,12 +169,15 @@ live_design! {
 
         show_bg: true
         draw_bg: {
+            instance dark_mode: 0.0
+
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
 
-                // Main rectangle with subtle rounded corners - light gray like user dropdown
+                // Main rectangle with subtle rounded corners
                 sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 4.0);
-                sdf.fill(#f8fafc);
+                let bg = mix((SLATE_50), (SLATE_800), self.dark_mode);
+                sdf.fill(bg);
 
                 return sdf.result;
             }
@@ -232,7 +260,7 @@ live_design! {
             width: Fill, height: 1
             margin: {top: 8, bottom: 8}
             show_bg: true
-            draw_bg: { color: #e2e8f0 }
+            draw_bg: { color: (DIVIDER) }
         }
 
         settings_tab = <SidebarMenuButton> {
@@ -249,6 +277,12 @@ pub enum SidebarSelection {
     MofaFM,
     App(usize),  // 1-20
     Settings,
+}
+
+#[derive(Clone, Debug, DefaultNone)]
+pub enum SidebarAction {
+    None,
+    ToggleTheme,
 }
 
 #[derive(Live, LiveHook, Widget)]
@@ -333,69 +367,41 @@ impl Widget for Sidebar {
             }
         }
 
-        // Handle app button clicks - use static ids! paths for correct resolution
-        // First 4 apps are directly in apps_scroll
-        if self.view.button(ids!(apps_scroll.app1_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(1));
+        // Handle app button clicks using macro to reduce repetition
+        macro_rules! handle_app_click {
+            ($self:expr, $cx:expr, $actions:expr, $($idx:expr => $path:expr),+ $(,)?) => {
+                $(
+                    if $self.view.button($path).clicked($actions) {
+                        $self.handle_selection($cx, SidebarSelection::App($idx));
+                    }
+                )+
+            };
         }
-        if self.view.button(ids!(apps_scroll.app2_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(2));
-        }
-        if self.view.button(ids!(apps_scroll.app3_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(3));
-        }
-        if self.view.button(ids!(apps_scroll.app4_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(4));
-        }
-        // Apps 5-20 are in the more_apps_section
-        if self.view.button(ids!(apps_scroll.more_apps_section.app5_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(5));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app6_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(6));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app7_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(7));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app8_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(8));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app9_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(9));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app10_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(10));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app11_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(11));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app12_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(12));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app13_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(13));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app14_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(14));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app15_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(15));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app16_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(16));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app17_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(17));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app18_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(18));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app19_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(19));
-        }
-        if self.view.button(ids!(apps_scroll.more_apps_section.app20_btn)).clicked(actions) {
-            self.handle_selection(cx, SidebarSelection::App(20));
-        }
+
+        handle_app_click!(self, cx, actions,
+            // Apps 1-4 are directly in apps_scroll
+            1 => ids!(apps_scroll.app1_btn),
+            2 => ids!(apps_scroll.app2_btn),
+            3 => ids!(apps_scroll.app3_btn),
+            4 => ids!(apps_scroll.app4_btn),
+            // Apps 5-20 are in more_apps_section
+            5 => ids!(apps_scroll.more_apps_section.app5_btn),
+            6 => ids!(apps_scroll.more_apps_section.app6_btn),
+            7 => ids!(apps_scroll.more_apps_section.app7_btn),
+            8 => ids!(apps_scroll.more_apps_section.app8_btn),
+            9 => ids!(apps_scroll.more_apps_section.app9_btn),
+            10 => ids!(apps_scroll.more_apps_section.app10_btn),
+            11 => ids!(apps_scroll.more_apps_section.app11_btn),
+            12 => ids!(apps_scroll.more_apps_section.app12_btn),
+            13 => ids!(apps_scroll.more_apps_section.app13_btn),
+            14 => ids!(apps_scroll.more_apps_section.app14_btn),
+            15 => ids!(apps_scroll.more_apps_section.app15_btn),
+            16 => ids!(apps_scroll.more_apps_section.app16_btn),
+            17 => ids!(apps_scroll.more_apps_section.app17_btn),
+            18 => ids!(apps_scroll.more_apps_section.app18_btn),
+            19 => ids!(apps_scroll.more_apps_section.app19_btn),
+            20 => ids!(apps_scroll.more_apps_section.app20_btn),
+        );
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -448,64 +454,79 @@ impl Sidebar {
     }
 
     fn clear_all_selections(&mut self, cx: &mut Cx) {
-        // Clear MoFA FM and Settings tabs
-        self.view.button(ids!(mofa_fm_tab)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(settings_tab)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        // Macro to clear selection on multiple buttons
+        macro_rules! clear_selection {
+            ($self:expr, $cx:expr, $($path:expr),+ $(,)?) => {
+                $( $self.view.button($path).apply_over($cx, live!{ draw_bg: { selected: 0.0 } }); )+
+            };
+        }
 
-        // Clear first 4 apps
-        self.view.button(ids!(apps_wrapper.apps_scroll.app1_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.app2_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.app3_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.app4_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        // Clear MoFA FM, Settings, and pinned app
+        clear_selection!(self, cx,
+            ids!(mofa_fm_tab),
+            ids!(settings_tab),
+            ids!(apps_wrapper.apps_scroll.pinned_app_btn)
+        );
 
-        // Clear apps 5-20 in more_apps_section
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app5_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app6_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app7_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app8_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app9_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app10_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app11_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app12_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app13_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app14_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app15_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app16_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app17_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app18_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app19_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
-        self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app20_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        // Clear apps 1-4
+        clear_selection!(self, cx,
+            ids!(apps_wrapper.apps_scroll.app1_btn),
+            ids!(apps_wrapper.apps_scroll.app2_btn),
+            ids!(apps_wrapper.apps_scroll.app3_btn),
+            ids!(apps_wrapper.apps_scroll.app4_btn)
+        );
 
-        // Clear pinned app button
-        self.view.button(ids!(apps_wrapper.apps_scroll.pinned_app_btn)).apply_over(cx, live!{ draw_bg: { selected: 0.0 } });
+        // Clear apps 5-20
+        clear_selection!(self, cx,
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app5_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app6_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app7_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app8_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app9_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app10_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app11_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app12_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app13_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app14_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app15_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app16_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app17_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app18_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app19_btn),
+            ids!(apps_wrapper.apps_scroll.more_apps_section.app20_btn)
+        );
+    }
+
+    /// Get the button path for an app index (used by set_app_button_selected)
+    fn get_app_button(&mut self, app_idx: usize) -> ButtonRef {
+        match app_idx {
+            1 => self.view.button(ids!(apps_wrapper.apps_scroll.app1_btn)),
+            2 => self.view.button(ids!(apps_wrapper.apps_scroll.app2_btn)),
+            3 => self.view.button(ids!(apps_wrapper.apps_scroll.app3_btn)),
+            4 => self.view.button(ids!(apps_wrapper.apps_scroll.app4_btn)),
+            5 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app5_btn)),
+            6 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app6_btn)),
+            7 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app7_btn)),
+            8 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app8_btn)),
+            9 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app9_btn)),
+            10 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app10_btn)),
+            11 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app11_btn)),
+            12 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app12_btn)),
+            13 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app13_btn)),
+            14 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app14_btn)),
+            15 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app15_btn)),
+            16 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app16_btn)),
+            17 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app17_btn)),
+            18 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app18_btn)),
+            19 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app19_btn)),
+            20 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app20_btn)),
+            _ => self.view.button(ids!(apps_wrapper.apps_scroll.app1_btn)), // fallback
+        }
     }
 
     fn set_app_button_selected(&mut self, cx: &mut Cx, app_idx: usize, selected: bool) {
         let selected_val = if selected { 1.0 } else { 0.0 };
-
-        match app_idx {
-            1 => self.view.button(ids!(apps_wrapper.apps_scroll.app1_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            2 => self.view.button(ids!(apps_wrapper.apps_scroll.app2_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            3 => self.view.button(ids!(apps_wrapper.apps_scroll.app3_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            4 => self.view.button(ids!(apps_wrapper.apps_scroll.app4_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            5 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app5_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            6 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app6_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            7 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app7_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            8 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app8_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            9 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app9_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            10 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app10_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            11 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app11_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            12 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app12_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            13 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app13_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            14 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app14_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            15 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app15_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            16 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app16_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            17 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app17_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            18 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app18_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            19 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app19_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            20 => self.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app20_btn)).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } }),
-            _ => {}
-        }
+        self.get_app_button(app_idx).apply_over(cx, live!{ draw_bg: { selected: (selected_val) } });
     }
 }
 
@@ -574,6 +595,130 @@ impl SidebarRef {
                     }
                 }
             }
+            inner.view.redraw(cx);
+        }
+    }
+
+    /// Update dark mode for this widget
+    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            // Sidebar background
+            inner.view.apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // MoFA FM tab
+            inner.view.button(ids!(mofa_fm_tab)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Settings tab
+            inner.view.button(ids!(settings_tab)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // App buttons (1-4) in apps_wrapper.apps_scroll
+            inner.view.button(ids!(apps_wrapper.apps_scroll.app1_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.app2_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.app3_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.app4_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.pinned_app_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Show more button components - use show_more_bg as the parent for accessing nested widgets
+            let show_more_bg = inner.view.view(ids!(apps_wrapper.apps_scroll.show_more_btn.show_more_bg));
+            show_more_bg.apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            show_more_bg.label(ids!(show_more_text)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(apps_wrapper.apps_scroll.show_more_btn.arrow_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // App buttons (5-20) in more_apps_section - always update so they're correct when expanded
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app5_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app6_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app7_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app8_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app9_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app10_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app11_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app12_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app13_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app14_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app15_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app16_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app17_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app18_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app19_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(apps_wrapper.apps_scroll.more_apps_section.app20_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
             inner.view.redraw(cx);
         }
     }

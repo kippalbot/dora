@@ -8,10 +8,7 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    use mofa_widgets::theme::FONT_FAMILY;
-    use mofa_widgets::theme::FONT_REGULAR;
-    use mofa_widgets::theme::FONT_BOLD;
-    use mofa_widgets::theme::FONT_SEMIBOLD;
+    use mofa_widgets::theme::*;
 
     ICO_OPENAI = dep("crate://self/resources/icons/openai.svg")
     ICO_DEEPSEEK = dep("crate://self/resources/icons/deepseek.svg")
@@ -27,10 +24,8 @@ live_design! {
             border_radius: 0
         }
         cursor: Hand
-
-        // Use same pattern as moly-ai - set color directly on view
+        flow: Right
         align: {x: 0.0, y: 0.5}
-        icon_walk: {width: 24, height: 24, margin: {right: 10}}
     }
 
     // Add provider button
@@ -41,36 +36,64 @@ live_design! {
         draw_bg: {
             instance hover: 0.0
             instance pressed: 0.0
+            instance dark_mode: 0.0
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                let color = mix(
-                    mix(#f8fafc, #f1f5f9, self.hover),
-                    #e2e8f0,
-                    self.pressed
-                );
+                let light_base = mix((SLATE_50), (HOVER_BG), self.hover);
+                let dark_base = mix((SLATE_800), (SLATE_700), self.hover);
+                let base = mix(light_base, dark_base, self.dark_mode);
+                let light_pressed = (SLATE_200);
+                let dark_pressed = (SLATE_600);
+                let pressed_color = mix(light_pressed, dark_pressed, self.dark_mode);
+                let color = mix(base, pressed_color, self.pressed);
                 sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, 0.0);
                 sdf.fill(color);
 
                 // Top border
+                let border = mix((BORDER), (BORDER_DARK), self.dark_mode);
                 sdf.box(0.0, 0.0, self.rect_size.x, 1.0, 0.0);
-                sdf.fill(#e5e7eb);
+                sdf.fill(border);
 
                 return sdf.result;
             }
         }
 
         draw_text: {
+            instance dark_mode: 0.0
             text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-            color: #3b82f6
 
             fn get_color(self) -> vec4 {
-                return #3b82f6;
+                return mix((ACCENT_BLUE), (ACCENT_BLUE_DARK), self.dark_mode);
             }
         }
 
         text: "+ Add Custom Provider"
     }
+
+    // Provider item - using RoundedView with manual hover via apply_over
+    ProviderItem = <RoundedView> {
+        width: Fill, height: Fit
+        padding: {left: 16, right: 16, top: 12, bottom: 12}
+        margin: 0
+        show_bg: true
+        draw_bg: {
+            border_radius: 0
+            color: (WHITE)
+        }
+        cursor: Hand
+        flow: Right
+        align: {x: 0.0, y: 0.5}
+    }
+
+    // Provider label
+    ProviderLabel = <Label> {
+        draw_text: {
+            color: (GRAY_700)
+            text_style: <FONT_REGULAR>{ font_size: 12.0 }
+        }
+    }
+
 
     // Providers panel - left side of settings
     pub ProvidersPanel = {{ProvidersPanel}} {
@@ -80,7 +103,10 @@ live_design! {
 
         show_bg: true
         draw_bg: {
-            color: #ffffff
+            instance dark_mode: 0.0
+            fn get_color(self) -> vec4 {
+                return mix((WHITE), (SLATE_800), self.dark_mode);
+            }
         }
 
         // Header
@@ -88,11 +114,14 @@ live_design! {
             width: Fill, height: Fit
             padding: {left: 16, right: 16, top: 16, bottom: 12}
 
-            <Label> {
+            header_label = <Label> {
                 text: "Providers"
                 draw_text: {
-                    color: #1e293b
+                    instance dark_mode: 0.0
                     text_style: <FONT_BOLD>{ font_size: 14.0 }
+                    fn get_color(self) -> vec4 {
+                        return mix((SLATE_800), (TEXT_PRIMARY_DARK), self.dark_mode);
+                    }
                 }
             }
         }
@@ -103,7 +132,7 @@ live_design! {
             flow: Down
             spacing: 0
 
-            openai_item = <ProviderItemBg> {
+            openai_item = <ProviderItem> {
                 <Icon> {
                     draw_icon: {
                         svg_file: (ICO_OPENAI)
@@ -111,16 +140,12 @@ live_design! {
                     }
                     icon_walk: {width: 24, height: 24, margin: {right: 10}}
                 }
-                <Label> {
+                openai_label = <ProviderLabel> {
                     text: "OpenAI"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_REGULAR>{ font_size: 12.0 }
-                    }
                 }
             }
 
-            deepseek_item = <ProviderItemBg> {
+            deepseek_item = <ProviderItem> {
                 <Icon> {
                     draw_icon: {
                         svg_file: (ICO_DEEPSEEK)
@@ -128,16 +153,12 @@ live_design! {
                     }
                     icon_walk: {width: 20, height: 20, margin: {right: 10}}
                 }
-                <Label> {
+                deepseek_label = <ProviderLabel> {
                     text: "DeepSeek"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_REGULAR>{ font_size: 12.0 }
-                    }
                 }
             }
 
-            alibaba_item = <ProviderItemBg> {
+            alibaba_item = <ProviderItem> {
                 <Icon> {
                     draw_icon: {
                         svg_file: (ICO_DEEPSEEK)
@@ -145,12 +166,8 @@ live_design! {
                     }
                     icon_walk: {width: 20, height: 20, margin: {right: 10}}
                 }
-                <Label> {
+                alibaba_label = <ProviderLabel> {
                     text: "Alibaba Cloud (Qwen)"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_REGULAR>{ font_size: 12.0 }
-                    }
                 }
             }
         }
@@ -176,6 +193,9 @@ pub struct ProvidersPanel {
 
     #[rust]
     selected_provider_id: Option<ProviderId>,
+
+    #[rust]
+    dark_mode: bool,
 }
 
 impl Widget for ProvidersPanel {
@@ -191,8 +211,12 @@ impl Widget for ProvidersPanel {
             ids!(list_container.alibaba_item),
         ];
 
-        // Handle hover effects using FingerHover events (must be before early return)
-        // Skip hover effect on selected item
+        // Colors based on dark mode
+        let normal_color = if self.dark_mode { "#1e293b" } else { "#ffffff" };
+        let hover_color = if self.dark_mode { "#334155" } else { "#f1f5f9" };
+        let selected_color = if self.dark_mode { "#1e3a5f" } else { "#dbeafe" };
+
+        // Handle hover effects using FingerHover events
         for item_id in &items {
             let item = self.view.view(item_id.clone());
             match event.hits(cx, item.area()) {
@@ -205,14 +229,22 @@ impl Widget for ProvidersPanel {
                         _ => false,
                     };
                     if !is_selected {
-                        self.view.view(item_id.clone()).apply_over(cx, live!{
-                            draw_bg: { color: #f1f5f9 }
-                        });
+                        if self.dark_mode {
+                            // SLATE_700 hover color in dark mode (#334155)
+                            self.view.view(item_id.clone()).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.2, 0.25, 0.33, 1.0)) }
+                            });
+                        } else {
+                            // SLATE_100 hover color in light mode (#f1f5f9)
+                            self.view.view(item_id.clone()).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.95, 0.96, 0.98, 1.0)) }
+                            });
+                        }
                         self.view.redraw(cx);
                     }
                 }
                 Hit::FingerHoverOut(_) => {
-                    // Only reset to white if not currently selected
+                    // Only reset if not currently selected
                     let is_selected = match self.selected_provider_id.as_ref().map(|id| id.as_str()) {
                         Some("openai") => item_id == &ids!(list_container.openai_item),
                         Some("deepseek") => item_id == &ids!(list_container.deepseek_item),
@@ -220,9 +252,17 @@ impl Widget for ProvidersPanel {
                         _ => false,
                     };
                     if !is_selected {
-                        self.view.view(item_id.clone()).apply_over(cx, live!{
-                            draw_bg: { color: #ffffff }
-                        });
+                        if self.dark_mode {
+                            // SLATE_800 normal color in dark mode (#1f293b)
+                            self.view.view(item_id.clone()).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.12, 0.16, 0.23, 1.0)) }
+                            });
+                        } else {
+                            // White (#ffffff)
+                            self.view.view(item_id.clone()).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(1.0, 1.0, 1.0, 1.0)) }
+                            });
+                        }
                         self.view.redraw(cx);
                     }
                 }
@@ -253,28 +293,56 @@ impl Widget for ProvidersPanel {
             // Only process if different from current selection
             if self.selected_provider_id.as_ref() != Some(&id) {
                 let selected = id.as_str();
-                // First reset all to white
+                // First reset all to normal
                 for item_id in &items {
-                    self.view.view(item_id.clone()).apply_over(cx, live!{
-                        draw_bg: { color: #ffffff }
-                    });
+                    if self.dark_mode {
+                        // Dark normal: #1f293b
+                        self.view.view(item_id.clone()).apply_over(cx, live!{
+                            draw_bg: { color: (vec4(0.12, 0.16, 0.23, 1.0)) }
+                        });
+                    } else {
+                        // Light normal: #ffffff
+                        self.view.view(item_id.clone()).apply_over(cx, live!{
+                            draw_bg: { color: (vec4(1.0, 1.0, 1.0, 1.0)) }
+                        });
+                    }
                 }
-                // Then set selected to blue
+                // Then set selected color
                 match selected {
                     "openai" => {
-                        self.view.view(ids!(list_container.openai_item)).apply_over(cx, live!{
-                            draw_bg: { color: #dbeafe }
-                        });
+                        if self.dark_mode {
+                            // Dark selected: #1f3a5f
+                            self.view.view(ids!(list_container.openai_item)).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.12, 0.23, 0.37, 1.0)) }
+                            });
+                        } else {
+                            // Light selected: #dbeafe
+                            self.view.view(ids!(list_container.openai_item)).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.86, 0.92, 1.0, 1.0)) }
+                            });
+                        }
                     }
                     "deepseek" => {
-                        self.view.view(ids!(list_container.deepseek_item)).apply_over(cx, live!{
-                            draw_bg: { color: #dbeafe }
-                        });
+                        if self.dark_mode {
+                            self.view.view(ids!(list_container.deepseek_item)).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.12, 0.23, 0.37, 1.0)) }
+                            });
+                        } else {
+                            self.view.view(ids!(list_container.deepseek_item)).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.86, 0.92, 1.0, 1.0)) }
+                            });
+                        }
                     }
                     "alibaba_cloud" => {
-                        self.view.view(ids!(list_container.alibaba_item)).apply_over(cx, live!{
-                            draw_bg: { color: #dbeafe }
-                        });
+                        if self.dark_mode {
+                            self.view.view(ids!(list_container.alibaba_item)).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.12, 0.23, 0.37, 1.0)) }
+                            });
+                        } else {
+                            self.view.view(ids!(list_container.alibaba_item)).apply_over(cx, live!{
+                                draw_bg: { color: (vec4(0.86, 0.92, 1.0, 1.0)) }
+                            });
+                        }
                     }
                     _ => {}
                 }
@@ -317,5 +385,93 @@ impl ProvidersPanelRef {
     /// Map button name to provider ID (legacy alias)
     pub fn button_to_provider_id(name: &str) -> Option<ProviderId> {
         Self::item_to_provider_id(name)
+    }
+
+    /// Update dark mode for this widget
+    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            // Store dark mode state for hover/selection logic
+            inner.dark_mode = dark_mode > 0.5;
+
+            // Panel background
+            inner.view.apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Header label
+            inner.view.label(ids!(header.header_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Provider items - apply background and text colors using vec4
+            // Colors: normal dark=#1f293b, normal light=#ffffff
+            //         selected dark=#1f3a5f, selected light=#dbeafe
+            //         text dark=#f1f5f9, text light=#374151
+            let selected = inner.selected_provider_id.as_ref().map(|id| id.as_str());
+            let is_dark = inner.dark_mode;
+
+            // Color constants as vec4
+            let dark_normal = vec4(0.12, 0.16, 0.23, 1.0);      // #1f293b
+            let light_normal = vec4(1.0, 1.0, 1.0, 1.0);        // #ffffff
+            let dark_selected = vec4(0.12, 0.23, 0.37, 1.0);    // #1f3a5f
+            let light_selected = vec4(0.86, 0.92, 1.0, 1.0);    // #dbeafe
+            let dark_text = vec4(0.95, 0.96, 0.98, 1.0);        // #f1f5f9
+            let light_text = vec4(0.22, 0.25, 0.32, 1.0);       // #374151
+
+            // OpenAI item
+            let is_openai_selected = selected == Some("openai");
+            if is_openai_selected && is_dark {
+                inner.view.view(ids!(list_container.openai_item)).apply_over(cx, live!{ draw_bg: { color: (dark_selected) } });
+            } else if is_openai_selected {
+                inner.view.view(ids!(list_container.openai_item)).apply_over(cx, live!{ draw_bg: { color: (light_selected) } });
+            } else if is_dark {
+                inner.view.view(ids!(list_container.openai_item)).apply_over(cx, live!{ draw_bg: { color: (dark_normal) } });
+            } else {
+                inner.view.view(ids!(list_container.openai_item)).apply_over(cx, live!{ draw_bg: { color: (light_normal) } });
+            }
+
+            // DeepSeek item
+            let is_deepseek_selected = selected == Some("deepseek");
+            if is_deepseek_selected && is_dark {
+                inner.view.view(ids!(list_container.deepseek_item)).apply_over(cx, live!{ draw_bg: { color: (dark_selected) } });
+            } else if is_deepseek_selected {
+                inner.view.view(ids!(list_container.deepseek_item)).apply_over(cx, live!{ draw_bg: { color: (light_selected) } });
+            } else if is_dark {
+                inner.view.view(ids!(list_container.deepseek_item)).apply_over(cx, live!{ draw_bg: { color: (dark_normal) } });
+            } else {
+                inner.view.view(ids!(list_container.deepseek_item)).apply_over(cx, live!{ draw_bg: { color: (light_normal) } });
+            }
+
+            // Alibaba item
+            let is_alibaba_selected = selected == Some("alibaba_cloud");
+            if is_alibaba_selected && is_dark {
+                inner.view.view(ids!(list_container.alibaba_item)).apply_over(cx, live!{ draw_bg: { color: (dark_selected) } });
+            } else if is_alibaba_selected {
+                inner.view.view(ids!(list_container.alibaba_item)).apply_over(cx, live!{ draw_bg: { color: (light_selected) } });
+            } else if is_dark {
+                inner.view.view(ids!(list_container.alibaba_item)).apply_over(cx, live!{ draw_bg: { color: (dark_normal) } });
+            } else {
+                inner.view.view(ids!(list_container.alibaba_item)).apply_over(cx, live!{ draw_bg: { color: (light_normal) } });
+            }
+
+            // Provider labels - update text colors
+            if is_dark {
+                inner.view.label(ids!(list_container.openai_item.openai_label)).apply_over(cx, live!{ draw_text: { color: (dark_text) } });
+                inner.view.label(ids!(list_container.deepseek_item.deepseek_label)).apply_over(cx, live!{ draw_text: { color: (dark_text) } });
+                inner.view.label(ids!(list_container.alibaba_item.alibaba_label)).apply_over(cx, live!{ draw_text: { color: (dark_text) } });
+            } else {
+                inner.view.label(ids!(list_container.openai_item.openai_label)).apply_over(cx, live!{ draw_text: { color: (light_text) } });
+                inner.view.label(ids!(list_container.deepseek_item.deepseek_label)).apply_over(cx, live!{ draw_text: { color: (light_text) } });
+                inner.view.label(ids!(list_container.alibaba_item.alibaba_label)).apply_over(cx, live!{ draw_text: { color: (light_text) } });
+            }
+
+            // Add button
+            inner.view.button(ids!(add_button)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            inner.view.redraw(cx);
+        }
     }
 }
