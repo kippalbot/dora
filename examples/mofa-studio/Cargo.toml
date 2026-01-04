@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "mofa-studio-shell",
+    "mofa-widgets",
+    "apps/*",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# Makepad UI framework
+makepad-widgets = { git = "https://github.com/wyeworks/makepad", rev = "b8b65f4fa" }
+
+# Audio
+cpal = "0.15"
+
+# Async runtime
+tokio = { version = "1", features = ["full", "sync"] }
+
+# Utilities
+parking_lot = "0.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+env_logger = "0.11"
+dirs = "5.0"
+sysinfo = "0.32"

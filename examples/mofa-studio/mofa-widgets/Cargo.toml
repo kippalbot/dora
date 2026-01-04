@@ -1,0 +1,11 @@
+[package]
+name = "mofa-widgets"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+makepad-widgets.workspace = true
+cpal.workspace = true
+parking_lot.workspace = true
+log.workspace = true
+crossbeam-channel = "0.5"

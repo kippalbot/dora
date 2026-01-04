@@ -1,0 +1,12 @@
+[package]
+name = "mofa-fm"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+makepad-widgets.workspace = true
+mofa-widgets = { path = "../../mofa-widgets" }
+parking_lot.workspace = true
+log.workspace = true
+sysinfo.workspace = true
+cpal.workspace = true
