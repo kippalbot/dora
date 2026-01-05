@@ -319,7 +319,7 @@ live_design! {
                         }
                     }
 
-                    // Sun icon (light mode)
+                    // Sun icon (light mode) - amber color
                     sun_icon = <View> {
                         width: 20, height: 20
                         show_bg: true
@@ -327,30 +327,31 @@ live_design! {
                             fn pixel(self) -> vec4 {
                                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                                 let c = self.rect_size * 0.5;
+                                let amber = vec4(0.961, 0.624, 0.043, 1.0);  // AMBER_500 #f59f0b
                                 // Sun circle
                                 sdf.circle(c.x, c.y, 4.0);
-                                sdf.fill(#f59e0b);
+                                sdf.fill(amber);
                                 // Sun rays
                                 let ray_len = 2.5;
                                 let ray_dist = 6.5;
                                 sdf.move_to(c.x, c.y - ray_dist);
                                 sdf.line_to(c.x, c.y - ray_dist - ray_len);
-                                sdf.stroke(#f59e0b, 1.5);
+                                sdf.stroke(amber, 1.5);
                                 sdf.move_to(c.x, c.y + ray_dist);
                                 sdf.line_to(c.x, c.y + ray_dist + ray_len);
-                                sdf.stroke(#f59e0b, 1.5);
+                                sdf.stroke(amber, 1.5);
                                 sdf.move_to(c.x - ray_dist, c.y);
                                 sdf.line_to(c.x - ray_dist - ray_len, c.y);
-                                sdf.stroke(#f59e0b, 1.5);
+                                sdf.stroke(amber, 1.5);
                                 sdf.move_to(c.x + ray_dist, c.y);
                                 sdf.line_to(c.x + ray_dist + ray_len, c.y);
-                                sdf.stroke(#f59e0b, 1.5);
+                                sdf.stroke(amber, 1.5);
                                 return sdf.result;
                             }
                         }
                     }
 
-                    // Moon icon (dark mode - hidden by default)
+                    // Moon icon (dark mode - hidden by default) - indigo color
                     moon_icon = <View> {
                         width: 20, height: 20
                         visible: false
@@ -359,10 +360,12 @@ live_design! {
                             fn pixel(self) -> vec4 {
                                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                                 let c = self.rect_size * 0.5;
+                                let indigo = vec4(0.388, 0.400, 0.945, 1.0);  // INDIGO_500 #6366f1
+                                let white = vec4(1.0, 1.0, 1.0, 1.0);
                                 sdf.circle(c.x, c.y, 6.0);
-                                sdf.fill(#6366f1);
+                                sdf.fill(indigo);
                                 sdf.circle(c.x + 3.5, c.y - 2.5, 4.5);
-                                sdf.fill(#ffffff);
+                                sdf.fill(white);
                                 return sdf.result;
                             }
                         }
@@ -1430,11 +1433,6 @@ impl App {
                     .update_dark_mode(cx, dm);
             }
         }
-    }
-
-    /// Get current dark mode state
-    pub fn is_dark_mode(&self) -> bool {
-        self.dark_mode
     }
 }
 

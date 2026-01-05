@@ -21,12 +21,13 @@ mofa-studio/
 ├── mofa-widgets/           # Shared reusable widgets (library)
 │   ├── src/
 │   │   ├── lib.rs          # Module exports and live_design registration
-│   │   ├── theme.rs        # Fonts and colors
-│   │   ├── participant_panel.rs  # Speaker status cards
-│   │   ├── log_panel.rs    # Scrollable log display
-│   │   ├── waveform_view.rs     # Audio visualization
-│   │   ├── led_gauge.rs    # LED bar indicator
-│   │   └── audio_player.rs # Audio playback
+│   │   ├── theme.rs        # Fonts, colors (light/dark), base styles
+│   │   ├── app_trait.rs    # MofaApp trait, AppInfo, AppRegistry
+│   │   ├── participant_panel.rs  # Speaker status with waveform
+│   │   ├── waveform_view.rs     # FFT-style audio visualization
+│   │   ├── log_panel.rs    # Markdown log display
+│   │   ├── led_gauge.rs    # Buffer/level gauge
+│   │   └── audio_player.rs # Audio playback engine
 │   └── resources/
 │       └── fonts/          # Manrope font files
 ├── mofa-studio-shell/      # Main shell application (binary)
@@ -108,6 +109,50 @@ mofa-widgets (library)
 ```
 
 ## Architecture Principles
+
+### Plugin System: MofaApp Trait
+
+Apps implement the `MofaApp` trait for standardized registration:
+
+```rust
+// mofa-widgets/src/app_trait.rs
+pub trait MofaApp {
+    fn info() -> AppInfo where Self: Sized;  // Metadata
+    fn live_design(cx: &mut Cx);             // Widget registration
+}
+
+pub struct AppInfo {
+    pub name: &'static str,        // Display name
+    pub id: &'static str,          // Unique ID
+    pub description: &'static str, // Description
+}
+
+pub struct AppRegistry {
+    apps: Vec<AppInfo>,  // Runtime app metadata
+}
+```
+
+**Usage in Apps:**
+```rust
+impl MofaApp for MoFaFMApp {
+    fn info() -> AppInfo {
+        AppInfo { name: "MoFA FM", id: "mofa-fm", description: "..." }
+    }
+    fn live_design(cx: &mut Cx) { screen::live_design(cx); }
+}
+```
+
+**Usage in Shell:**
+```rust
+impl LiveRegister for App {
+    fn live_register(cx: &mut Cx) {
+        <MoFaFMApp as MofaApp>::live_design(cx);
+    }
+}
+```
+
+> **Note**: Widget types still require compile-time imports due to Makepad's `live_design!` macro.
+> The trait provides standardized metadata and registration, not runtime loading.
 
 ### Core Principle: Black-Box Apps
 
@@ -238,8 +283,13 @@ pub struct App {
     #[rust] sidebar_menu_open: bool,
 
     // Tab system
-    #[rust] open_tabs: Vec<String>,      // "profile", "settings"
-    #[rust] active_tab: Option<String>,
+    #[rust] open_tabs: Vec<TabId>,       // TabId::Profile, TabId::Settings
+    #[rust] active_tab: Option<TabId>,
+
+    // Dark mode theming
+    #[rust] dark_mode: bool,             // Current theme state
+    #[rust] dark_mode_anim: f64,         // Animation progress (0.0-1.0)
+    #[rust] dark_mode_animating: bool,   // Animation in progress
 
     // Responsive layout
     #[rust] last_window_size: DVec2,
@@ -248,8 +298,42 @@ pub struct App {
     #[rust] sidebar_animating: bool,
     #[rust] sidebar_animation_start: f64,
     #[rust] sidebar_slide_in: bool,
+
+    // App registry
+    #[rust] app_registry: AppRegistry,   // Registered apps metadata
+}
+
+// Type-safe tab identifiers (replaces magic strings)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TabId {
+    Profile,
+    Settings,
 }
 ```
+
+### State Management Pattern: Shell Coordinator
+
+> **Note**: Traditional centralized state (Redux/Zustand) is NOT feasible in Makepad.
+> See `STATE_MANAGEMENT_ANALYSIS.md` for detailed analysis.
+
+**Recommended pattern**: Shell owns shared state, propagates via WidgetRef methods:
+
+```rust
+impl App {
+    fn notify_dark_mode_change(&mut self, cx: &mut Cx, dark_mode: f64) {
+        // Propagate to all apps via their Ref methods
+        self.ui.mo_fa_fmscreen(ids!(fm_page)).update_dark_mode(cx, dark_mode);
+        self.ui.settings_screen(ids!(settings_page)).update_dark_mode(cx, dark_mode);
+    }
+}
+```
+
+| What Works | What Doesn't |
+|------------|--------------|
+| Shell owns state | Redux Store<T> |
+| WidgetRef methods | Arc<Mutex<T>> |
+| Event propagation | Context/Provider |
+| File persistence | Zustand hooks |
 
 ### Sidebar State (sidebar.rs)
 ```rust
@@ -324,24 +408,56 @@ FONT_BOLD       // Titles
 ```
 
 ### Color Palette
-```rust
-// Background colors
-DARK_BG = #f5f7fa        // Page background (light gray)
-PANEL_BG = #ffffff       // Card/panel background (white)
 
-// Accent colors
+#### Light Mode (Default)
+```rust
+DARK_BG = #f5f7fa        // Page background
+PANEL_BG = #ffffff       // Card/panel background
 ACCENT_BLUE = #3b82f6    // Primary action
 ACCENT_GREEN = #10b981   // Success/active
+TEXT_PRIMARY = #1f2937   // Main text
+TEXT_SECONDARY = #6b7280 // Muted text
+BORDER = #e5e7eb         // Border color
+HOVER_BG = #f1f5f9       // Hover background
+```
 
-// Text colors
-TEXT_PRIMARY = #1f2937   // Main text (dark gray)
-TEXT_SECONDARY = #6b7280 // Muted text (medium gray)
+#### Dark Mode
+```rust
+DARK_BG_DARK = #0f172a       // Page background (dark)
+PANEL_BG_DARK = #1f293b      // Card/panel background (dark)
+ACCENT_BLUE_DARK = #60a5fa   // Primary action (brighter)
+TEXT_PRIMARY_DARK = #f1f5f9  // Main text (dark)
+TEXT_SECONDARY_DARK = #94a3b8 // Muted text (dark)
+BORDER_DARK = #334155        // Border color (dark)
+HOVER_BG_DARK = #334155      // Hover background (dark)
+```
 
-// UI colors
-Border: #e2e8f0, #e5e7eb
-Hover: #f1f5f9
-Selected: #dbeafe (light blue)
-Status: Green #22c55e, Yellow #f59e0b, Red #ef4444
+### Dark Mode Implementation
+
+Widgets use `instance dark_mode` with shader `mix()`:
+
+```rust
+draw_bg: {
+    instance dark_mode: 0.0  // 0.0=light, 1.0=dark
+    fn get_color(self) -> vec4 {
+        return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+    }
+}
+```
+
+**Important**: Theme constants work in `live_design!{}` but NOT in shader `fn pixel()`.
+Use `vec4()` literals for colors inside shader functions.
+
+### Runtime Color Updates
+
+**Hex colors do NOT work in `apply_over()`!** Use `vec4()`:
+
+```rust
+// ❌ Fails
+self.view.apply_over(cx, live!{ draw_bg: { color: #1f293b } });
+
+// ✅ Works
+self.view.apply_over(cx, live!{ draw_bg: { color: (vec4(0.12, 0.16, 0.23, 1.0)) } });
 ```
 
 ## Data Models
@@ -596,8 +712,23 @@ if self.view.view(ids!(my_view)).finger_up(actions).is_some() {
 ## Statistics
 
 - **Total Crates**: 5 (1 binary, 4 libraries)
-- **Total Lines**: ~6,000 lines of Rust
+- **Total Lines**: ~6,500 lines of Rust
 - **Apps**: 2 (mofa-fm, mofa-settings)
-- **Shared Widgets**: 7 reusable components
+- **Shared Widgets**: 7 reusable components (fully documented)
+- **Theme Colors**: 60+ (light/dark variants)
 - **Default Window**: 1400x900 pixels
 - **Sidebar Width**: 180 pixels
+
+## Related Documents
+
+| Document | Description |
+|----------|-------------|
+| `APP_DEVELOPMENT_GUIDE.md` | Step-by-step guide for creating apps |
+| `STATE_MANAGEMENT_ANALYSIS.md` | Why Redux/Zustand don't work in Makepad |
+| `CHECKLIST.md` | Master refactoring checklist (P0-P3) |
+| `mofa-widgets/src/*.rs` | Widget rustdoc with usage examples |
+
+---
+
+*Last Updated: 2026-01-04*
+*Refactoring Complete: P0, P1, P2, P3*

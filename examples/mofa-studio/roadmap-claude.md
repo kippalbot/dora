@@ -6,38 +6,31 @@
 
 The mofa-studio project (~7,845 lines across 27 files) has a clean workspace structure but exhibits **significant architectural issues** that will impede future expansion.
 
-**Expansion Feasibility Score: 3/10**
+**P0 Status: ✅ ALL COMPLETE** (Code duplication, Font consolidation, Timer management, Debug cleanup, API fixes)
+
+**Expansion Feasibility Score: 3/10** (will improve after P1)
 
 | Aspect | Score | Notes |
 |--------|-------|-------|
 | Add new app | 2/10 | Requires 6+ file edits |
 | Add new widget | 6/10 | mofa-widgets is reusable |
-| Change theme | 2/10 | Colors scattered in 50+ places |
+| Change theme | 4/10 | Fonts consolidated ✅, colors still scattered |
 | Add new tab | 3/10 | Hardcoded for 2 tabs |
 | Modify app UI | 4/10 | Shell coupling makes it fragile |
 
 ---
 
-## Critical Issues
+## Critical Issues (P0 - All Resolved)
 
-### 1. Severe Code Duplication (~800+ lines)
+### 1. Severe Code Duplication (~800+ lines) ✅ RESOLVED
 
-| Component | Files | Impact |
+| Component | Files | Status |
 |-----------|-------|--------|
-| Font definitions | 4 identical copies | `theme.rs`, `app.rs`, `sidebar.rs`, `screen.rs` |
-| ParticipantPanel | 2 identical copies | `mofa-widgets` + `mofa-studio-shell/widgets` |
-| LogPanel | 2 identical copies | Same as above |
+| Font definitions | Was 4 copies | ✅ Now single source in `theme.rs` |
+| ParticipantPanel | Was 2 copies | ✅ Deleted duplicate from shell |
+| LogPanel | Was 2 copies | ✅ Deleted duplicate from shell |
 
-```rust
-// This exact block appears in 4 different files:
-FONT_REGULAR = {
-    font_family: {
-        latin = font("crate://self/resources/Manrope-Regular.ttf", ...),
-        chinese = font("crate://makepad-widgets/fonts/..."),
-        emoji = font("crate://makepad_fonts_emoji/resources/..."),
-    }
-}
-```
+**Solution:** Deleted `participant_panel.rs` and `log_panel.rs` from shell, all imports now use `mofa_widgets::`
 
 ### 2. Hardcoded 20-App Limit
 
@@ -56,7 +49,73 @@ if self.view.button(ids!(apps_scroll.app2_btn)).clicked(actions) {
 
 Adding app 21 requires editing 3+ files.
 
-### 3. Shell Tightly Coupled to App Internals
+### 3. Timer Resource Management ✅ RESOLVED
+
+**Location:** `apps/mofa-fm/src/screen.rs`
+
+**Original Issue:**
+Timers (`audio_timer`, `aec_timer`) continue running when FM page is hidden.
+
+**Research Findings (Makepad API Analysis):**
+- Makepad's `LiveHook` trait has NO cleanup/destroy methods
+- Makepad's `Widget` trait has NO cleanup/destroy methods
+- When widgets become invisible, they persist with all state (including timers)
+- `Drop` cannot help because widgets aren't dropped when hidden
+- Ironfish (Makepad's flagship app) uses Animator system, not interval timers
+
+**Makepad Timer API:**
+```rust
+cx.start_interval(duration: f64) -> Timer  // Create repeating timer
+cx.start_timeout(duration: f64) -> Timer   // Create one-shot timer
+cx.stop_timer(timer: Timer)                // Stop a timer
+```
+
+**Solution Implemented:**
+1. Added `stop_timers()` and `start_timers()` methods to `MoFaFMScreenRef`
+2. Exported `MoFaFMScreenWidgetRefExt` from `mofa-fm/lib.rs`
+3. Updated shell's `app.rs` to call these methods on visibility changes:
+   - Stop timers when FM page becomes hidden (settings, apps, overlays)
+   - Start timers when FM page becomes visible
+4. **Converted AEC blink to shader animation** - eliminated `aec_timer` entirely
+
+```rust
+// In app.rs - when hiding FM page:
+self.ui.mo_fa_fmscreen(ids!(...fm_page)).stop_timers(cx);
+
+// In app.rs - when showing FM page:
+self.ui.mo_fa_fmscreen(ids!(...fm_page)).start_timers(cx);
+```
+
+**AEC Shader Animation** (eliminated timer):
+```glsl
+// GPU-driven blink - no Rust timer needed!
+let blink = step(0.0, sin(self.time * 2.0)) * self.enabled;
+```
+
+**Key Insight:** This is the correct pattern for Makepad timer management.
+- Use timers for external data polling (mic level)
+- Use shader `self.time` for visual animations (AEC blink)
+
+### 3.1 Makepad API Compatibility Fixes ✅ RESOLVED
+
+Fixed runtime `live_design!` errors from API mismatches:
+
+| File | Field | Issue | Fix |
+|------|-------|-------|-----|
+| `mofa-fm/screen.rs` | `draw_select` | Doesn't exist on TextInput | Changed to `draw_selection` |
+| `mofa-fm/screen.rs` | `icon_walk` | Doesn't exist on DropDown | Removed |
+| `mofa-settings/providers_panel.rs` | `icon_walk` | Doesn't exist on RoundedView | Removed |
+| `mofa-settings/provider_view.rs` | `draw_label` | Doesn't exist on TextInput | Removed |
+| `mofa-settings/*.rs` | `FONT_FAMILY` | Doesn't exist in theme | Removed import |
+
+**Makepad Widget Field Reference:**
+- `TextInput`: `draw_text`, `draw_selection`, `draw_cursor`, `draw_bg`
+- `DropDown`: `draw_bg`, `draw_text` (NO icon support)
+- `Button`: `draw_bg`, `draw_icon`, `icon_walk`
+- `Icon`: `draw_icon`, `icon_walk`
+- `RoundedView`: `draw_bg` (layout widget, NO icon)
+
+### 4. Shell Tightly Coupled to App Internals
 
 The shell directly accesses 7 levels deep into app widget hierarchies:
 
@@ -73,7 +132,7 @@ If `MoFaFMScreen` changes its internal layout, the **shell breaks**.
 
 ## High Severity Issues
 
-### 4. Monolithic Event Handler (227 lines)
+### 5. Monolithic Event Handler (227 lines)
 
 `App::handle_event()` handles everything in one method:
 - Window resize
@@ -85,7 +144,7 @@ If `MoFaFMScreen` changes its internal layout, the **shell breaks**.
 
 **Violates Single Responsibility Principle.**
 
-### 5. Adding New Apps Requires 6+ File Edits
+### 6. Adding New Apps Requires 6+ File Edits
 
 To add a new app, you must edit:
 1. Create `apps/new-app/` crate
@@ -98,7 +157,7 @@ To add a new app, you must edit:
 
 **Not a scalable plugin architecture.**
 
-### 6. Tab System Hardcoded for 2 Tabs
+### 7. Tab System Hardcoded for 2 Tabs
 
 ```rust
 // Comment explicitly says:
@@ -112,7 +171,7 @@ No extension mechanism for additional tabs.
 
 ## Medium Severity Issues
 
-### 7. Scattered State Management
+### 8. Scattered State Management
 
 Each component manages state independently:
 - `MoFaFMScreen`: log_panel_collapsed, audio_devices, splitter_dragging
@@ -121,7 +180,7 @@ Each component manages state independently:
 
 **No centralized state store.** If components need to communicate, they can't.
 
-### 8. Unused Dead Code
+### 9. Unused Dead Code
 
 ```rust
 // lib.rs - never called anywhere
@@ -132,7 +191,7 @@ pub fn create_shared_state() -> SharedStateRef {
 
 SharedStateRef exists but is never instantiated or used.
 
-### 9. Magic Strings for Tab IDs
+### 10. Magic Strings for Tab IDs
 
 ```rust
 self.open_or_switch_tab(cx, "profile");   // String literal
@@ -158,19 +217,49 @@ Type-unsafe, error-prone.
 
 ## Summary Table: All Issues
 
-| Category | Issue | Severity | Location |
-|----------|-------|----------|----------|
-| Code Quality | Font duplication | CRITICAL | ~30 lines x 4 files |
-| Code Quality | ParticipantPanel duplication | CRITICAL | ~150 lines x 2 files |
-| Code Quality | LogPanel duplication | CRITICAL | ~68 lines x 2 files |
-| Scalability | Hardcoded 20-app limit | HIGH | sidebar.rs, app.rs |
-| Scalability | Apps require shell edits | HIGH | 6 files to modify |
-| Coupling | Shell accesses app internals | HIGH | app.rs lines 837-856 |
-| Event Handling | 227-line monolithic handle_event | HIGH | app.rs lines 638-865 |
-| State Management | Scattered, uncoordinated state | MEDIUM | All widget files |
-| Code Quality | Hardcoded view paths | MEDIUM | 49 uses of ids!() |
-| Code Quality | Manual hover detection | MEDIUM | app.rs lines 693-744 |
-| Code Quality | Unused dead code | LOW | lib.rs create_shared_state |
+| # | Category | Issue | Severity | Location |
+|---|----------|-------|----------|----------|
+| 1 | Code Quality | Font duplication | CRITICAL | ~30 lines x 4 files |
+| 2 | Code Quality | ParticipantPanel duplication | CRITICAL | ~150 lines x 2 files |
+| 2 | Code Quality | LogPanel duplication | CRITICAL | ~68 lines x 2 files |
+| 3 | Memory | **Timer memory leak** | CRITICAL | mofa-fm/src/screen.rs |
+| 4 | Scalability | Hardcoded 20-app limit | HIGH | sidebar.rs, app.rs |
+| 5 | Scalability | Apps require shell edits | HIGH | 6 files to modify |
+| 6 | Coupling | Shell accesses app internals | HIGH | app.rs lines 837-856 |
+| 7 | Event Handling | 227-line monolithic handle_event | HIGH | app.rs lines 638-865 |
+| 8 | State Management | Scattered, uncoordinated state | MEDIUM | All widget files |
+| 9 | Code Quality | Hardcoded view paths | MEDIUM | 49 uses of ids!() |
+| 10 | Code Quality | Manual hover detection | MEDIUM | app.rs lines 693-744 |
+| 11 | Code Quality | Unused dead code | LOW | lib.rs create_shared_state |
+| 12 | Code Quality | Debug println! statements | LOW | Multiple files |
+| 13 | Code Quality | Naming inconsistency | LOW | snake_case vs camelCase |
+
+---
+
+## Cross-References
+
+This roadmap is part of a three-document analysis:
+
+| Document | Focus | Best For |
+|----------|-------|----------|
+| **roadmap-claude.md** (this) | Architectural evidence | Understanding WHY problems exist |
+| **roadmap-m2.md** | Tactical bug fixes | Quick wins and immediate fixes |
+| **roadmap-glm.md** | Strategic planning | Long-term roadmap with grades |
+
+### Key Items from Other Roadmaps
+
+**From roadmap-m2.md:**
+- Timer memory leak fix (added to this document)
+- Debug println! removal (~15 statements)
+- Naming convention standardization
+- Conditional debug logging macro
+
+**From roadmap-glm.md:**
+- Overall grade: C+ (68/100)
+- Testing infrastructure plans (0% → 70% coverage)
+- Widget library expansion (buttons, inputs, layouts)
+- Risk assessment for each refactoring phase
+- Tooling recommendations (ripgrep, cargo-audit, mdbook)
 
 ---
 

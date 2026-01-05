@@ -13,6 +13,9 @@ pub struct Preferences {
     pub default_chat_provider: Option<ProviderId>,
     pub default_tts_provider: Option<ProviderId>,
     pub default_asr_provider: Option<ProviderId>,
+    /// Dark mode preference (true = dark, false = light)
+    #[serde(default)]
+    pub dark_mode: bool,
 }
 
 impl Preferences {

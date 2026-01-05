@@ -9,8 +9,13 @@ live_design! {
     use link::widgets::*;
     use mofa_widgets::theme::*;
 
-    PANEL_BG = #ffffff
+    // Local layout constants (colors imported from theme)
     HERO_RADIUS = 4.0
+
+    // Dark mode colors
+    use mofa_widgets::theme::PANEL_BG_DARK;
+    use mofa_widgets::theme::TEXT_PRIMARY_DARK;
+    use mofa_widgets::theme::TEXT_SECONDARY_DARK;
 
     // Icons
     ICO_START = dep("crate://self/resources/icons/start.svg")
@@ -21,7 +26,7 @@ live_design! {
         width: Fill, height: 22
         text: "Connected"
         draw_text: {
-            color: #ffffff
+            color: (WHITE)
             text_style: <FONT_SEMIBOLD>{ font_size: 10.0 }
             text_wrap: Word
             fn get_color(self) -> vec4 {
@@ -97,7 +102,7 @@ live_design! {
         width: 10, height: 10
         show_bg: true
         draw_bg: {
-            color: #9ca3af
+            color: (GRAY_400)
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -190,12 +195,37 @@ live_design! {
         width: Fill, height: Fill
         padding: { left: 12, right: 12, top: 8, bottom: 8 }
         draw_bg: {
-            color: (PANEL_BG)
+            instance dark_mode: 0.0
             border_radius: (HERO_RADIUS)
+            fn get_color(self) -> vec4 {
+                return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+            }
         }
         flow: Down
         spacing: 4
         align: {x: 0.0, y: 0.0}
+    }
+
+    // Status label with dark mode support
+    StatusLabel = <Label> {
+        draw_text: {
+            instance dark_mode: 0.0
+            text_style: <FONT_MEDIUM>{ font_size: 10.0 }
+            fn get_color(self) -> vec4 {
+                return mix((GRAY_700), (TEXT_SECONDARY_DARK), self.dark_mode);
+            }
+        }
+    }
+
+    // Percentage label with dark mode support
+    PctLabel = <Label> {
+        draw_text: {
+            instance dark_mode: 0.0
+            text_style: <FONT_REGULAR>{ font_size: 10.0 }
+            fn get_color(self) -> vec4 {
+                return mix((GRAY_500), (TEXT_SECONDARY_DARK), self.dark_mode);
+            }
+        }
     }
 
     pub MofaHero = {{MofaHero}} {
@@ -208,8 +238,11 @@ live_design! {
             width: Fill, height: Fill
             padding: { left: 12, right: 12, top: 8, bottom: 8 }
             draw_bg: {
-                color: (PANEL_BG)
+                instance dark_mode: 0.0
                 border_radius: (HERO_RADIUS)
+                fn get_color(self) -> vec4 {
+                    return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                }
             }
             flow: Down
             spacing: 4
@@ -223,12 +256,8 @@ live_design! {
                 align: {x: 0.5, y: 0.5}
                 cursor: Hand
 
-                action_start_label = <Label> {
+                action_start_label = <StatusLabel> {
                     text: "Start MoFA"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_MEDIUM>{ font_size: 10.0 }
-                    }
                 }
 
                 start_btn = <View> {
@@ -255,12 +284,8 @@ live_design! {
                 align: {x: 0.5, y: 0.5}
                 cursor: Hand
 
-                action_stop_label = <Label> {
+                action_stop_label = <StatusLabel> {
                     text: "Stop MoFA"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_MEDIUM>{ font_size: 10.0 }
-                    }
                 }
 
                 stop_btn = <View> {
@@ -288,12 +313,8 @@ live_design! {
                 align: {x: 0.0, y: 0.5}
 
                 connection_dot = <ConnectionDot> {}
-                <Label> {
+                dataflow_label = <StatusLabel> {
                     text: "Dataflow"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_MEDIUM>{ font_size: 10.0 }
-                    }
                 }
             }
 
@@ -317,23 +338,15 @@ live_design! {
                 align: {x: 0.0, y: 0.5}
 
                 buffer_dot = <StatusDot> {}
-                <Label> {
+                buffer_label = <StatusLabel> {
                     text: "Audio Buffer"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_MEDIUM>{ font_size: 10.0 }
-                    }
                 }
             }
 
             buffer_gauge = <LedGauge> {}
 
-            buffer_pct = <Label> {
+            buffer_pct = <PctLabel> {
                 text: "0%"
-                draw_text: {
-                    color: #6b7280
-                    text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                }
             }
         }
 
@@ -346,23 +359,15 @@ live_design! {
                 align: {x: 0.0, y: 0.5}
 
                 cpu_dot = <StatusDot> {}
-                <Label> {
+                cpu_label = <StatusLabel> {
                     text: "CPU"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_MEDIUM>{ font_size: 10.0 }
-                    }
                 }
             }
 
             cpu_gauge = <LedGauge> {}
 
-            cpu_pct = <Label> {
+            cpu_pct = <PctLabel> {
                 text: "0%"
-                draw_text: {
-                    color: #6b7280
-                    text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                }
             }
         }
 
@@ -375,23 +380,15 @@ live_design! {
                 align: {x: 0.0, y: 0.5}
 
                 memory_dot = <StatusDot> {}
-                <Label> {
+                memory_label = <StatusLabel> {
                     text: "Memory"
-                    draw_text: {
-                        color: #374151
-                        text_style: <FONT_MEDIUM>{ font_size: 10.0 }
-                    }
                 }
             }
 
             memory_gauge = <LedGauge> {}
 
-            memory_pct = <Label> {
+            memory_pct = <PctLabel> {
                 text: "0%"
-                draw_text: {
-                    color: #6b7280
-                    text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                }
             }
         }
     }
@@ -654,6 +651,65 @@ impl MofaHeroRef {
     pub fn set_connection_status(&self, cx: &mut Cx, status: ConnectionStatus) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_connection_status(cx, status);
+        }
+    }
+
+    /// Update dark mode for this widget
+    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            // Action section
+            inner.view.view(ids!(action_section)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(action_section.start_view.action_start_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(action_section.stop_view.action_stop_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Connection section
+            inner.view.view(ids!(connection_section)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(connection_section.dataflow_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Buffer section
+            inner.view.view(ids!(buffer_section)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(buffer_section.buffer_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(buffer_section.buffer_pct)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // CPU section
+            inner.view.view(ids!(cpu_section)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(cpu_section.cpu_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(cpu_section.cpu_pct)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Memory section
+            inner.view.view(ids!(memory_section)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(memory_section.memory_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(memory_section.memory_pct)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            inner.view.redraw(cx);
         }
     }
 }

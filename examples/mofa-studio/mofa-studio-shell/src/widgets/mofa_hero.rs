@@ -7,16 +7,11 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    // Font definitions for this widget
-    FONT_SEMIBOLD = {
-        font_family: {
-            latin = font("crate://self/resources/Manrope-SemiBold.ttf", 0.0, 0.0),
-            chinese = font("crate://makepad-widgets/fonts/chinese_bold/resources/LXGWWenKaiBold.ttf", 0.0, 0.0),
-            emoji = font("crate://makepad_fonts_emoji/resources/NotoColorEmoji.ttf", 0.0, 0.0),
-        }
-    }
+    // Import from shared theme (single source of truth)
+    use mofa_widgets::theme::*;
 
-    PANEL_BG = #f0f0f5
+    // Local panel background (slightly darker than WHITE for contrast)
+    HERO_PANEL_BG = (GRAY_100)
 
     // Icons
     ICO_START = dep("crate://self/resources/icons/start.svg")
@@ -73,9 +68,9 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
 
-                // Light background
+                // Light background (GRAY_200)
                 sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
-                sdf.fill(#e5e7eb);
+                sdf.fill((GRAY_200));
 
                 let num_segs = 10.0;
                 let gap = 2.0;
@@ -148,7 +143,7 @@ live_design! {
         align: {x: 0.5, y: 0.5}
         text: "Ready"
         draw_text: {
-            color: #ffffff
+            color: (WHITE)
             text_style: <FONT_SEMIBOLD>{ font_size: 10.0 }
             fn get_color(self) -> vec4 {
                 return self.color;
@@ -183,7 +178,7 @@ live_design! {
         width: 150, height: Fill
         padding: 6
         draw_bg: {
-            color: (PANEL_BG)
+            color: (HERO_PANEL_BG)
             border_radius: 2.0
         }
         flow: Down
@@ -201,7 +196,7 @@ live_design! {
             width: 150, height: Fill
             padding: 6
             draw_bg: {
-                color: (PANEL_BG)
+                color: (HERO_PANEL_BG)
                 border_radius: 2.0
             }
             flow: Down
@@ -219,7 +214,7 @@ live_design! {
                 action_start_label = <Label> {
                     text: "Start MoFA"
                     draw_text: {
-                        color: #374151
+                        color: (GRAY_700)
                         text_style: { font_size: 10.0 }
                     }
                 }
@@ -251,7 +246,7 @@ live_design! {
                 action_stop_label = <Label> {
                     text: "Stop MoFA"
                     draw_text: {
-                        color: #374151
+                        color: (GRAY_700)
                         text_style: { font_size: 10.0 }
                     }
                 }
@@ -284,7 +279,7 @@ live_design! {
                     width: 10, height: 10
                     show_bg: true
                     draw_bg: {
-                        color: #9ca3af
+                        color: (GRAY_400)
 
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -300,7 +295,7 @@ live_design! {
                 connection_label = <Label> {
                     text: "Dataflow"
                     draw_text: {
-                        color: #374151
+                        color: (GRAY_700)
                         text_style: { font_size: 10.0 }
                     }
                 }
@@ -316,7 +311,7 @@ live_design! {
             <Label> {
                 text: " "
                 draw_text: {
-                    color: #374151
+                    color: (GRAY_700)
                     text_style: { font_size: 10.0 }
                 }
             }
@@ -335,7 +330,7 @@ live_design! {
                 buffer_label = <Label> {
                     text: "Audio Buffer"
                     draw_text: {
-                        color: #374151
+                        color: (GRAY_700)
                         text_style: { font_size: 10.0 }
                     }
                 }
@@ -346,7 +341,7 @@ live_design! {
             buffer_pct_label = <Label> {
                 text: "0%"
                 draw_text: {
-                    color: #374151
+                    color: (GRAY_700)
                     text_style: { font_size: 10.0 }
                 }
             }
@@ -365,7 +360,7 @@ live_design! {
                 cpu_label = <Label> {
                     text: "CPU"
                     draw_text: {
-                        color: #374151
+                        color: (GRAY_700)
                         text_style: { font_size: 10.0 }
                     }
                 }
@@ -376,7 +371,7 @@ live_design! {
             cpu_pct_label = <Label> {
                 text: "0%"
                 draw_text: {
-                    color: #374151
+                    color: (GRAY_700)
                     text_style: { font_size: 10.0 }
                 }
             }
@@ -395,7 +390,7 @@ live_design! {
                 memory_label = <Label> {
                     text: "Memory"
                     draw_text: {
-                        color: #374151
+                        color: (GRAY_700)
                         text_style: { font_size: 10.0 }
                     }
                 }
@@ -406,7 +401,7 @@ live_design! {
             memory_pct_label = <Label> {
                 text: "0%"
                 draw_text: {
-                    color: #374151
+                    color: (GRAY_700)
                     text_style: { font_size: 10.0 }
                 }
             }

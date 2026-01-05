@@ -1,4 +1,80 @@
-//! Participant Panel Widget - Shows status of each conference participant
+//! # Participant Panel Widget
+//!
+//! A composite widget showing participant status in voice chat/conference applications.
+//! Combines a status indicator, name label, and 8-band audio waveform visualization.
+//!
+//! ## Features
+//!
+//! - **Status Indicator**: Colored dot showing participant state (waiting/speaking/error)
+//! - **Name Label**: Participant name with dark mode support
+//! - **Audio Waveform**: 8-band rainbow equalizer with level bar background
+//!
+//! ## Usage
+//!
+//! ```rust,ignore
+//! live_design! {
+//!     use mofa_widgets::participant_panel::ParticipantPanel;
+//!
+//!     MyScreen = <View> {
+//!         participant = <ParticipantPanel> {
+//!             // Optional: set dark mode
+//!             draw_bg: { dark_mode: 0.0 }
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Updating at Runtime
+//!
+//! ### Status Indicator
+//!
+//! The status indicator supports 3 states:
+//! - `0.0` = Blue (waiting/idle)
+//! - `1.0` = Green (speaking)
+//! - `2.0` = Red (error)
+//!
+//! ```rust,ignore
+//! // Set status to "speaking"
+//! self.view.view(ids!(participant.header.indicator)).apply_over(cx, live!{
+//!     draw_bg: { status: 1.0 }
+//! });
+//! ```
+//!
+//! ### Waveform Levels
+//!
+//! Update the 8 frequency bands (band0-band7) with values from 0.0 to 1.0:
+//!
+//! ```rust,ignore
+//! self.view.view(ids!(participant.waveform)).apply_over(cx, live!{
+//!     draw_bg: {
+//!         active: 1.0,  // Enable waveform display
+//!         level: 0.5,   // Background level bar (0.0-1.0)
+//!         band0: 0.3,
+//!         band1: 0.5,
+//!         band2: 0.8,
+//!         // ... band3 through band7
+//!     }
+//! });
+//! ```
+//!
+//! ### Dark Mode
+//!
+//! Use the `update_dark_mode` method on the widget ref:
+//!
+//! ```rust,ignore
+//! self.ui.participant_panel(ids!(my_participant))
+//!     .update_dark_mode(cx, 1.0);  // 0.0=light, 1.0=dark
+//! ```
+//!
+//! ## Instance Variables
+//!
+//! | Variable | Widget | Range | Description |
+//! |----------|--------|-------|-------------|
+//! | `status` | StatusIndicator | 0/1/2 | Blue/Green/Red indicator |
+//! | `dark_mode` | ParticipantPanel | 0.0-1.0 | Theme switching |
+//! | `level` | ParticipantWaveform | 0.0-1.0 | Background level bar |
+//! | `active` | ParticipantWaveform | 0/1 | Show/hide waveform bars |
+//! | `band0`-`band7` | ParticipantWaveform | 0.0-1.0 | Frequency band levels |
 
 use makepad_widgets::*;
 
@@ -7,8 +83,16 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    PANEL_BG = #f5f5f8
-    TEXT_PRIMARY = #1f2937
+    // Import colors from theme (single source of truth)
+    use crate::theme::PANEL_BG;
+    use crate::theme::PANEL_BG_DARK;
+    use crate::theme::TEXT_PRIMARY;
+    use crate::theme::TEXT_PRIMARY_DARK;
+    use crate::theme::ACCENT_BLUE;
+    use crate::theme::GREEN_500;
+    use crate::theme::ACCENT_RED;
+    use crate::theme::GRAY_200;
+    use crate::theme::SLATE_600;
 
     // Status indicator with 3 states: 0=idle(blue), 1=speaking(green), 2=error(red)
     StatusIndicator = <View> {
@@ -27,11 +111,11 @@ live_design! {
                 // Blue=waiting, Green=speaking, Red=error
                 let color = vec4(0.0, 0.0, 0.0, 1.0);
                 if self.status < 0.5 {
-                    color = #3b82f6;  // Blue - waiting
+                    color = (ACCENT_BLUE);  // Blue - waiting
                 } else if self.status < 1.5 {
-                    color = #22c55e;  // Green - speaking
+                    color = (GREEN_500);  // Green - speaking
                 } else {
-                    color = #ef4444;  // Red - error
+                    color = (ACCENT_RED);  // Red - error
                 }
                 sdf.fill(color);
 
@@ -47,6 +131,7 @@ live_design! {
         draw_bg: {
             instance level: 0.0  // 0.0 - 1.0 for background level bar
             instance active: 0.0  // 0=inactive, 1=active
+            instance dark_mode: 0.0
             instance band0: 0.0
             instance band1: 0.0
             instance band2: 0.0
@@ -59,9 +144,10 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
 
-                // Light background
+                // Background adapts to dark mode
+                let bg = mix((GRAY_200), (SLATE_600), self.dark_mode);
                 sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
-                sdf.fill(#e8e8ec);
+                sdf.fill(bg);
 
                 // Background level bar (behind waveform)
                 let level_width = self.rect_size.x * self.level;
@@ -200,8 +286,11 @@ live_design! {
         width: Fill, height: Fit
         padding: 6
         draw_bg: {
-            color: (PANEL_BG)
+            instance dark_mode: 0.0
             border_radius: 2.0
+            fn get_color(self) -> vec4 {
+                return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+            }
         }
         flow: Down
         spacing: 4
@@ -218,8 +307,11 @@ live_design! {
             name_label = <Label> {
                 text: "Participant"
                 draw_text: {
-                    color: (TEXT_PRIMARY)
+                    instance dark_mode: 0.0
                     text_style: { font_size: 11.0 }
+                    fn get_color(self) -> vec4 {
+                        return mix((TEXT_PRIMARY), (TEXT_PRIMARY_DARK), self.dark_mode);
+                    }
                 }
             }
         }
@@ -242,5 +334,29 @@ impl Widget for ParticipantPanel {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl ParticipantPanelRef {
+    /// Update dark mode for this widget
+    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            // Panel background
+            inner.view.apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Name label
+            inner.view.label(ids!(header.name_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Waveform background
+            inner.view.view(ids!(waveform)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            inner.view.redraw(cx);
+        }
     }
 }

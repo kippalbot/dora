@@ -1,4 +1,78 @@
-//! Waveform View Widget - FFT-style frequency bar visualization
+//! # Waveform View Widget
+//!
+//! A standalone FFT-style frequency bar visualization with smooth animation.
+//! Displays 8 rainbow-colored bars representing frequency bands.
+//!
+//! ## Features
+//!
+//! - **8-Band Spectrum**: Rainbow colors (red→orange→yellow→green→cyan→blue→purple→pink)
+//! - **Smooth Animation**: Uses `NextFrame` event for interpolated level changes
+//! - **Dark Background**: Uses SLATE_950 for optimal contrast
+//!
+//! ## Usage
+//!
+//! ```rust,ignore
+//! live_design! {
+//!     use mofa_widgets::waveform_view::WaveformView;
+//!
+//!     MyScreen = <View> {
+//!         waveform = <WaveformView> {
+//!             width: 200, height: 100
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Animation Integration
+//!
+//! The widget automatically handles animation via `NextFrame`. Start animation with:
+//!
+//! ```rust,ignore
+//! // In your widget's after_new_from_doc
+//! cx.start_interval(0.05);  // 20 FPS refresh
+//!
+//! // In handle_event, trigger NextFrame
+//! if let Event::Timer(_) = event {
+//!     cx.request_next_frame();
+//! }
+//! ```
+//!
+//! ## Updating Band Levels
+//!
+//! The widget uses target levels for smooth interpolation. Update via `apply_over`:
+//!
+//! ```rust,ignore
+//! // Direct shader update (immediate)
+//! self.view.view(ids!(my_waveform)).apply_over(cx, live!{
+//!     draw_bg: {
+//!         amplitude: 0.5,
+//!         band0: 0.3,
+//!         band1: 0.5,
+//!         band2: 0.8,
+//!         band3: 0.6,
+//!         band4: 0.5,
+//!         band5: 0.4,
+//!         band6: 0.3,
+//!         band7: 0.2,
+//!     }
+//! });
+//! ```
+//!
+//! ## Instance Variables
+//!
+//! | Variable | Range | Description |
+//! |----------|-------|-------------|
+//! | `anim_time` | auto | Animation time (set by NextFrame) |
+//! | `amplitude` | 0.0-1.0 | Global amplitude multiplier |
+//! | `band0`-`band7` | 0.0-1.0 | Individual frequency band levels |
+//!
+//! ## Internal State
+//!
+//! The widget maintains internal state for smooth animation:
+//! - `band_levels[8]` - Current displayed levels
+//! - `target_levels[8]` - Target levels (interpolated towards)
+//!
+//! Attack is faster (0.3) than decay (0.1) for natural audio response.
 
 use makepad_widgets::*;
 
@@ -6,6 +80,9 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
+
+    // Import colors from theme
+    use crate::theme::SLATE_950;
 
     pub WaveformView = {{WaveformView}} <View> {
         width: Fill, height: Fill
@@ -30,7 +107,7 @@ live_design! {
 
                 // Dark background
                 sdf.rect(0.0, 0.0, self.rect_size.x, self.rect_size.y);
-                sdf.fill(#0d1117);
+                sdf.fill((SLATE_950));
 
                 // Bar dimensions
                 let num_bars = 8.0;

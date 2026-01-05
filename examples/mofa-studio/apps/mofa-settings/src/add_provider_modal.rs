@@ -8,10 +8,7 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    use mofa_widgets::theme::FONT_FAMILY;
-    use mofa_widgets::theme::FONT_REGULAR;
-    use mofa_widgets::theme::FONT_BOLD;
-    use mofa_widgets::theme::FONT_SEMIBOLD;
+    use mofa_widgets::theme::*;
 
     // Modal text input
     ModalTextInput = <TextInput> {
@@ -21,7 +18,7 @@ live_design! {
         draw_bg: {
             instance radius: 6.0
             instance border_width: 1.0
-            instance border_color: #d1d5db
+            instance border_color: (GRAY_300)
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -32,7 +29,7 @@ live_design! {
                     self.rect_size.y - self.border_width * 2.0,
                     max(1.0, self.radius - self.border_width)
                 );
-                sdf.fill(#ffffff);
+                sdf.fill((WHITE));
                 sdf.stroke(self.border_color, self.border_width);
                 return sdf.result;
             }
@@ -40,15 +37,15 @@ live_design! {
 
         draw_text: {
             text_style: <FONT_REGULAR>{ font_size: 11.0 }
-            color: #1f2937
+            color: (TEXT_PRIMARY)
         }
 
         draw_selection: {
-            color: #bfdbfe
+            color: (BLUE_200)
         }
 
         draw_cursor: {
-            color: #3b82f6
+            color: (ACCENT_BLUE)
         }
     }
 
@@ -65,8 +62,8 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = mix(
-                    mix(#3b82f6, #2563ff, self.hover),
-                    #1d4fff,
+                    mix((ACCENT_BLUE), (BLUE_600), self.hover),
+                    (BLUE_700),
                     self.pressed
                 );
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.radius);
@@ -77,10 +74,10 @@ live_design! {
 
         draw_text: {
             text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-            color: #ffffff
+            color: (WHITE)
 
             fn get_color(self) -> vec4 {
-                return #ffffff;
+                return (WHITE);
             }
         }
 
@@ -100,23 +97,23 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = mix(
-                    mix(#ffffff, #f9fafb, self.hover),
-                    #f3f4f6,
+                    mix((WHITE), (GRAY_50), self.hover),
+                    (GRAY_100),
                     self.pressed
                 );
                 sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, self.radius);
                 sdf.fill(color);
-                sdf.stroke(#d1d5db, 1.0);
+                sdf.stroke((GRAY_300), 1.0);
                 return sdf.result;
             }
         }
 
         draw_text: {
             text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
-            color: #374151
+            color: (GRAY_700)
 
             fn get_color(self) -> vec4 {
-                return #374151;
+                return (GRAY_700);
             }
         }
 
@@ -159,7 +156,7 @@ live_design! {
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         sdf.box(0.0, 0.0, self.rect_size.x, self.rect_size.y, self.radius);
-                        sdf.fill(#ffffff);
+                        sdf.fill((WHITE));
                         return sdf.result;
                     }
                 }
@@ -173,7 +170,7 @@ live_design! {
                     <Label> {
                         text: "Add Custom Provider"
                         draw_text: {
-                            color: #1e293b
+                            color: (SLATE_800)
                             text_style: <FONT_BOLD>{ font_size: 16.0 }
                         }
                     }
@@ -188,7 +185,7 @@ live_design! {
                     <Label> {
                         text: "Provider Name"
                         draw_text: {
-                            color: #374151
+                            color: (GRAY_700)
                             text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
                         }
                     }
@@ -207,7 +204,7 @@ live_design! {
                     <Label> {
                         text: "API Host"
                         draw_text: {
-                            color: #374151
+                            color: (GRAY_700)
                             text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
                         }
                     }
@@ -226,7 +223,7 @@ live_design! {
                     <Label> {
                         text: "API Key (optional)"
                         draw_text: {
-                            color: #374151
+                            color: (GRAY_700)
                             text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
                         }
                     }

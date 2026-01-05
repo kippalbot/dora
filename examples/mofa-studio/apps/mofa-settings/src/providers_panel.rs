@@ -211,11 +211,6 @@ impl Widget for ProvidersPanel {
             ids!(list_container.alibaba_item),
         ];
 
-        // Colors based on dark mode
-        let normal_color = if self.dark_mode { "#1e293b" } else { "#ffffff" };
-        let hover_color = if self.dark_mode { "#334155" } else { "#f1f5f9" };
-        let selected_color = if self.dark_mode { "#1e3a5f" } else { "#dbeafe" };
-
         // Handle hover effects using FingerHover events
         for item_id in &items {
             let item = self.view.view(item_id.clone());

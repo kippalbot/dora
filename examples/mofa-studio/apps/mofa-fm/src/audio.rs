@@ -75,34 +75,13 @@ impl AudioManager {
 
         let mut devices = Vec::new();
 
-        println!("AudioManager: Scanning for output devices...");
-        println!("AudioManager: Using cpal host: {:?}", self.host.id());
-
-        // Try both output_devices() and devices() to see if we get different results
-        let output_result = self.host.output_devices();
-        println!("AudioManager: host.output_devices() result: {:?}", output_result.is_ok());
-
-        if let Ok(output_devices) = output_result {
-            // Collect into a Vec to get the count
-            let device_vec: Vec<_> = output_devices.into_iter().collect();
-            println!("AudioManager: cpal found {} output device(s) via output_devices()", device_vec.len());
-            for (index, device) in device_vec.into_iter().enumerate() {
+        if let Ok(output_devices) = self.host.output_devices() {
+            for device in output_devices {
                 if let Ok(name) = device.name() {
                     let is_default = default_name.as_ref().map_or(false, |d| d == &name);
-                    println!("AudioManager:   [{}] '{}' (default: {})", index, name, is_default);
                     devices.push(AudioDeviceInfo { name, is_default });
-                } else {
-                    println!("AudioManager:   [{}] <unnamed or error getting name>", index);
                 }
             }
-        } else {
-            println!("AudioManager: ERROR - Failed to get output devices from cpal");
-        }
-
-        // Also try devices() which returns all devices (input + output)
-        if let Ok(all_devices) = self.host.devices() {
-            let count = all_devices.count();
-            println!("AudioManager: cpal host.devices() found {} total device(s)", count);
         }
 
         devices.sort_by(|a, b| b.is_default.cmp(&a.is_default));

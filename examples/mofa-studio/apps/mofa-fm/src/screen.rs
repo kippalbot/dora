@@ -1,6 +1,8 @@
 //! MoFA FM Screen - Main screen for AI-powered audio streaming
 
 use makepad_widgets::*;
+use crate::mofa_hero::MofaHeroWidgetExt;
+use mofa_widgets::participant_panel::ParticipantPanelWidgetExt;
 
 live_design! {
     use link::theme::*;
@@ -12,22 +14,23 @@ live_design! {
     use mofa_widgets::log_panel::LogPanel;
     use crate::mofa_hero::MofaHero;
 
-    // Local constants
-    PANEL_BG = #ffffff
-    TEXT_PRIMARY = #1f2937
-    TEXT_SECONDARY = #64748b
-    DIVIDER_COLOR = #e2e8f0
+    // Local layout constants (colors imported from theme)
     SECTION_SPACING = 12.0
     PANEL_RADIUS = 4.0
     PANEL_PADDING = 12.0
 
-    // Reusable panel header style
+    // Reusable panel header style with dark mode support
     PanelHeader = <View> {
         width: Fill, height: Fit
         padding: {left: 16, right: 16, top: 12, bottom: 12}
         align: {y: 0.5}
         show_bg: true
-        draw_bg: { color: #f8fafc }
+        draw_bg: {
+            instance dark_mode: 0.0
+            fn pixel(self) -> vec4 {
+                return mix((SLATE_50), (SLATE_800), self.dark_mode);
+            }
+        }
     }
 
     // Reusable vertical divider
@@ -35,7 +38,12 @@ live_design! {
         width: 1, height: Fill
         margin: {top: 4, bottom: 4}
         show_bg: true
-        draw_bg: { color: (DIVIDER_COLOR) }
+        draw_bg: {
+            instance dark_mode: 0.0
+            fn pixel(self) -> vec4 {
+                return mix((DIVIDER), (DIVIDER_DARK), self.dark_mode);
+            }
+        }
     }
 
     // MoFA FM Screen - adaptive horizontal layout with left content and right log panel
@@ -46,7 +54,12 @@ live_design! {
         padding: { left: 16, right: 16, top: 16, bottom: 16 }
         align: {y: 0.0}
         show_bg: true
-        draw_bg: { color: #f5f7fa }
+        draw_bg: {
+            instance dark_mode: 0.0
+            fn pixel(self) -> vec4 {
+                return mix((DARK_BG), (DARK_BG_DARK), self.dark_mode);
+            }
+        }
 
         // Left column - main content area (adaptive width)
         left_column = <View> {
@@ -91,18 +104,24 @@ live_design! {
                 chat_section = <RoundedView> {
                     width: Fill, height: Fill
                     draw_bg: {
-                        color: (PANEL_BG)
+                        instance dark_mode: 0.0
                         border_radius: (PANEL_RADIUS)
+                        fn get_color(self) -> vec4 {
+                            return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                        }
                     }
                     flow: Down
 
                     // Chat header
                     chat_header = <PanelHeader> {
-                        <Label> {
+                        chat_title = <Label> {
                             text: "Chat History"
                             draw_text: {
-                                color: (TEXT_PRIMARY)
+                                instance dark_mode: 0.0
                                 text_style: <FONT_SEMIBOLD>{ font_size: 13.0 }
+                                fn get_color(self) -> vec4 {
+                                    return mix((TEXT_PRIMARY), (TEXT_PRIMARY_DARK), self.dark_mode);
+                                }
                             }
                         }
                     }
@@ -124,7 +143,7 @@ live_design! {
                             chat_content = <Markdown> {
                                 width: Fill, height: Fit
                                 font_size: 13.0
-                                font_color: #1f2937
+                                font_color: (TEXT_PRIMARY)
                                 paragraph_spacing: 8
 
                                 draw_normal: {
@@ -148,8 +167,11 @@ live_design! {
                     width: Fill, height: Fit
                     padding: (PANEL_PADDING)
                     draw_bg: {
-                        color: (PANEL_BG)
+                        instance dark_mode: 0.0
                         border_radius: (PANEL_RADIUS)
+                        fn get_color(self) -> vec4 {
+                            return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                        }
                     }
                     flow: Right
                     spacing: 16
@@ -174,7 +196,7 @@ live_design! {
                                 <Icon> {
                                     draw_icon: {
                                         svg_file: dep("crate://self/resources/icons/mic.svg")
-                                        fn get_color(self) -> vec4 { return #64748b; }
+                                        fn get_color(self) -> vec4 { return (SLATE_500); }
                                     }
                                     icon_walk: {width: 20, height: 20}
                                 }
@@ -188,11 +210,11 @@ live_design! {
                             align: {y: 0.5}
                             padding: {top: 2, bottom: 2}
 
-                            mic_led_1 = <RoundedView> { width: 8, height: 14, draw_bg: { color: #22c55f, border_radius: 2.0 } }
-                            mic_led_2 = <RoundedView> { width: 8, height: 14, draw_bg: { color: #22c55f, border_radius: 2.0 } }
-                            mic_led_3 = <RoundedView> { width: 8, height: 14, draw_bg: { color: #e2e8f0, border_radius: 2.0 } }
-                            mic_led_4 = <RoundedView> { width: 8, height: 14, draw_bg: { color: #e2e8f0, border_radius: 2.0 } }
-                            mic_led_5 = <RoundedView> { width: 8, height: 14, draw_bg: { color: #e2e8f0, border_radius: 2.0 } }
+                            mic_led_1 = <RoundedView> { width: 8, height: 14, draw_bg: { color: (GREEN_500), border_radius: 2.0 } }
+                            mic_led_2 = <RoundedView> { width: 8, height: 14, draw_bg: { color: (GREEN_500), border_radius: 2.0 } }
+                            mic_led_3 = <RoundedView> { width: 8, height: 14, draw_bg: { color: (SLATE_200), border_radius: 2.0 } }
+                            mic_led_4 = <RoundedView> { width: 8, height: 14, draw_bg: { color: (SLATE_200), border_radius: 2.0 } }
+                            mic_led_5 = <RoundedView> { width: 8, height: 14, draw_bg: { color: (SLATE_200), border_radius: 2.0 } }
                         }
                     }
 
@@ -214,16 +236,18 @@ live_design! {
                             show_bg: true
                             draw_bg: {
                                 instance enabled: 1.0  // 1.0=on, 0.0=off
-                                instance blink: 0.0    // For blink animation when enabled
+                                // Blink animation now driven by shader time - no timer needed!
                                 fn pixel(self) -> vec4 {
                                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                                     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
                                     let green = vec4(0.133, 0.773, 0.373, 1.0);
                                     let bright = vec4(0.2, 0.9, 0.5, 1.0);
                                     let gray = vec4(0.667, 0.686, 0.725, 1.0);
-                                    // When enabled, blink between green and bright green
+                                    // When enabled, pulse between green and bright green using shader time
+                                    // sin(time * speed) creates smooth oscillation, step makes it blink
+                                    let blink = step(0.0, sin(self.time * 2.0)) * self.enabled;
                                     let base = mix(gray, green, self.enabled);
-                                    let col = mix(base, bright, self.blink * 0.5 * self.enabled);
+                                    let col = mix(base, bright, blink * 0.5);
                                     sdf.fill(col);
                                     return sdf.result;
                                 }
@@ -233,7 +257,7 @@ live_design! {
                             <Icon> {
                                 draw_icon: {
                                     svg_file: dep("crate://self/resources/icons/aec.svg")
-                                    fn get_color(self) -> vec4 { return #ffffff; }
+                                    fn get_color(self) -> vec4 { return (WHITE); }
                                 }
                                 icon_walk: {width: 20, height: 20}
                             }
@@ -260,8 +284,11 @@ live_design! {
                                 width: 70  // Fixed width for alignment with output label
                                 text: "Mic:"
                                 draw_text: {
-                                    color: (TEXT_SECONDARY)
+                                    instance dark_mode: 0.0
                                     text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                                    fn get_color(self) -> vec4 {
+                                        return mix((TEXT_SECONDARY), (TEXT_SECONDARY_DARK), self.dark_mode);
+                                    }
                                 }
                             }
 
@@ -273,32 +300,63 @@ live_design! {
                                 labels: []
                                 values: []
                                 selected_item: 0
+                                draw_bg: {
+                                    instance dark_mode: 0.0
+                                    fn pixel(self) -> vec4 {
+                                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                        sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 3.0);
+                                        let bg = mix((WHITE), (SLATE_700), self.dark_mode);
+                                        sdf.fill(bg);
+                                        return sdf.result;
+                                    }
+                                }
                                 draw_text: {
+                                    instance dark_mode: 0.0
                                     text_style: <FONT_REGULAR>{ font_size: 11.0 }
                                     fn get_color(self) -> vec4 {
-                                        return mix(#374151, #1f2937, self.focus);
+                                        let light = mix((GRAY_700), (TEXT_PRIMARY), self.focus);
+                                        let dark = mix((SLATE_300), (TEXT_PRIMARY_DARK), self.focus);
+                                        return mix(light, dark, self.dark_mode);
                                     }
                                 }
                                 popup_menu: {
                                     width: 250  // Initial width - will be synced at runtime
                                     draw_bg: {
-                                        color: #ffffff
-                                        border_color: #e5e7eb
+                                        instance dark_mode: 0.0
                                         border_size: 1.0
+                                        fn pixel(self) -> vec4 {
+                                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 2.0);
+                                            let bg = mix((WHITE), (SLATE_800), self.dark_mode);
+                                            let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                                            sdf.fill(bg);
+                                            sdf.stroke(border, self.border_size);
+                                            return sdf.result;
+                                        }
                                     }
                                     menu_item: {
                                         width: Fill
                                         draw_bg: {
-                                            color: #ffffff
-                                            color_hover: #f3f4f6
+                                            instance dark_mode: 0.0
+                                            fn pixel(self) -> vec4 {
+                                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y);
+                                                let base = mix((WHITE), (SLATE_800), self.dark_mode);
+                                                let hover_color = mix((GRAY_100), (SLATE_700), self.dark_mode);
+                                                sdf.fill(mix(base, hover_color, self.hover));
+                                                return sdf.result;
+                                            }
                                         }
                                         draw_text: {
+                                            instance dark_mode: 0.0
                                             fn get_color(self) -> vec4 {
-                                                return mix(
-                                                    mix(#374151, #1f2937, self.active),
-                                                    #1f2937,
-                                                    self.hover
-                                                );
+                                                let light_base = mix((GRAY_700), (TEXT_PRIMARY), self.active);
+                                                let dark_base = mix((SLATE_300), (TEXT_PRIMARY_DARK), self.active);
+                                                let base = mix(light_base, dark_base, self.dark_mode);
+                                                let light_hover = (TEXT_PRIMARY);
+                                                let dark_hover = (TEXT_PRIMARY_DARK);
+                                                let hover_color = mix(light_hover, dark_hover, self.dark_mode);
+                                                return mix(base, hover_color, self.hover);
                                             }
                                         }
                                     }
@@ -319,8 +377,11 @@ live_design! {
                                 width: 70  // Fixed width for alignment with input label
                                 text: "Speaker:"
                                 draw_text: {
-                                    color: (TEXT_SECONDARY)
+                                    instance dark_mode: 0.0
                                     text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                                    fn get_color(self) -> vec4 {
+                                        return mix((TEXT_SECONDARY), (TEXT_SECONDARY_DARK), self.dark_mode);
+                                    }
                                 }
                             }
 
@@ -332,32 +393,63 @@ live_design! {
                                 labels: []
                                 values: []
                                 selected_item: 0
+                                draw_bg: {
+                                    instance dark_mode: 0.0
+                                    fn pixel(self) -> vec4 {
+                                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                        sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 3.0);
+                                        let bg = mix((WHITE), (SLATE_700), self.dark_mode);
+                                        sdf.fill(bg);
+                                        return sdf.result;
+                                    }
+                                }
                                 draw_text: {
+                                    instance dark_mode: 0.0
                                     text_style: <FONT_REGULAR>{ font_size: 11.0 }
                                     fn get_color(self) -> vec4 {
-                                        return mix(#374151, #1f2937, self.focus);
+                                        let light = mix((GRAY_700), (TEXT_PRIMARY), self.focus);
+                                        let dark = mix((SLATE_300), (TEXT_PRIMARY_DARK), self.focus);
+                                        return mix(light, dark, self.dark_mode);
                                     }
                                 }
                                 popup_menu: {
                                     width: 250  // Initial width - will be synced at runtime
                                     draw_bg: {
-                                        color: #ffffff
-                                        border_color: #e5e7eb
+                                        instance dark_mode: 0.0
                                         border_size: 1.0
+                                        fn pixel(self) -> vec4 {
+                                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 2.0);
+                                            let bg = mix((WHITE), (SLATE_800), self.dark_mode);
+                                            let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                                            sdf.fill(bg);
+                                            sdf.stroke(border, self.border_size);
+                                            return sdf.result;
+                                        }
                                     }
                                     menu_item: {
                                         width: Fill
                                         draw_bg: {
-                                            color: #ffffff
-                                            color_hover: #f3f4f6
+                                            instance dark_mode: 0.0
+                                            fn pixel(self) -> vec4 {
+                                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y);
+                                                let base = mix((WHITE), (SLATE_800), self.dark_mode);
+                                                let hover_color = mix((GRAY_100), (SLATE_700), self.dark_mode);
+                                                sdf.fill(mix(base, hover_color, self.hover));
+                                                return sdf.result;
+                                            }
                                         }
                                         draw_text: {
+                                            instance dark_mode: 0.0
                                             fn get_color(self) -> vec4 {
-                                                return mix(
-                                                    mix(#374151, #1f2937, self.active),
-                                                    #1f2937,
-                                                    self.hover
-                                                );
+                                                let light_base = mix((GRAY_700), (TEXT_PRIMARY), self.active);
+                                                let dark_base = mix((SLATE_300), (TEXT_PRIMARY_DARK), self.active);
+                                                let base = mix(light_base, dark_base, self.dark_mode);
+                                                let light_hover = (TEXT_PRIMARY);
+                                                let dark_hover = (TEXT_PRIMARY_DARK);
+                                                let hover_color = mix(light_hover, dark_hover, self.dark_mode);
+                                                return mix(base, hover_color, self.hover);
                                             }
                                         }
                                     }
@@ -377,8 +469,11 @@ live_design! {
                     width: Fill, height: Fit
                     padding: (PANEL_PADDING)
                     draw_bg: {
-                        color: (PANEL_BG)
+                        instance dark_mode: 0.0
                         border_radius: (PANEL_RADIUS)
+                        fn get_color(self) -> vec4 {
+                            return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                        }
                     }
                     flow: Down
                     spacing: 8
@@ -394,18 +489,25 @@ live_design! {
                             padding: {left: 12, right: 12, top: 10, bottom: 10}
                             empty_text: "Enter prompt to send..."
                             draw_bg: {
-                                color: #f8fafc
+                                instance dark_mode: 0.0
                                 border_radius: 4.0
-                            }
-                            draw_text: {
-                                color: #1f2937
-                                text_style: <FONT_REGULAR>{ font_size: 11.0 }
-                                fn get_color(self) -> vec4 {
-                                    return #1f2937;
+                                fn pixel(self) -> vec4 {
+                                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                                    let bg = mix((SLATE_50), (SLATE_700), self.dark_mode);
+                                    sdf.fill(bg);
+                                    return sdf.result;
                                 }
                             }
-                            draw_select: {
-                                code_color: #1f2937
+                            draw_text: {
+                                instance dark_mode: 0.0
+                                text_style: <FONT_REGULAR>{ font_size: 11.0 }
+                                fn get_color(self) -> vec4 {
+                                    return mix((TEXT_PRIMARY), (TEXT_PRIMARY_DARK), self.dark_mode);
+                                }
+                            }
+                            draw_selection: {
+                                color: (INDIGO_200)
                             }
                         }
 
@@ -419,12 +521,12 @@ live_design! {
                                 padding: {left: 16, right: 16}
                                 text: "Send"
                                 draw_text: {
-                                    color: #ffffff
+                                    color: (WHITE)
                                     text_style: <FONT_SEMIBOLD>{ font_size: 11.0 }
                                 }
                                 draw_bg: {
-                                    instance color: #3b82f6
-                                    instance color_hover: #1d4ed8
+                                    instance color: (ACCENT_BLUE)
+                                    instance color_hover: (BLUE_700)
                                     border_radius: 4.0
                                     fn get_color(self) -> vec4 {
                                         return mix(self.color, self.color_hover, self.hover);
@@ -443,20 +545,21 @@ live_design! {
                                 padding: {left: 16, right: 16}
                                 text: "Reset"
                                 draw_text: {
-                                    color: #374151
+                                    instance dark_mode: 0.0
                                     text_style: <FONT_MEDIUM>{ font_size: 11.0 }
+                                    fn get_color(self) -> vec4 {
+                                        return mix((GRAY_700), (SLATE_300), self.dark_mode);
+                                    }
                                 }
                                 draw_bg: {
-                                    instance color: #f1f5f9
-                                    instance color_hover: #e2e8f0
+                                    instance dark_mode: 0.0
                                     border_radius: 4.0
-                                    fn get_color(self) -> vec4 {
-                                        return mix(self.color, self.color_hover, self.hover);
-                                    }
                                     fn pixel(self) -> vec4 {
                                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                                         sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
-                                        sdf.fill(self.get_color());
+                                        let base = mix((HOVER_BG), (SLATE_600), self.dark_mode);
+                                        let hover_color = mix((SLATE_200), (SLATE_500), self.dark_mode);
+                                        sdf.fill(mix(base, hover_color, self.hover));
                                         return sdf.result;
                                     }
                                 }
@@ -474,11 +577,13 @@ live_design! {
             align: {y: 0.0}
             show_bg: true
             draw_bg: {
+                instance dark_mode: 0.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     // Draw thin line in center
                     sdf.rect(7.0, 16.0, 2.0, self.rect_size.y - 32.0);
-                    sdf.fill(#cbd5e1);
+                    let color = mix((SLATE_300), (SLATE_600), self.dark_mode);
+                    sdf.fill(color);
                     return sdf.result;
                 }
             }
@@ -495,7 +600,12 @@ live_design! {
             toggle_column = <View> {
                 width: Fit, height: Fill
                 show_bg: true
-                draw_bg: { color: #f8fafc }
+                draw_bg: {
+                    instance dark_mode: 0.0
+                    fn pixel(self) -> vec4 {
+                        return mix((SLATE_50), (SLATE_800), self.dark_mode);
+                    }
+                }
                 align: {x: 0.5, y: 0.0}
                 padding: {left: 4, right: 4, top: 8}
 
@@ -504,21 +614,21 @@ live_design! {
                     padding: {left: 8, right: 8, top: 6, bottom: 6}
                     text: ">"
                     draw_text: {
+                        instance dark_mode: 0.0
                         text_style: <FONT_BOLD>{ font_size: 11.0 }
-                        color: #64748b
-                        fn get_color(self) -> vec4 { return self.color; }
+                        fn get_color(self) -> vec4 {
+                            return mix((SLATE_500), (SLATE_400), self.dark_mode);
+                        }
                     }
                     draw_bg: {
-                        instance color: #e2e8f0
-                        instance color_hover: #cbd5e1
+                        instance dark_mode: 0.0
                         border_radius: 4.0
-                        fn get_color(self) -> vec4 {
-                            return mix(self.color, self.color_hover, self.hover);
-                        }
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                             sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
-                            sdf.fill(self.get_color());
+                            let base = mix((SLATE_200), (SLATE_600), self.dark_mode);
+                            let hover_color = mix((SLATE_300), (SLATE_500), self.dark_mode);
+                            sdf.fill(mix(base, hover_color, self.hover));
                             return sdf.result;
                         }
                     }
@@ -529,8 +639,11 @@ live_design! {
             log_content_column = <RoundedView> {
                 width: Fill, height: Fill
                 draw_bg: {
-                    color: (PANEL_BG)
+                    instance dark_mode: 0.0
                     border_radius: (PANEL_RADIUS)
+                    fn get_color(self) -> vec4 {
+                        return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                    }
                 }
                 flow: Down
 
@@ -538,17 +651,25 @@ live_design! {
                     width: Fill, height: Fit
                     flow: Down
                     show_bg: true
-                    draw_bg: { color: #f8fafc }
+                    draw_bg: {
+                        instance dark_mode: 0.0
+                        fn pixel(self) -> vec4 {
+                            return mix((SLATE_50), (SLATE_800), self.dark_mode);
+                        }
+                    }
 
                     // Title row
                     log_title_row = <View> {
                         width: Fill, height: Fit
                         padding: {left: 12, right: 12, top: 10, bottom: 6}
-                        <Label> {
+                        log_title_label = <Label> {
                             text: "System Log"
                             draw_text: {
-                                color: (TEXT_PRIMARY)
+                                instance dark_mode: 0.0
                                 text_style: <FONT_SEMIBOLD>{ font_size: 13.0 }
+                                fn get_color(self) -> vec4 {
+                                    return mix((TEXT_PRIMARY), (TEXT_PRIMARY_DARK), self.dark_mode);
+                                }
                             }
                         }
                     }
@@ -565,49 +686,48 @@ live_design! {
                         level_filter = <DropDown> {
                             width: 70, height: 24
                             popup_menu_position: BelowInput
-                            icon_walk: {width: 0, height: 0}
                             draw_bg: {
-                                color: #f1f5f9
-                                border_color: #e2e8f0
+                                color: (HOVER_BG)
+                                border_color: (SLATE_200)
                                 border_radius: 2.0
                                 fn pixel(self) -> vec4 {
                                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                                     // Background
                                     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 2.0);
-                                    sdf.fill(#f1f5f9);
+                                    sdf.fill((HOVER_BG));
                                     // Down arrow on right side
                                     let ax = self.rect_size.x - 12.0;
                                     let ay = self.rect_size.y * 0.5 - 2.0;
                                     sdf.move_to(ax - 3.0, ay);
                                     sdf.line_to(ax, ay + 4.0);
                                     sdf.line_to(ax + 3.0, ay);
-                                    sdf.stroke(#1f2937, 1.5);
+                                    sdf.stroke((TEXT_PRIMARY), 1.5);
                                     return sdf.result;
                                 }
                             }
                             draw_text: {
                                 text_style: <FONT_MEDIUM>{ font_size: 10.0 }
                                 fn get_color(self) -> vec4 {
-                                    return #1f2937;
+                                    return (TEXT_PRIMARY);
                                 }
                             }
                             popup_menu: {
                                 draw_bg: {
-                                    color: #ffffff
-                                    border_color: #e5e7eb
+                                    color: (WHITE)
+                                    border_color: (BORDER)
                                     border_size: 1.0
                                     border_radius: 2.0
                                 }
                                 menu_item: {
                                     draw_bg: {
-                                        color: #ffffff
-                                        color_hover: #f3f4f6
+                                        color: (WHITE)
+                                        color_hover: (GRAY_100)
                                     }
                                     draw_text: {
                                         fn get_color(self) -> vec4 {
                                             return mix(
-                                                mix(#374151, #1f2937, self.active),
-                                                #1f2937,
+                                                mix((GRAY_700), (TEXT_PRIMARY), self.active),
+                                                (TEXT_PRIMARY),
                                                 self.hover
                                             );
                                         }
@@ -622,49 +742,48 @@ live_design! {
                         node_filter = <DropDown> {
                             width: 85, height: 24
                             popup_menu_position: BelowInput
-                            icon_walk: {width: 0, height: 0}
                             draw_bg: {
-                                color: #f1f5f9
-                                border_color: #e2e8f0
+                                color: (HOVER_BG)
+                                border_color: (SLATE_200)
                                 border_radius: 2.0
                                 fn pixel(self) -> vec4 {
                                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                                     // Background
                                     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 2.0);
-                                    sdf.fill(#f1f5f9);
+                                    sdf.fill((HOVER_BG));
                                     // Down arrow on right side
                                     let ax = self.rect_size.x - 12.0;
                                     let ay = self.rect_size.y * 0.5 - 2.0;
                                     sdf.move_to(ax - 3.0, ay);
                                     sdf.line_to(ax, ay + 4.0);
                                     sdf.line_to(ax + 3.0, ay);
-                                    sdf.stroke(#1f2937, 1.5);
+                                    sdf.stroke((TEXT_PRIMARY), 1.5);
                                     return sdf.result;
                                 }
                             }
                             draw_text: {
                                 text_style: <FONT_MEDIUM>{ font_size: 10.0 }
                                 fn get_color(self) -> vec4 {
-                                    return #1f2937;
+                                    return (TEXT_PRIMARY);
                                 }
                             }
                             popup_menu: {
                                 draw_bg: {
-                                    color: #ffffff
-                                    border_color: #e5e7eb
+                                    color: (WHITE)
+                                    border_color: (BORDER)
                                     border_size: 1.0
                                     border_radius: 2.0
                                 }
                                 menu_item: {
                                     draw_bg: {
-                                        color: #ffffff
-                                        color_hover: #f3f4f6
+                                        color: (WHITE)
+                                        color_hover: (GRAY_100)
                                     }
                                     draw_text: {
                                         fn get_color(self) -> vec4 {
                                             return mix(
-                                                mix(#374151, #1f2937, self.active),
-                                                #1f2937,
+                                                mix((GRAY_700), (TEXT_PRIMARY), self.active),
+                                                (TEXT_PRIMARY),
                                                 self.hover
                                             );
                                         }
@@ -686,11 +805,11 @@ live_design! {
                                     let c = self.rect_size * 0.5;
                                     // Magnifying glass circle
                                     sdf.circle(c.x - 2.0, c.y - 2.0, 5.0);
-                                    sdf.stroke(#6b7280, 1.5);
+                                    sdf.stroke((GRAY_500), 1.5);
                                     // Handle
                                     sdf.move_to(c.x + 1.5, c.y + 1.5);
                                     sdf.line_to(c.x + 6.0, c.y + 6.0);
-                                    sdf.stroke(#6b7280, 1.5);
+                                    sdf.stroke((GRAY_500), 1.5);
                                     return sdf.result;
                                 }
                             }
@@ -701,18 +820,25 @@ live_design! {
                             width: Fill, height: 24
                             empty_text: "Search..."
                             draw_bg: {
-                                color: #ffffff
+                                instance dark_mode: 0.0
                                 border_radius: 2.0
-                            }
-                            draw_text: {
-                                color: #1f2937
-                                text_style: <FONT_REGULAR>{ font_size: 10.0 }
-                                fn get_color(self) -> vec4 {
-                                    return #1f2937;
+                                fn pixel(self) -> vec4 {
+                                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                                    let bg = mix((WHITE), (SLATE_700), self.dark_mode);
+                                    sdf.fill(bg);
+                                    return sdf.result;
                                 }
                             }
-                            draw_select: {
-                                code_color: #1f2937
+                            draw_text: {
+                                instance dark_mode: 0.0
+                                text_style: <FONT_REGULAR>{ font_size: 10.0 }
+                                fn get_color(self) -> vec4 {
+                                    return mix((TEXT_PRIMARY), (TEXT_PRIMARY_DARK), self.dark_mode);
+                                }
+                            }
+                            draw_selection: {
+                                color: (INDIGO_200)
                             }
                         }
 
@@ -729,12 +855,12 @@ live_design! {
 
                                     // Background
                                     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
-                                    let bg_color = mix(#e5e7eb, #d1d5db, self.hover);
-                                    let bg_color = mix(bg_color, #9ca3af, self.pressed);
+                                    let bg_color = mix((BORDER), (GRAY_300), self.hover);
+                                    let bg_color = mix(bg_color, (TEXT_MUTED), self.pressed);
                                     sdf.fill(bg_color);
 
                                     // Clipboard icon - back rectangle
-                                    let icon_color = #4b5563;
+                                    let icon_color = (GRAY_600);
                                     sdf.box(c.x - 4.0, c.y - 2.0, 8.0, 9.0, 1.0);
                                     sdf.stroke(icon_color, 1.2);
 
@@ -779,17 +905,29 @@ live_design! {
                         log_content = <Markdown> {
                             width: Fill, height: Fit
                             font_size: 10.0
-                            font_color: #4b5563
+                            font_color: (GRAY_600)
                             paragraph_spacing: 4
 
                             draw_normal: {
+                                instance dark_mode: 0.0
                                 text_style: <FONT_REGULAR>{ font_size: 10.0 }
+                                fn get_color(self) -> vec4 {
+                                    return mix((GRAY_600), (SLATE_300), self.dark_mode);
+                                }
                             }
                             draw_bold: {
+                                instance dark_mode: 0.0
                                 text_style: <FONT_SEMIBOLD>{ font_size: 10.0 }
+                                fn get_color(self) -> vec4 {
+                                    return mix((GRAY_600), (SLATE_300), self.dark_mode);
+                                }
                             }
                             draw_fixed: {
+                                instance dark_mode: 0.0
                                 text_style: <FONT_REGULAR>{ font_size: 9.0 }
+                                fn get_color(self) -> vec4 {
+                                    return mix((GRAY_600), (SLATE_300), self.dark_mode);
+                                }
                             }
                         }
                     }
@@ -837,12 +975,7 @@ pub struct MoFaFMScreen {
     // AEC toggle state
     #[rust]
     aec_enabled: bool,
-    #[rust]
-    aec_blink_counter: usize,
-    #[rust]
-    aec_blink_state: bool,
-    #[rust]
-    aec_timer: Timer,
+    // Note: AEC blink animation is now shader-driven (self.time), no timer needed
 }
 
 impl Widget for MoFaFMScreen {
@@ -860,23 +993,15 @@ impl Widget for MoFaFMScreen {
             self.update_mic_level(cx);
         }
 
-        // Handle AEC timer for blink animation
-        if self.aec_timer.is_event(event).is_some() && self.aec_enabled {
-            self.update_aec_blink(cx);
-        }
-
         // Handle AEC toggle button click
+        // Note: AEC blink animation is now shader-driven, no timer needed
         let aec_btn = self.view.view(ids!(audio_container.audio_panel.aec_group.aec_toggle_btn));
         match event.hits(cx, aec_btn.area()) {
             Hit::FingerUp(_) => {
                 self.aec_enabled = !self.aec_enabled;
                 let enabled_val = if self.aec_enabled { 1.0 } else { 0.0 };
                 self.view.view(ids!(audio_container.audio_panel.aec_group.aec_toggle_btn))
-                    .apply_over(cx, live!{ draw_bg: { enabled: (enabled_val), blink: 0.0 } });
-                if self.aec_enabled {
-                    self.aec_blink_counter = 0;
-                    self.aec_blink_state = true;
-                }
+                    .apply_over(cx, live!{ draw_bg: { enabled: (enabled_val) } });
                 self.view.redraw(cx);
             }
             _ => {}
@@ -992,10 +1117,6 @@ impl MoFaFMScreen {
 
         // Get input devices
         let input_devices = audio_manager.get_input_devices();
-        println!("MoFA FM: Found {} input devices", input_devices.len());
-        for (i, dev) in input_devices.iter().enumerate() {
-            println!("  [{}] {} (default: {})", i, dev.name, dev.is_default);
-        }
         let input_labels: Vec<String> = input_devices.iter().map(|d| {
             if d.is_default {
                 format!("{} (Default)", d.name)
@@ -1007,10 +1128,6 @@ impl MoFaFMScreen {
 
         // Get output devices
         let output_devices = audio_manager.get_output_devices();
-        println!("MoFA FM: Found {} output devices", output_devices.len());
-        for (i, dev) in output_devices.iter().enumerate() {
-            println!("  [{}] {} (default: {})", i, dev.name, dev.is_default);
-        }
         let output_labels: Vec<String> = output_devices.iter().map(|d| {
             if d.is_default {
                 format!("{} (Default)", d.name)
@@ -1022,26 +1139,16 @@ impl MoFaFMScreen {
 
         // Populate input dropdown
         if !input_labels.is_empty() {
-            println!("MoFA FM: Populating input dropdown with {} labels: {:?}", input_labels.len(), input_labels);
             let dropdown = self.view.drop_down(ids!(audio_container.audio_panel.device_selectors.input_device_group.input_device_dropdown));
             dropdown.set_labels(cx, input_labels);
             dropdown.set_selected_item(cx, 0);
-            let current_label = dropdown.selected_label();
-            println!("MoFA FM: Input dropdown current display label: '{}'", current_label);
-        } else {
-            println!("MoFA FM: No input labels to populate!");
         }
 
         // Populate output dropdown
         if !output_labels.is_empty() {
-            println!("MoFA FM: Populating output dropdown with {} labels: {:?}", output_labels.len(), output_labels);
             let dropdown = self.view.drop_down(ids!(audio_container.audio_panel.device_selectors.output_device_group.output_device_dropdown));
             dropdown.set_labels(cx, output_labels);
             dropdown.set_selected_item(cx, 0);
-            let current_label = dropdown.selected_label();
-            println!("MoFA FM: Output dropdown current display label: '{}'", current_label);
-        } else {
-            println!("MoFA FM: No output labels to populate!");
         }
 
         // Start mic monitoring with default device
@@ -1054,11 +1161,8 @@ impl MoFaFMScreen {
         // Start timer for mic level updates (50ms for smooth visualization)
         self.audio_timer = cx.start_interval(0.05);
 
-        // Start AEC timer for blink animation (50ms interval, toggles every ~30 ticks = 1.5s)
-        self.aec_timer = cx.start_interval(0.05);
-        self.aec_enabled = true;  // AEC enabled by default
-        self.aec_blink_counter = 0;
-        self.aec_blink_state = true;
+        // AEC enabled by default (blink animation is shader-driven, no timer needed)
+        self.aec_enabled = true;
 
         // Initialize demo log entries
         self.init_demo_logs(cx);
@@ -1149,19 +1253,6 @@ impl MoFaFMScreen {
         // Update the log display
         self.update_log_display(cx);
     }
-
-    /// Update AEC blink animation
-    fn update_aec_blink(&mut self, cx: &mut Cx) {
-        self.aec_blink_counter += 1;
-        if self.aec_blink_counter >= 30 {  // Toggle every 30 ticks (~1.5s at 50ms)
-            self.aec_blink_counter = 0;
-            self.aec_blink_state = !self.aec_blink_state;
-            let blink_val = if self.aec_blink_state { 1.0 } else { 0.0 };
-            self.view.view(ids!(audio_container.audio_panel.aec_group.aec_toggle_btn))
-                .apply_over(cx, live!{ draw_bg: { blink: (blink_val) } });
-        }
-    }
-
     /// Update mic level LEDs based on current audio input
     fn update_mic_level(&mut self, cx: &mut Cx) {
         let level = if let Some(ref audio_manager) = self.audio_manager {
@@ -1358,5 +1449,118 @@ impl MoFaFMScreen {
     pub fn clear_logs(&mut self, cx: &mut Cx) {
         self.log_entries.clear();
         self.update_log_display(cx);
+    }
+}
+
+impl MoFaFMScreenRef {
+    /// Stop audio timer - call this before hiding/removing the widget
+    /// to prevent timer callbacks on inactive state
+    /// Note: AEC blink animation is shader-driven and doesn't need stopping
+    pub fn stop_timers(&self, cx: &mut Cx) {
+        if let Some(inner) = self.borrow_mut() {
+            cx.stop_timer(inner.audio_timer);
+            ::log::debug!("MoFaFMScreen audio timer stopped");
+        }
+    }
+
+    /// Restart audio timer - call this when the widget becomes visible again
+    /// Note: AEC blink animation is shader-driven and auto-resumes
+    pub fn start_timers(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.audio_timer = cx.start_interval(0.05);  // 50ms for mic level
+            ::log::debug!("MoFaFMScreen audio timer started");
+        }
+    }
+
+    /// Update dark mode for this screen
+    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            // Apply dark mode to screen background
+            inner.view.apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to chat section
+            inner.view.view(ids!(left_column.chat_container.chat_section)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to chat header and title
+            inner.view.view(ids!(left_column.chat_container.chat_section.chat_header)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(left_column.chat_container.chat_section.chat_header.chat_title)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to audio panel
+            inner.view.view(ids!(left_column.audio_container.audio_panel)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to device labels
+            inner.view.label(ids!(left_column.audio_container.audio_panel.device_selectors.input_device_group.input_device_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(left_column.audio_container.audio_panel.device_selectors.output_device_group.output_device_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // NOTE: DropDown apply_over causes "target class not found" errors
+            // TODO: Find alternative way to theme dropdowns
+
+            // Apply dark mode to MofaHero
+            inner.view.mofa_hero(ids!(left_column.mofa_hero)).update_dark_mode(cx, dark_mode);
+
+            // Apply dark mode to participant panels
+            inner.view.participant_panel(ids!(left_column.participant_container.participant_bar.student1_panel)).update_dark_mode(cx, dark_mode);
+            inner.view.participant_panel(ids!(left_column.participant_container.participant_bar.student2_panel)).update_dark_mode(cx, dark_mode);
+            inner.view.participant_panel(ids!(left_column.participant_container.participant_bar.tutor_panel)).update_dark_mode(cx, dark_mode);
+
+            // Apply dark mode to prompt section
+            inner.view.view(ids!(left_column.prompt_container.prompt_section)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            // NOTE: TextInput apply_over causes "target class not found" errors
+            inner.view.button(ids!(left_column.prompt_container.prompt_section.prompt_row.button_group.reset_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to splitter
+            inner.view.view(ids!(splitter)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to log section - toggle column
+            inner.view.view(ids!(log_section.toggle_column)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.button(ids!(log_section.toggle_column.toggle_log_btn)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to log section - log content column
+            inner.view.view(ids!(log_section.log_content_column)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.view(ids!(log_section.log_content_column.log_header)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.label(ids!(log_section.log_content_column.log_header.log_title_row.log_title_label)).apply_over(cx, live!{
+                draw_text: { dark_mode: (dark_mode) }
+            });
+
+            // Apply dark mode to log content Markdown
+            // Using widget() to get raw WidgetRef and apply_over
+            inner.view.widget(ids!(log_section.log_content_column.log_scroll.log_content_wrapper.log_content)).apply_over(cx, live!{
+                draw_normal: { dark_mode: (dark_mode) }
+                draw_bold: { dark_mode: (dark_mode) }
+                draw_fixed: { dark_mode: (dark_mode) }
+            });
+
+            inner.view.redraw(cx);
+        }
     }
 }
