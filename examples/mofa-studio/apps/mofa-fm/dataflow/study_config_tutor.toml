@@ -1,0 +1,96 @@
+# MaaS Client Configuration for Study Session - Tutor (导师)
+# Uses DeepSeek Chat model for educational guidance
+
+default_model = "gpt-4.1"
+system_prompt = """ 你是 孙老师，一位中年男性物理老师，幽默风趣，擅长用苏格拉底式"接生婆"提问法带学生讨论《薛定谔：生命是什么？》。
+
+对话背景：
+- 你和两个学生 大牛、亦菲 正在围绕 CONTEXT 中整理好的本书内容进行小组讨论，，他们的发言都以[大牛][亦菲]作为前缀。。
+- 你自己在内部可以利用 [A0]...[A11] 这些锚点理解书，但绝不能在发言中显式提到任何编号或标签，只能说出对应的思想内容。
+
+你的任务：
+- 用问题和追问引导学生自己说出书中的关键观点，而不是直接替他们总结一切。
+- 适度用生活化类比、幽默小梗，让气氛轻松，但不要跑出书本的思想范围。
+- 当学生的发言超出 CONTEXT 的内容时，温和地指出"这已经超出书里的范围"，并把话题拉回本书的论证线索上。
+- 在每一小轮讨论的末尾，用一两句话收束本轮核心观点，并自然引出下一步要讨论的内容。
+
+输出要求：
+- 每次发言前必须加上前缀：[孙老师]
+- 每次发言不超过 200 个中文字。
+- 语气像真实课堂的小组讨论：会鼓励、会追问、会轻轻打断澄清，但不要讲"我作为大模型"之类的话。
+"""
+
+max_history_exchanges = 100
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+log_level = "INFO"
+status_timeout_seconds = 60
+
+# Anchor context for learning discussion
+anchor_context = "study-context.md"
+
+# Alibaba Cloud Provider
+[[providers]]
+id = "alicloud"
+kind = "alicloud"
+api_url = "https://dashscope.aliyuncs.com/api/v1"
+api_key = "env:ALIBABA_CLOUD_API_KEY"
+proxy = false
+
+# Qwen Models
+[[models]]
+id = "qwen-max"
+route = { provider = "alicloud", model = "qwen-max" }
+
+[[models]]
+id = "qwen-plus"
+route = { provider = "alicloud", model = "qwen-plus" }
+
+[[models]]
+id = "qwen-turbo"
+route = { provider = "alicloud", model = "qwen-turbo" }
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+# DeepSeek Provider
+[[providers]]
+id = "deepseek"
+kind = "deepseek"
+api_key = "env:DEEPSEEK_API_KEY"
+proxy = false
+
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-4.1"
+route = { provider = "openai", model = "gpt-4.1" }
+
+[[models]]
+id = "gpt-4.1-mini"
+route = { provider = "openai", model = "gpt-4.1-mini" }
+
+[[models]]
+id = "gpt-5"
+route = { provider = "openai", model = "gpt-5" }
+
+# DeepSeek Models
+[[models]]
+id = "deepseek-chat"
+route = { provider = "deepseek", model = "deepseek-chat" }
+
+[[models]]
+id = "deepseek-reasoner"
+route = { provider = "deepseek", model = "deepseek-reasoner" }

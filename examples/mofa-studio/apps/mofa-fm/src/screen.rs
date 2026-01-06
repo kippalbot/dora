@@ -1,8 +1,14 @@
 //! MoFA FM Screen - Main screen for AI-powered audio streaming
 
 use makepad_widgets::*;
-use crate::mofa_hero::MofaHeroWidgetExt;
+use crate::mofa_hero::{MofaHeroWidgetExt, MofaHeroAction, ConnectionStatus};
+use crate::log_bridge;
+use crate::dora_integration::{DoraIntegration, DoraCommand, DoraEvent};
 use mofa_widgets::participant_panel::ParticipantPanelWidgetExt;
+use mofa_widgets::StateChangeListener;
+use mofa_settings::data::Preferences;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 live_design! {
     use link::theme::*;
@@ -86,12 +92,15 @@ live_design! {
 
                     student1_panel = <ParticipantPanel> {
                         width: Fill, height: Fit
+                        header = { name_label = { text: "Student 1" } }
                     }
                     student2_panel = <ParticipantPanel> {
                         width: Fill, height: Fit
+                        header = { name_label = { text: "Student 2" } }
                     }
                     tutor_panel = <ParticipantPanel> {
                         width: Fill, height: Fit
+                        header = { name_label = { text: "Tutor" } }
                     }
                 }
             }
@@ -103,11 +112,19 @@ live_design! {
 
                 chat_section = <RoundedView> {
                     width: Fill, height: Fill
+                    show_bg: true
                     draw_bg: {
                         instance dark_mode: 0.0
                         border_radius: (PANEL_RADIUS)
-                        fn get_color(self) -> vec4 {
-                            return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                        border_size: 1.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                            let bg = mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                            let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                            sdf.fill(bg);
+                            sdf.stroke(border, self.border_size);
+                            return sdf.result;
                         }
                     }
                     flow: Down
@@ -158,32 +175,37 @@ live_design! {
                 }
             }
 
-            // Audio control panel container
+            // Audio control panel container - horizontal layout with individual containers
             audio_container = <View> {
                 width: Fill, height: Fit
-                flow: Down
+                flow: Right
+                spacing: (SECTION_SPACING)
 
-                audio_panel = <RoundedView> {
-                    width: Fill, height: Fit
+                // Mic level meter container
+                mic_container = <RoundedView> {
+                    width: Fit, height: Fit
                     padding: (PANEL_PADDING)
+                    show_bg: true
                     draw_bg: {
                         instance dark_mode: 0.0
                         border_radius: (PANEL_RADIUS)
-                        fn get_color(self) -> vec4 {
-                            return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                        border_size: 1.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                            let bg = mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                            let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                            sdf.fill(bg);
+                            sdf.stroke(border, self.border_size);
+                            return sdf.result;
                         }
                     }
-                    flow: Right
-                    spacing: 16
-                    align: {y: 0.5}
 
-                    // Mic level meter group
                     mic_group = <View> {
                         width: Fit, height: Fit
                         flow: Right
                         spacing: 10
                         align: {y: 0.5}
-                        padding: {right: 8}
 
                         mic_mute_btn = <View> {
                             width: Fit, height: Fit
@@ -217,16 +239,33 @@ live_design! {
                             mic_led_5 = <RoundedView> { width: 8, height: 14, draw_bg: { color: (SLATE_200), border_radius: 2.0 } }
                         }
                     }
+                }
 
-                    <VerticalDivider> {}
+                // AEC toggle container
+                aec_container = <RoundedView> {
+                    width: Fit, height: Fit
+                    padding: (PANEL_PADDING)
+                    show_bg: true
+                    draw_bg: {
+                        instance dark_mode: 0.0
+                        border_radius: (PANEL_RADIUS)
+                        border_size: 1.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                            let bg = mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                            let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                            sdf.fill(bg);
+                            sdf.stroke(border, self.border_size);
+                            return sdf.result;
+                        }
+                    }
 
-                    // AEC toggle group
                     aec_group = <View> {
                         width: Fit, height: Fit
                         flow: Right
                         spacing: 8
                         align: {y: 0.5}
-                        padding: {left: 8, right: 8}
 
                         aec_toggle_btn = <View> {
                             width: Fit, height: Fit
@@ -263,10 +302,28 @@ live_design! {
                             }
                         }
                     }
+                }
 
-                    <VerticalDivider> {}
+                // Device selectors container - fills remaining space
+                device_container = <RoundedView> {
+                    width: Fill, height: Fit
+                    padding: (PANEL_PADDING)
+                    show_bg: true
+                    draw_bg: {
+                        instance dark_mode: 0.0
+                        border_radius: (PANEL_RADIUS)
+                        border_size: 1.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                            let bg = mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                            let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                            sdf.fill(bg);
+                            sdf.stroke(border, self.border_size);
+                            return sdf.result;
+                        }
+                    }
 
-                    // Device selectors container - fills remaining space
                     device_selectors = <View> {
                         width: Fill, height: Fit
                         flow: Right
@@ -937,6 +994,31 @@ live_design! {
     }
 }
 
+/// Chat message entry for display
+#[derive(Clone, Debug)]
+pub struct ChatMessageEntry {
+    pub sender: String,
+    pub content: String,
+    pub timestamp: u64,
+    pub is_streaming: bool,
+    pub session_id: Option<String>,
+}
+
+impl ChatMessageEntry {
+    pub fn new(sender: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            sender: sender.into(),
+            content: content.into(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+            is_streaming: false,
+            session_id: None,
+        }
+    }
+}
+
 #[derive(Live, LiveHook, Widget)]
 pub struct MoFaFMScreen {
     #[deref]
@@ -976,31 +1058,70 @@ pub struct MoFaFMScreen {
     #[rust]
     aec_enabled: bool,
     // Note: AEC blink animation is now shader-driven (self.time), no timer needed
+
+    // Dora integration
+    #[rust]
+    dora_integration: Option<DoraIntegration>,
+    #[rust]
+    dataflow_path: Option<PathBuf>,
+    #[rust]
+    dora_timer: Timer,
+    #[rust]
+    chat_messages: Vec<ChatMessageEntry>,
+    #[rust]
+    last_chat_count: usize,
+    // Pending streaming messages (updated in-place, removed when streaming ends)
+    #[rust]
+    pending_streaming_messages: Vec<ChatMessageEntry>,
+
+    // Audio playback
+    #[rust]
+    audio_player: Option<std::sync::Arc<crate::audio_player::AudioPlayer>>,
+    // Participant audio levels for decay animation (matches conference-dashboard)
+    #[rust]
+    participant_levels: [f64; 3],  // 0=student1, 1=student2, 2=tutor
 }
 
 impl Widget for MoFaFMScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        // Initialize audio on first event
+        // Initialize audio and log bridge on first event
         if !self.audio_initialized {
+            // Initialize log bridge to capture Rust logs
+            log_bridge::init();
             self.init_audio(cx);
             self.audio_initialized = true;
         }
 
-        // Handle audio timer for mic level updates
+        // Handle audio timer for mic level updates, log polling, and buffer status
         if self.audio_timer.is_event(event).is_some() {
             self.update_mic_level(cx);
+            // Poll Rust logs (50ms interval is fine for log updates)
+            self.poll_rust_logs(cx);
+            // Send actual buffer fill percentage to dora for backpressure control
+            // This replaces the bridge's estimation with the real value from AudioPlayer
+            if let Some(ref player) = self.audio_player {
+                let fill_percentage = player.buffer_fill_percentage();
+                if let Some(ref dora) = self.dora_integration {
+                    dora.send_command(DoraCommand::UpdateBufferStatus { fill_percentage });
+                }
+            }
+        }
+
+        // Handle dora timer for polling dora events
+        if self.dora_timer.is_event(event).is_some() {
+            self.poll_dora_events(cx);
         }
 
         // Handle AEC toggle button click
         // Note: AEC blink animation is now shader-driven, no timer needed
-        let aec_btn = self.view.view(ids!(audio_container.audio_panel.aec_group.aec_toggle_btn));
+        let aec_btn = self.view.view(ids!(audio_container.aec_container.aec_group.aec_toggle_btn));
         match event.hits(cx, aec_btn.area()) {
             Hit::FingerUp(_) => {
                 self.aec_enabled = !self.aec_enabled;
                 let enabled_val = if self.aec_enabled { 1.0 } else { 0.0 };
-                self.view.view(ids!(audio_container.audio_panel.aec_group.aec_toggle_btn))
+                self.view.view(ids!(audio_container.aec_container.aec_group.aec_toggle_btn))
                     .apply_over(cx, live!{ draw_bg: { enabled: (enabled_val) } });
                 self.view.redraw(cx);
             }
@@ -1030,13 +1151,28 @@ impl Widget for MoFaFMScreen {
             _ => &[],
         };
 
+        // Handle MofaHero start/stop actions
+        for action in actions {
+            match action.as_widget_action().cast() {
+                MofaHeroAction::StartClicked => {
+                    ::log::info!("Screen received StartClicked action");
+                    self.handle_mofa_start(cx);
+                }
+                MofaHeroAction::StopClicked => {
+                    ::log::info!("Screen received StopClicked action");
+                    self.handle_mofa_stop(cx);
+                }
+                MofaHeroAction::None => {}
+            }
+        }
+
         // Handle toggle log panel button
         if self.view.button(ids!(log_section.toggle_column.toggle_log_btn)).clicked(actions) {
             self.toggle_log_panel(cx);
         }
 
         // Handle input device selection
-        if let Some(item) = self.view.drop_down(ids!(audio_container.audio_panel.device_selectors.input_device_group.input_device_dropdown)).selected(actions) {
+        if let Some(item) = self.view.drop_down(ids!(audio_container.device_container.device_selectors.input_device_group.input_device_dropdown)).selected(actions) {
             if item < self.input_devices.len() {
                 let device_name = self.input_devices[item].clone();
                 self.select_input_device(cx, &device_name);
@@ -1044,7 +1180,7 @@ impl Widget for MoFaFMScreen {
         }
 
         // Handle output device selection
-        if let Some(item) = self.view.drop_down(ids!(audio_container.audio_panel.device_selectors.output_device_group.output_device_dropdown)).selected(actions) {
+        if let Some(item) = self.view.drop_down(ids!(audio_container.device_container.device_selectors.output_device_group.output_device_dropdown)).selected(actions) {
             if item < self.output_devices.len() {
                 let device_name = self.output_devices[item].clone();
                 self.select_output_device(&device_name);
@@ -1072,12 +1208,22 @@ impl Widget for MoFaFMScreen {
         if self.view.text_input(ids!(log_section.log_content_column.log_header.log_filter_row.log_search)).changed(actions).is_some() {
             self.update_log_display(cx);
         }
+
+        // Handle Send button click
+        if self.view.button(ids!(left_column.prompt_container.prompt_section.prompt_row.button_group.send_prompt_btn)).clicked(actions) {
+            self.send_prompt(cx);
+        }
+
+        // Handle Reset button click
+        if self.view.button(ids!(left_column.prompt_container.prompt_section.prompt_row.button_group.reset_btn)).clicked(actions) {
+            self.reset_conversation(cx);
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // Update popup menu widths to match dropdown widths
         // This handles first-frame zero width and caches values for performance
-        let input_dropdown = self.view.drop_down(ids!(audio_container.audio_panel.device_selectors.input_device_group.input_device_dropdown));
+        let input_dropdown = self.view.drop_down(ids!(audio_container.device_container.device_selectors.input_device_group.input_device_dropdown));
         let input_width = input_dropdown.area().rect(cx).size.x;
 
         // Only update if width changed significantly (> 1px) to avoid unnecessary apply_over calls
@@ -1088,7 +1234,7 @@ impl Widget for MoFaFMScreen {
             });
         }
 
-        let output_dropdown = self.view.drop_down(ids!(audio_container.audio_panel.device_selectors.output_device_group.output_device_dropdown));
+        let output_dropdown = self.view.drop_down(ids!(audio_container.device_container.device_selectors.output_device_group.output_device_dropdown));
         let output_width = output_dropdown.area().rect(cx).size.x;
 
         // Only update if width changed significantly (> 1px)
@@ -1139,14 +1285,14 @@ impl MoFaFMScreen {
 
         // Populate input dropdown
         if !input_labels.is_empty() {
-            let dropdown = self.view.drop_down(ids!(audio_container.audio_panel.device_selectors.input_device_group.input_device_dropdown));
+            let dropdown = self.view.drop_down(ids!(audio_container.device_container.device_selectors.input_device_group.input_device_dropdown));
             dropdown.set_labels(cx, input_labels);
             dropdown.set_selected_item(cx, 0);
         }
 
         // Populate output dropdown
         if !output_labels.is_empty() {
-            let dropdown = self.view.drop_down(ids!(audio_container.audio_panel.device_selectors.output_device_group.output_device_dropdown));
+            let dropdown = self.view.drop_down(ids!(audio_container.device_container.device_selectors.output_device_group.output_device_dropdown));
             dropdown.set_labels(cx, output_labels);
             dropdown.set_selected_item(cx, 0);
         }
@@ -1158,8 +1304,22 @@ impl MoFaFMScreen {
 
         self.audio_manager = Some(audio_manager);
 
+        // Initialize audio player for TTS playback (32kHz for PrimeSpeech)
+        match crate::audio_player::create_audio_player(32000) {
+            Ok(player) => {
+                ::log::info!("Audio player initialized (32kHz)");
+                self.audio_player = Some(player);
+            }
+            Err(e) => {
+                ::log::error!("Failed to create audio player: {}", e);
+            }
+        }
+
         // Start timer for mic level updates (50ms for smooth visualization)
         self.audio_timer = cx.start_interval(0.05);
+
+        // Start dora timer for participant panel updates (needed for audio visualization)
+        self.dora_timer = cx.start_interval(0.1);
 
         // AEC enabled by default (blink animation is shader-driven, no timer needed)
         self.aec_enabled = true;
@@ -1170,84 +1330,12 @@ impl MoFaFMScreen {
         self.view.redraw(cx);
     }
 
-    /// Initialize demo log entries to demonstrate the log panel functionality
+    /// Initialize log entries with a startup message
     fn init_demo_logs(&mut self, cx: &mut Cx) {
+        // Start with empty logs - real logs will come from log_bridge
         self.log_entries = vec![
-            // System startup logs
-            "[INFO] [App] MoFA Studio v0.1.0 started".to_string(),
-            "[INFO] [App] Loading configuration from ~/.dora/dashboard/preferences.json".to_string(),
-            "[DEBUG] [App] Initializing audio subsystem".to_string(),
-            "[INFO] [App] Audio devices enumerated successfully".to_string(),
-
-            // ASR (Speech Recognition) logs
-            "[INFO] [ASR] FunASR engine initialized with GPU acceleration".to_string(),
-            "[DEBUG] [ASR] Model loaded: speech_seaco_paraformer_large_asr_nat-zh-cn-16k".to_string(),
-            "[INFO] [ASR] Punctuation model loaded: punc_ct-transformer_cn-en-common".to_string(),
-            "[DEBUG] [ASR] GPU memory allocated: 2.1 GB".to_string(),
-            "[INFO] [ASR] Ready to process audio stream".to_string(),
-            "[DEBUG] [ASR] Processing 17.35s audio chunk...".to_string(),
-            "[INFO] [ASR] Transcription complete: RTF=0.016, 61.6x realtime".to_string(),
-            "[DEBUG] [ASR] Result: \"你好，欢迎使用MoFA语音助手\"".to_string(),
-
-            // TTS (Text-to-Speech) logs
-            "[INFO] [TTS] PrimeSpeech TTS engine initialized".to_string(),
-            "[DEBUG] [TTS] Loading G2PW model for grapheme-to-phoneme conversion".to_string(),
-            "[INFO] [TTS] Voice model loaded: Doubao".to_string(),
-            "[DEBUG] [TTS] HiFiGAN vocoder ready".to_string(),
-            "[INFO] [TTS] Synthesizing 160 characters...".to_string(),
-            "[DEBUG] [TTS] Audio generated: 31.97s, processing time: 41.84s".to_string(),
-            "[WARN] [TTS] CPU mode active - consider enabling GPU for faster synthesis".to_string(),
-
-            // LLM (Language Model) logs
-            "[INFO] [LLM] Connecting to OpenAI API...".to_string(),
-            "[DEBUG] [LLM] API endpoint: https://api.openai.com/v1/chat/completions".to_string(),
-            "[INFO] [LLM] Model: gpt-4o-mini".to_string(),
-            "[DEBUG] [LLM] Sending prompt with 256 tokens".to_string(),
-            "[INFO] [LLM] Response received: 128 tokens, latency 1.2s".to_string(),
-            "[DEBUG] [LLM] Token usage: prompt=256, completion=128, total=384".to_string(),
-
-            // Bridge/WebSocket logs
-            "[INFO] [Bridge] WebSocket server started on ws://localhost:8123".to_string(),
-            "[DEBUG] [Bridge] Waiting for client connections...".to_string(),
-            "[INFO] [Bridge] Client connected from 127.0.0.1:52341".to_string(),
-            "[DEBUG] [Bridge] Received audio frame: 1024 samples @ 16kHz".to_string(),
-            "[INFO] [Bridge] Streaming response to client".to_string(),
-            "[WARN] [Bridge] Client heartbeat delayed by 500ms".to_string(),
-
-            // Monitor logs
-            "[INFO] [Monitor] System monitoring started".to_string(),
-            "[DEBUG] [Monitor] CPU usage: 23.5%".to_string(),
-            "[DEBUG] [Monitor] Memory usage: 4.2 GB / 16.0 GB".to_string(),
-            "[DEBUG] [Monitor] GPU utilization: 45%".to_string(),
-            "[INFO] [Monitor] Audio buffer healthy: 85% filled".to_string(),
-            "[WARN] [Monitor] High CPU spike detected: 78%".to_string(),
-            "[DEBUG] [Monitor] Spike resolved, CPU back to normal".to_string(),
-
-            // Dataflow logs
-            "[INFO] [App] Dataflow 'voice-chat-with-aec' loaded".to_string(),
-            "[DEBUG] [App] Nodes: websocket → asr → llm → tts → websocket".to_string(),
-            "[INFO] [App] Dataflow started successfully".to_string(),
-            "[DEBUG] [App] All nodes reporting healthy status".to_string(),
-
-            // Error examples (for testing ERROR filter)
-            "[ERROR] [ASR] Failed to process corrupted audio frame - skipping".to_string(),
-            "[ERROR] [TTS] Synthesis timeout after 60s - retrying".to_string(),
-            "[WARN] [LLM] Rate limit approaching: 45/50 requests per minute".to_string(),
-            "[ERROR] [Bridge] Connection reset by peer - reconnecting".to_string(),
-
-            // More activity logs
-            "[INFO] [ASR] New audio segment detected (VAD triggered)".to_string(),
-            "[DEBUG] [ASR] Segment duration: 3.2s".to_string(),
-            "[INFO] [ASR] Transcription: \"请帮我查一下今天的天气\"".to_string(),
-            "[INFO] [LLM] Processing user query...".to_string(),
-            "[DEBUG] [LLM] Context window: 2048 tokens".to_string(),
-            "[INFO] [LLM] Response generated".to_string(),
-            "[INFO] [TTS] Generating audio response...".to_string(),
-            "[DEBUG] [TTS] Text length: 89 characters".to_string(),
-            "[INFO] [TTS] Audio ready: 8.5s duration".to_string(),
-            "[INFO] [Bridge] Streaming audio to client".to_string(),
-            "[DEBUG] [Bridge] Stream complete, 136 frames sent".to_string(),
-            "[INFO] [Monitor] Round-trip latency: 2.8s".to_string(),
+            "[INFO] [App] MoFA FM initialized".to_string(),
+            "[INFO] [App] System log ready - Rust logs will appear here".to_string(),
         ];
 
         // Update the log display
@@ -1276,11 +1364,11 @@ impl MoFaFMScreen {
         // LED colors by index: 0,1=green, 2=yellow, 3=orange, 4=red
         let led_colors = [green, green, yellow, orange, red];
         let led_ids = [
-            ids!(audio_container.audio_panel.mic_group.mic_level_meter.mic_led_1),
-            ids!(audio_container.audio_panel.mic_group.mic_level_meter.mic_led_2),
-            ids!(audio_container.audio_panel.mic_group.mic_level_meter.mic_led_3),
-            ids!(audio_container.audio_panel.mic_group.mic_level_meter.mic_led_4),
-            ids!(audio_container.audio_panel.mic_group.mic_level_meter.mic_led_5),
+            ids!(audio_container.mic_container.mic_group.mic_level_meter.mic_led_1),
+            ids!(audio_container.mic_container.mic_group.mic_level_meter.mic_led_2),
+            ids!(audio_container.mic_container.mic_group.mic_level_meter.mic_led_3),
+            ids!(audio_container.mic_container.mic_group.mic_level_meter.mic_led_4),
+            ids!(audio_container.mic_container.mic_group.mic_level_meter.mic_led_5),
         ];
 
         for (i, led_id) in led_ids.iter().enumerate() {
@@ -1354,6 +1442,7 @@ impl MoFaFMScreen {
 
     /// Update log display based on current filter and search
     fn update_log_display(&mut self, cx: &mut Cx) {
+        ::log::debug!("Updating log display with {} entries", self.log_entries.len());
         let search_text = self.view.text_input(ids!(log_section.log_content_column.log_header.log_filter_row.log_search)).text().to_lowercase();
         let level_filter = self.log_level_filter;
         let node_filter = self.log_node_filter;
@@ -1388,11 +1477,11 @@ impl MoFaFMScreen {
             level_match && node_match && search_match
         }).collect();
 
-        // Build display text
+        // Build display text (use double newlines for Markdown paragraph breaks)
         let log_text = if filtered_logs.is_empty() {
             "*No log entries*".to_string()
         } else {
-            filtered_logs.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+            filtered_logs.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n\n")
         };
 
         // Update markdown display
@@ -1433,6 +1522,7 @@ impl MoFaFMScreen {
         let log_text = if filtered_logs.is_empty() {
             "No log entries".to_string()
         } else {
+            // Use single newlines for clipboard (plain text, not Markdown)
             filtered_logs.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
         };
 
@@ -1445,35 +1535,570 @@ impl MoFaFMScreen {
         self.update_log_display(cx);
     }
 
+    /// Poll Rust log messages and add them to the system log
+    fn poll_rust_logs(&mut self, cx: &mut Cx) {
+        let logs = log_bridge::poll_logs();
+        if logs.is_empty() {
+            return;
+        }
+
+        for log_msg in logs {
+            self.log_entries.push(log_msg.format());
+        }
+
+        // Only update display if we got new logs
+        self.update_log_display(cx);
+    }
+
     /// Clear all logs
     pub fn clear_logs(&mut self, cx: &mut Cx) {
         self.log_entries.clear();
         self.update_log_display(cx);
     }
+
+    // =====================================================
+    // Dora Integration Methods
+    // =====================================================
+
+    /// Initialize dora integration (lazy initialization)
+    fn init_dora(&mut self, cx: &mut Cx) {
+        if self.dora_integration.is_some() {
+            return;
+        }
+
+        ::log::info!("Initializing Dora integration");
+        let integration = DoraIntegration::new();
+        self.dora_integration = Some(integration);
+
+        // Start timer to poll for dora events (100ms interval)
+        self.dora_timer = cx.start_interval(0.1);
+
+        // Look for default dataflow in the app's dataflow directory
+        // Try multiple locations: current dir, and relative to executable
+        let dataflow_path = std::env::current_dir()
+            .ok()
+            .map(|p| p.join("dataflow").join("voice-chat.yml"))
+            .filter(|p| p.exists())
+            .or_else(|| {
+                // Try relative to executable (for running from workspace root)
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                    .map(|p| p.join("../../../apps/mofa-fm/dataflow/voice-chat.yml"))
+                    .map(|p| p.canonicalize().unwrap_or(p))
+                    .filter(|p| p.exists())
+            })
+            .or_else(|| {
+                // Hardcoded fallback for development
+                let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("dataflow/voice-chat.yml");
+                if fallback.exists() { Some(fallback) } else { None }
+            });
+        self.dataflow_path = dataflow_path;
+
+        ::log::info!("Dora integration initialized, dataflow: {:?}", self.dataflow_path);
+    }
+
+    /// Start a dataflow
+    pub fn start_dataflow(&mut self, cx: &mut Cx, path: impl Into<PathBuf>) {
+        self.init_dora(cx);
+
+        let path = path.into();
+        if let Some(ref dora) = self.dora_integration {
+            if dora.start_dataflow(&path) {
+                ::log::info!("Starting dataflow: {:?}", path);
+                self.dataflow_path = Some(path);
+                self.add_log(cx, &format!("[INFO] [App] Starting dataflow..."));
+            } else {
+                ::log::error!("Failed to start dataflow: {:?}", path);
+                self.add_log(cx, &format!("[ERROR] [App] Failed to start dataflow"));
+            }
+        }
+    }
+
+    /// Stop the current dataflow
+    pub fn stop_dataflow(&mut self, cx: &mut Cx) {
+        if let Some(ref dora) = self.dora_integration {
+            if dora.stop_dataflow() {
+                ::log::info!("Stopping dataflow");
+                self.add_log(cx, "[INFO] [App] Dataflow stopped");
+            }
+        }
+    }
+
+    /// Poll for dora events and update UI
+    fn poll_dora_events(&mut self, cx: &mut Cx) {
+        // Get dora events if integration is running
+        let events = if let Some(ref dora) = self.dora_integration {
+            dora.poll_events()
+        } else {
+            Vec::new()  // Continue to update audio visualization even without dora
+        };
+
+        for event in events {
+            match event {
+                DoraEvent::DataflowStarted { dataflow_id } => {
+                    ::log::info!("Dataflow started: {}", dataflow_id);
+                    self.add_log(cx, &format!("[INFO] [App] Dataflow started: {}", dataflow_id));
+                    self.view.mofa_hero(ids!(left_column.mofa_hero)).set_connection_status(cx, ConnectionStatus::Connected);
+                }
+                DoraEvent::DataflowStopped => {
+                    ::log::info!("Dataflow stopped");
+                    self.add_log(cx, "[INFO] [App] Dataflow stopped");
+                    self.view.mofa_hero(ids!(left_column.mofa_hero)).set_running(cx, false);
+                    self.view.mofa_hero(ids!(left_column.mofa_hero)).set_connection_status(cx, ConnectionStatus::Stopped);
+                }
+                DoraEvent::BridgeConnected { bridge_name } => {
+                    ::log::info!("Bridge connected: {}", bridge_name);
+                    let display_name = Self::format_bridge_name(&bridge_name);
+                    self.add_log(cx, &format!("[INFO] [Bridge] {} connected to dora dataflow", display_name));
+                }
+                DoraEvent::BridgeDisconnected { bridge_name } => {
+                    ::log::info!("Bridge disconnected: {}", bridge_name);
+                    let display_name = Self::format_bridge_name(&bridge_name);
+                    self.add_log(cx, &format!("[WARN] [Bridge] {} disconnected from dora dataflow", display_name));
+                }
+                DoraEvent::ChatReceived { message } => {
+                    // Handle streaming message consolidation
+                    // Match by BOTH sender AND session_id to avoid confusion between participants
+                    let sender = message.sender.clone();
+                    let session_id = message.session_id.clone();
+
+                    if message.is_streaming {
+                        // Update or create pending streaming message
+                        let entry = ChatMessageEntry {
+                            sender: sender.clone(),
+                            content: message.content.clone(),
+                            timestamp: message.timestamp,
+                            is_streaming: true,
+                            session_id: session_id.clone(),
+                        };
+
+                        // Find existing pending message with same sender AND session_id
+                        // (or same sender if session_id is "unknown")
+                        let found = self.pending_streaming_messages.iter_mut()
+                            .find(|m| {
+                                m.sender == sender && (
+                                    // Match by session_id if both have real session_ids
+                                    (m.session_id.as_ref().map(|s| s != "unknown").unwrap_or(false)
+                                        && session_id.as_ref().map(|s| s != "unknown").unwrap_or(false)
+                                        && m.session_id == session_id)
+                                    ||
+                                    // For "unknown" session_ids, just match by sender
+                                    (m.session_id.as_ref().map(|s| s == "unknown").unwrap_or(true)
+                                        && session_id.as_ref().map(|s| s == "unknown").unwrap_or(true))
+                                )
+                            });
+
+                        if let Some(pending) = found {
+                            // Update existing pending message
+                            pending.content = entry.content;
+                            pending.timestamp = entry.timestamp;
+                            pending.session_id = entry.session_id;
+                        } else {
+                            // Add new pending message
+                            self.pending_streaming_messages.push(entry);
+                        }
+
+                        // Update display with pending messages (shown but not finalized)
+                        self.update_chat_display(cx);
+                    } else {
+                        // Streaming complete - finalize the message
+                        let entry = ChatMessageEntry {
+                            sender: sender.clone(),
+                            content: message.content.clone(),
+                            timestamp: message.timestamp,
+                            is_streaming: false,
+                            session_id: session_id.clone(),
+                        };
+
+                        // Remove from pending - match by sender AND session_id
+                        self.pending_streaming_messages.retain(|m| {
+                            !(m.sender == sender && (
+                                m.session_id == session_id ||
+                                (m.session_id.as_ref().map(|s| s == "unknown").unwrap_or(true)
+                                    && session_id.as_ref().map(|s| s == "unknown").unwrap_or(true))
+                            ))
+                        });
+
+                        // Add to finalized messages
+                        self.chat_messages.push(entry);
+                        // Keep chat messages bounded (prevents O(n²) slowdown and markdown overflow)
+                        if self.chat_messages.len() > 500 {
+                            self.chat_messages.remove(0);
+                        }
+                        self.update_chat_display(cx);
+                    }
+                }
+                DoraEvent::LogReceived { entry } => {
+                    let level_str = format!("{:?}", entry.level).to_uppercase();
+                    let log_line = format!("[{}] [{}] {}", level_str, entry.node_id, entry.message);
+                    self.add_log(cx, &log_line);
+                }
+                DoraEvent::AudioReceived { data } => {
+                    ::log::debug!("Audio received: {} samples from {:?}", data.samples.len(), data.participant_id);
+                    // Forward to audio player for playback
+                    if let Some(ref player) = self.audio_player {
+                        player.write_audio(&data.samples, data.participant_id.clone());
+                    }
+                }
+                // NOTE: ParticipantAudioReceived removed - LED visualization calculated below
+                // from output waveform (more accurate since it reflects what's actually playing)
+                DoraEvent::Error { message } => {
+                    ::log::error!("Dora error: {}", message);
+                    self.add_log(cx, &format!("[ERROR] [Dora] {}", message));
+                    self.view.mofa_hero(ids!(left_column.mofa_hero)).set_connection_status(cx, ConnectionStatus::Failed);
+                }
+            }
+        }
+
+        // Update audio buffer level in mofa_hero (from audio player)
+        let (is_playing, active_idx, waveform_data) = if let Some(ref player) = self.audio_player {
+            let buffer_pct = player.buffer_fill_percentage() / 100.0;
+            self.view.mofa_hero(ids!(left_column.mofa_hero)).set_buffer_level(cx, buffer_pct);
+            (player.is_playing(), player.current_participant_idx(), player.get_waveform_data())
+        } else {
+            (false, None, Vec::new())
+        };
+
+        {
+            // Calculate band levels from waveform data (same as conference-dashboard)
+            let band_levels: [f32; 8] = if waveform_data.is_empty() {
+                [0.0f32; 8]
+            } else {
+                let samples = &waveform_data;
+                let band_size = samples.len() / 8;
+                let mut levels = [0.0f32; 8];
+                let peak = samples.iter().map(|s| s.abs()).fold(0.0f32, |a, b| a.max(b));
+                let norm_factor = if peak > 0.01 { 1.0 / peak } else { 1.0 };
+
+                for i in 0..8 {
+                    let start = i * band_size;
+                    let end = ((i + 1) * band_size).min(samples.len());
+                    if end > start {
+                        let sum_sq: f32 = samples[start..end].iter().map(|s| s * s).sum();
+                        let rms = (sum_sq / (end - start) as f32).sqrt();
+                        levels[i] = (rms * norm_factor * 1.5).clamp(0.0, 1.0);
+                    }
+                }
+                levels
+            };
+
+            // Update participant panels using direct apply_over (exactly like conference-dashboard)
+            let panel_ids: [&[LiveId]; 3] = [
+                ids!(left_column.participant_container.participant_bar.student1_panel),
+                ids!(left_column.participant_container.participant_bar.student2_panel),
+                ids!(left_column.participant_container.participant_bar.tutor_panel),
+            ];
+
+            for (i, panel_id) in panel_ids.into_iter().enumerate() {
+                let panel = self.view.view(panel_id);
+                let is_current_audio_speaker = is_playing && active_idx == Some(i);
+
+                // Calculate level with decay (matches conference-dashboard)
+                let new_level = if is_current_audio_speaker && !waveform_data.is_empty() {
+                    let samples = &waveform_data;
+                    let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
+                    let rms = (sum_sq / samples.len() as f32).sqrt();
+                    (rms * 2.0).clamp(0.0, 1.0) as f64
+                } else {
+                    self.participant_levels[i] * 0.85
+                };
+                self.participant_levels[i] = new_level;
+
+                // Update waveform - exactly like conference-dashboard
+                let active_val = if is_current_audio_speaker { 1.0 } else { 0.0 };
+                panel.view(ids!(waveform)).apply_over(cx, live! {
+                    draw_bg: {
+                        level: (new_level),
+                        active: (active_val),
+                        band0: (if is_current_audio_speaker { band_levels[0] as f64 } else { 0.0 }),
+                        band1: (if is_current_audio_speaker { band_levels[1] as f64 } else { 0.0 }),
+                        band2: (if is_current_audio_speaker { band_levels[2] as f64 } else { 0.0 }),
+                        band3: (if is_current_audio_speaker { band_levels[3] as f64 } else { 0.0 }),
+                        band4: (if is_current_audio_speaker { band_levels[4] as f64 } else { 0.0 }),
+                        band5: (if is_current_audio_speaker { band_levels[5] as f64 } else { 0.0 }),
+                        band6: (if is_current_audio_speaker { band_levels[6] as f64 } else { 0.0 }),
+                        band7: (if is_current_audio_speaker { band_levels[7] as f64 } else { 0.0 }),
+                    }
+                });
+            }
+        }
+    }
+
+    /// Send prompt to dora
+    fn send_prompt(&mut self, cx: &mut Cx) {
+        let prompt_text = self.view.text_input(ids!(left_column.prompt_container.prompt_section.prompt_row.prompt_input)).text();
+        if prompt_text.is_empty() {
+            return;
+        }
+
+        // Initialize dora if needed
+        self.init_dora(cx);
+
+        // Add user message to chat
+        let user_msg = ChatMessageEntry::new("You", prompt_text.clone());
+        self.chat_messages.push(user_msg);
+        // Keep chat messages bounded (prevents O(n²) slowdown and markdown overflow)
+        if self.chat_messages.len() > 500 {
+            self.chat_messages.remove(0);
+        }
+        self.update_chat_display(cx);
+
+        // Clear input field
+        self.view.text_input(ids!(left_column.prompt_container.prompt_section.prompt_row.prompt_input)).set_text(cx, "");
+
+        // Send through dora if connected
+        if let Some(ref dora) = self.dora_integration {
+            if dora.is_running() {
+                dora.send_prompt(&prompt_text);
+                self.add_log(cx, &format!("[INFO] [App] Sent prompt: {}",
+                    if prompt_text.len() > 50 { format!("{}...", &prompt_text[..50]) } else { prompt_text.to_string() }));
+            } else {
+                self.add_log(cx, "[WARN] [App] Dataflow not running - prompt not sent to LLM");
+            }
+        }
+
+        self.view.redraw(cx);
+    }
+
+    /// Reset conversation
+    fn reset_conversation(&mut self, cx: &mut Cx) {
+        // Clear chat messages and pending streaming messages
+        self.chat_messages.clear();
+        self.pending_streaming_messages.clear();
+        self.update_chat_display(cx);
+
+        // Clear prompt input
+        self.view.text_input(ids!(left_column.prompt_container.prompt_section.prompt_row.prompt_input)).set_text(cx, "");
+
+        // Add log entry
+        self.add_log(cx, "[INFO] [App] Conversation reset");
+
+        self.view.redraw(cx);
+    }
+
+    /// Update chat display with current messages
+    fn update_chat_display(&mut self, cx: &mut Cx) {
+        // Combine finalized messages with pending streaming messages
+        let all_messages: Vec<&ChatMessageEntry> = self.chat_messages.iter()
+            .chain(self.pending_streaming_messages.iter())
+            .collect();
+
+        let chat_text = if all_messages.is_empty() {
+            "Waiting for conversation...".to_string()
+        } else {
+            all_messages.into_iter()
+                .map(|msg| {
+                    let timestamp = Self::format_timestamp(msg.timestamp);
+                    let streaming_indicator = if msg.is_streaming { " ⌛" } else { "" };
+                    format!("**{}**{} ({}):  \n{}", msg.sender, streaming_indicator, timestamp, msg.content)
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n---\n\n")
+        };
+
+        self.view.markdown(ids!(left_column.chat_container.chat_section.chat_scroll.chat_content_wrapper.chat_content))
+            .set_text(cx, &chat_text);
+
+        // Auto-scroll to bottom when new messages arrive
+        let chat_count = self.chat_messages.len() + self.pending_streaming_messages.len();
+        if chat_count > self.last_chat_count {
+            self.view.view(ids!(left_column.chat_container.chat_section.chat_scroll))
+                .set_scroll_pos(cx, DVec2 { x: 0.0, y: 1e10 });
+            self.last_chat_count = chat_count;
+        }
+
+        self.view.redraw(cx);
+    }
+
+    /// Format Unix timestamp (milliseconds) to readable HH:MM:SS format
+    /// Matches conference-dashboard's get_timestamp() format
+    fn format_timestamp(timestamp_ms: u64) -> String {
+        // Convert milliseconds to seconds
+        let total_secs = timestamp_ms / 1000;
+        // Get time of day (seconds since midnight UTC)
+        let secs_in_day = total_secs % 86400;
+        let hours = secs_in_day / 3600;
+        let minutes = (secs_in_day % 3600) / 60;
+        let seconds = secs_in_day % 60;
+        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    }
+
+    // =====================================================
+    // Helper Methods
+    // =====================================================
+
+    /// Format bridge node ID to a display-friendly name
+    /// e.g., "mofa-audio-player" -> "Audio Player"
+    ///       "mofa-system-log" -> "System Log"
+    ///       "mofa-prompt-input" -> "Prompt Input"
+    fn format_bridge_name(node_id: &str) -> String {
+        // Remove "mofa-" prefix if present
+        let name = node_id.strip_prefix("mofa-").unwrap_or(node_id);
+
+        // Convert kebab-case to Title Case
+        name.split('-')
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => first.to_uppercase().chain(chars).collect(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    // =====================================================
+    // MoFA Start/Stop Handlers
+    // =====================================================
+
+    /// Handle MoFA start button click
+    fn handle_mofa_start(&mut self, cx: &mut Cx) {
+        ::log::info!("MoFA Start clicked");
+
+        // Initialize dora if not already done
+        self.init_dora(cx);
+
+        // Load API keys from preferences
+        let env_vars = self.load_api_keys_from_preferences();
+
+        // Log which keys are available
+        let has_openai = env_vars.contains_key("OPENAI_API_KEY");
+        let has_deepseek = env_vars.contains_key("DEEPSEEK_API_KEY");
+        self.add_log(cx, &format!("[INFO] [App] API Keys: OpenAI={}, DeepSeek={}",
+            if has_openai { "✓" } else { "✗" },
+            if has_deepseek { "✓" } else { "✗" }
+        ));
+
+        // Find the dataflow file
+        let dataflow_path = self.dataflow_path.clone().unwrap_or_else(|| {
+            // Try to find default dataflow relative to the mofa-fm app directory
+            // First check the manifest directory (where Cargo.toml is)
+            let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let default_path = manifest_dir.join("dataflow").join("voice-chat.yml");
+            if default_path.exists() {
+                return default_path;
+            }
+
+            // Fallback: try relative to current working directory
+            let cwd = std::env::current_dir().unwrap_or_default();
+
+            // Try apps/mofa-fm/dataflow (if running from mofa-studio root)
+            let alt_path = cwd.join("apps").join("mofa-fm").join("dataflow").join("voice-chat.yml");
+            if alt_path.exists() {
+                return alt_path;
+            }
+
+            // Last resort: assume cwd is mofa-fm directory
+            cwd.join("dataflow").join("voice-chat.yml")
+        });
+
+        if !dataflow_path.exists() {
+            self.add_log(cx, &format!("[ERROR] [App] Dataflow not found: {:?}", dataflow_path));
+            self.view.mofa_hero(ids!(left_column.mofa_hero)).set_connection_status(cx, ConnectionStatus::Failed);
+            return;
+        }
+
+        self.add_log(cx, &format!("[INFO] [App] Starting dataflow: {:?}", dataflow_path));
+
+        // Update UI state - show connecting
+        self.view.mofa_hero(ids!(left_column.mofa_hero)).set_running(cx, true);
+        self.view.mofa_hero(ids!(left_column.mofa_hero)).set_connection_status(cx, ConnectionStatus::Connecting);
+
+        // Start dataflow with environment variables
+        if let Some(ref dora) = self.dora_integration {
+            if !dora.start_dataflow_with_env(&dataflow_path, env_vars) {
+                self.add_log(cx, "[ERROR] [App] Failed to send start command");
+                self.view.mofa_hero(ids!(left_column.mofa_hero)).set_connection_status(cx, ConnectionStatus::Failed);
+            }
+        }
+
+        self.dataflow_path = Some(dataflow_path);
+    }
+
+    /// Handle MoFA stop button click
+    fn handle_mofa_stop(&mut self, cx: &mut Cx) {
+        ::log::info!("MoFA Stop clicked");
+
+        self.add_log(cx, "[INFO] [App] Force stopping MoFA dataflow...");
+
+        // Show "Stopping" state while stop is in progress
+        self.view.mofa_hero(ids!(left_column.mofa_hero)).set_connection_status(cx, ConnectionStatus::Stopping);
+
+        // Force stop dataflow immediately (0s grace period)
+        // The actual status update will come from DoraEvent::DataflowStopped
+        if let Some(ref dora) = self.dora_integration {
+            dora.force_stop_dataflow();
+        }
+
+        // Note: Don't set Stopped here - wait for DoraEvent::DataflowStopped
+        // to confirm the dataflow actually stopped
+    }
+
+    /// Load API keys from preferences
+    fn load_api_keys_from_preferences(&self) -> HashMap<String, String> {
+        let mut env_vars = HashMap::new();
+
+        // Load preferences
+        let prefs = Preferences::load();
+
+        // Get OpenAI API key
+        if let Some(provider) = prefs.get_provider("openai") {
+            if let Some(ref api_key) = provider.api_key {
+                if !api_key.is_empty() {
+                    env_vars.insert("OPENAI_API_KEY".to_string(), api_key.clone());
+                }
+            }
+        }
+
+        // Get DeepSeek API key
+        if let Some(provider) = prefs.get_provider("deepseek") {
+            if let Some(ref api_key) = provider.api_key {
+                if !api_key.is_empty() {
+                    env_vars.insert("DEEPSEEK_API_KEY".to_string(), api_key.clone());
+                }
+            }
+        }
+
+        // Get Alibaba Cloud API key
+        if let Some(provider) = prefs.get_provider("alibaba_cloud") {
+            if let Some(ref api_key) = provider.api_key {
+                if !api_key.is_empty() {
+                    env_vars.insert("DASHSCOPE_API_KEY".to_string(), api_key.clone());
+                }
+            }
+        }
+
+        env_vars
+    }
 }
 
 impl MoFaFMScreenRef {
-    /// Stop audio timer - call this before hiding/removing the widget
+    /// Stop audio and dora timers - call this before hiding/removing the widget
     /// to prevent timer callbacks on inactive state
     /// Note: AEC blink animation is shader-driven and doesn't need stopping
     pub fn stop_timers(&self, cx: &mut Cx) {
         if let Some(inner) = self.borrow_mut() {
             cx.stop_timer(inner.audio_timer);
-            ::log::debug!("MoFaFMScreen audio timer stopped");
+            cx.stop_timer(inner.dora_timer);
+            ::log::debug!("MoFaFMScreen timers stopped");
         }
     }
 
-    /// Restart audio timer - call this when the widget becomes visible again
+    /// Restart audio and dora timers - call this when the widget becomes visible again
     /// Note: AEC blink animation is shader-driven and auto-resumes
     pub fn start_timers(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.audio_timer = cx.start_interval(0.05);  // 50ms for mic level
-            ::log::debug!("MoFaFMScreen audio timer started");
+            inner.dora_timer = cx.start_interval(0.1);    // 100ms for dora events
+            ::log::debug!("MoFaFMScreen timers started");
         }
     }
+}
 
-    /// Update dark mode for this screen
-    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+impl StateChangeListener for MoFaFMScreenRef {
+    fn on_dark_mode_change(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
             // Apply dark mode to screen background
             inner.view.apply_over(cx, live!{
@@ -1493,16 +2118,22 @@ impl MoFaFMScreenRef {
                 draw_text: { dark_mode: (dark_mode) }
             });
 
-            // Apply dark mode to audio panel
-            inner.view.view(ids!(left_column.audio_container.audio_panel)).apply_over(cx, live!{
+            // Apply dark mode to audio control containers
+            inner.view.view(ids!(left_column.audio_container.mic_container)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.view(ids!(left_column.audio_container.aec_container)).apply_over(cx, live!{
+                draw_bg: { dark_mode: (dark_mode) }
+            });
+            inner.view.view(ids!(left_column.audio_container.device_container)).apply_over(cx, live!{
                 draw_bg: { dark_mode: (dark_mode) }
             });
 
             // Apply dark mode to device labels
-            inner.view.label(ids!(left_column.audio_container.audio_panel.device_selectors.input_device_group.input_device_label)).apply_over(cx, live!{
+            inner.view.label(ids!(left_column.audio_container.device_container.device_selectors.input_device_group.input_device_label)).apply_over(cx, live!{
                 draw_text: { dark_mode: (dark_mode) }
             });
-            inner.view.label(ids!(left_column.audio_container.audio_panel.device_selectors.output_device_group.output_device_label)).apply_over(cx, live!{
+            inner.view.label(ids!(left_column.audio_container.device_container.device_selectors.output_device_group.output_device_label)).apply_over(cx, live!{
                 draw_text: { dark_mode: (dark_mode) }
             });
 
@@ -1553,12 +2184,14 @@ impl MoFaFMScreenRef {
             });
 
             // Apply dark mode to log content Markdown
-            // Using widget() to get raw WidgetRef and apply_over
-            inner.view.widget(ids!(log_section.log_content_column.log_scroll.log_content_wrapper.log_content)).apply_over(cx, live!{
-                draw_normal: { dark_mode: (dark_mode) }
-                draw_bold: { dark_mode: (dark_mode) }
-                draw_fixed: { dark_mode: (dark_mode) }
-            });
+            // Use apply_over with font_color - this works because font_color is a top-level property
+            if dark_mode > 0.5 {
+                inner.view.markdown(ids!(log_section.log_content_column.log_scroll.log_content_wrapper.log_content))
+                    .apply_over(cx, live!{ font_color: (vec4(0.796, 0.835, 0.882, 1.0)) }); // SLATE_300
+            } else {
+                inner.view.markdown(ids!(log_section.log_content_column.log_scroll.log_content_wrapper.log_content))
+                    .apply_over(cx, live!{ font_color: (vec4(0.294, 0.333, 0.388, 1.0)) }); // GRAY_600
+            }
 
             inner.view.redraw(cx);
         }

@@ -1,0 +1,53 @@
+# MaaS Client Configuration for MoFA FM Voice Chat
+# Simple configuration for basic voice chat functionality
+
+default_model = "gpt-4o-mini"
+system_prompt = """You are a helpful AI assistant. Respond concisely and naturally for voice conversation."""
+
+max_history_exchanges = 20
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+log_level = "INFO"
+status_timeout_seconds = 60
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+# DeepSeek Provider
+[[providers]]
+id = "deepseek"
+kind = "deepseek"
+api_key = "env:DEEPSEEK_API_KEY"
+proxy = false
+
+# OpenAI Models
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-4.1"
+route = { provider = "openai", model = "gpt-4.1" }
+
+[[models]]
+id = "gpt-4.1-mini"
+route = { provider = "openai", model = "gpt-4.1-mini" }
+
+# DeepSeek Models
+[[models]]
+id = "deepseek-chat"
+route = { provider = "deepseek", model = "deepseek-chat" }
+
+[[models]]
+id = "deepseek-reasoner"
+route = { provider = "deepseek", model = "deepseek-reasoner" }

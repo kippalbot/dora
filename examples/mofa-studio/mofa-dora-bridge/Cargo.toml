@@ -1,0 +1,41 @@
+[package]
+name = "mofa-dora-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Modular Dora bridge for MoFA widgets - each widget connects as separate dynamic node"
+
+[dependencies]
+# Dora
+dora-node-api.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+
+# Channels for cross-thread communication
+crossbeam-channel.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Audio
+cpal.workspace = true
+
+# Utilities
+parking_lot.workspace = true
+uuid.workspace = true
+
+# Arrow for data extraction (use same version as dora workspace)
+arrow = { version = "54.2.1", default-features = false }
+
+[dev-dependencies]
+tokio-test = "0.4"

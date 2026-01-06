@@ -6,7 +6,12 @@ edition.workspace = true
 [dependencies]
 makepad-widgets.workspace = true
 mofa-widgets = { path = "../../mofa-widgets" }
+mofa-dora-bridge = { path = "../../mofa-dora-bridge" }
+mofa-settings = { path = "../mofa-settings" }
 parking_lot.workspace = true
 log.workspace = true
 sysinfo.workspace = true
 cpal.workspace = true
+crossbeam-channel.workspace = true
+serde_json.workspace = true
+once_cell = "1.19"
