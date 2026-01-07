@@ -194,11 +194,19 @@ live_design! {
     StatusSection = <RoundedView> {
         width: Fill, height: Fill
         padding: { left: 12, right: 12, top: 8, bottom: 8 }
+        show_bg: true
         draw_bg: {
             instance dark_mode: 0.0
             border_radius: (HERO_RADIUS)
-            fn get_color(self) -> vec4 {
-                return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+            border_size: 1.0
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                let bg = mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                sdf.fill(bg);
+                sdf.stroke(border, self.border_size);
+                return sdf.result;
             }
         }
         flow: Down
@@ -237,11 +245,19 @@ live_design! {
         action_section = <RoundedView> {
             width: Fill, height: Fill
             padding: { left: 12, right: 12, top: 8, bottom: 8 }
+            show_bg: true
             draw_bg: {
                 instance dark_mode: 0.0
                 border_radius: (HERO_RADIUS)
-                fn get_color(self) -> vec4 {
-                    return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                border_size: 1.0
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                    let bg = mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                    let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                    sdf.fill(bg);
+                    sdf.stroke(border, self.border_size);
+                    return sdf.result;
                 }
             }
             flow: Down
@@ -434,9 +450,12 @@ pub struct MofaHero {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum ConnectionStatus {
-    Ready,
     #[default]
+    Ready,
+    Connecting,
     Connected,
+    Stopping,
+    Stopped,
     Failed,
 }
 
@@ -462,6 +481,7 @@ impl Widget for MofaHero {
 
         match event.hits(cx, start_view.area()) {
             Hit::FingerUp(_) => {
+                ::log::info!("MofaHero: Start button clicked!");
                 cx.widget_action(self.widget_uid(), &scope.path, MofaHeroAction::StartClicked);
             }
             _ => {}
@@ -600,10 +620,14 @@ impl MofaHero {
     pub fn set_connection_status(&mut self, cx: &mut Cx, status: ConnectionStatus) {
         self.connection_status = status.clone();
 
+        // status_val: 0=ready(green), 1=connected(neon green blinking), 2=failed(red)
         let (status_val, text, dot_color) = match status {
-            ConnectionStatus::Ready => (0.0, "Ready", (0.13, 0.77, 0.37)),      // Green
-            ConnectionStatus::Connected => (1.0, "Connected", (0.0, 1.0, 0.5)),  // Neon green
-            ConnectionStatus::Failed => (2.0, "Failed", (0.95, 0.25, 0.25)),      // Red
+            ConnectionStatus::Ready => (0.0, "Ready", (0.62, 0.65, 0.69)),         // Gray - idle
+            ConnectionStatus::Connecting => (0.0, "Connecting...", (0.95, 0.75, 0.2)), // Yellow
+            ConnectionStatus::Connected => (1.0, "Connected", (0.0, 1.0, 0.5)),    // Neon green blinking
+            ConnectionStatus::Stopping => (0.0, "Stopping...", (0.95, 0.55, 0.2)), // Orange
+            ConnectionStatus::Stopped => (0.0, "Stopped", (0.62, 0.65, 0.69)),     // Gray - stopped
+            ConnectionStatus::Failed => (2.0, "Failed", (0.95, 0.25, 0.25)),       // Red
         };
 
         self.view.button(ids!(connection_section.dataflow_btn)).set_text(cx, text);

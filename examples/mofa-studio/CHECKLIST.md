@@ -673,7 +673,42 @@ apps/mofa-fm/src/screen.rs:1                  # Already themed
 - [x] Replace inline hex colors in `screen.rs` (fm) - Already uses vec4 with hex comments
 - [x] Persist dark mode preference to preferences file - Already implemented (load on startup, save on toggle)
 
-**Key Learning**: Theme constants like `(AMBER_500)` work in `live_design!{}` properties but NOT inside shader `fn pixel()` functions. Shaders must use `vec4()` literals or instance variables.
+**Key Learnings**:
+
+1. **Theme constants in shaders**: Theme constants like `(AMBER_500)` work in `live_design!{}` properties but NOT inside shader `fn pixel()` functions. Shaders must use `vec4()` literals or instance variables.
+
+2. **RoundedView vs Label shaders**: Different widget types handle custom color functions differently:
+   - **Label/text widgets**: `fn get_color(self)` works - text shaders call this function
+   - **RoundedView/backgrounds**: `fn get_color(self)` is **NOT called** - must override entire `fn pixel()` function
+
+   ```rust
+   // ❌ WRONG - get_color() never called for RoundedView
+   draw_bg: {
+       fn get_color(self) -> vec4 {
+           return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+       }
+   }
+
+   // ✅ CORRECT - override entire pixel() function
+   draw_bg: {
+       fn pixel(self) -> vec4 {
+           let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+           sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+           let bg = mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+           let border = mix((BORDER), (SLATE_600), self.dark_mode);
+           sdf.fill(bg);
+           sdf.stroke(border, self.border_size);
+           return sdf.result;
+       }
+   }
+   ```
+
+   **Root cause**: Makepad's `RoundedView` default shader uses `self.color` directly, not a `get_color()` function call.
+
+3. **Markdown widget**: Cannot use `apply_over` with `draw_normal/draw_bold/draw_fixed`. Instead, update `font_color` property directly:
+   ```rust
+   markdown.apply_over(cx, live!{ font_color: (vec4(r, g, b, a)) });
+   ```
 
 ### P2.2 - Naming Consistency ✅ DONE
 
@@ -791,13 +826,50 @@ Current `MofaApp` trait is **90% complete**:
 >
 > Makepad's architecture is **intentional**, not broken. Embrace it.
 
-#### Action Items (Completed)
+#### Action Items
 
 - [x] ~~Design `Store<T>` type~~ - Not feasible, cancelled
 - [x] ~~Implement subscribers~~ - Not compatible, cancelled
 - [x] Document shell coordinator pattern ✅
 - [x] Document contributor workflow ✅
 - [x] Keep file-based persistence ✅
+
+#### Implementation Plan: StateChangeListener Pattern
+
+**Phase 1: Formalize State Change Pattern** ⬅️ IN PROGRESS
+
+Add `StateChangeListener` trait to standardize how apps receive state updates:
+
+```rust
+// mofa-widgets/src/app_trait.rs
+pub trait StateChangeListener {
+    fn on_dark_mode_change(&self, cx: &mut Cx, dark_mode: f64);
+    // Future: on_provider_change, on_connection_status, etc.
+}
+```
+
+**Tasks:**
+- [x] Add `StateChangeListener` trait to `app_trait.rs`
+- [x] Implement for `MoFaFMScreenRef`
+- [x] Implement for `SettingsScreenRef`
+- [x] Update shell to use trait methods
+- [x] Update APP_DEVELOPMENT_GUIDE.md with trait usage
+
+**Phase 2: Centralize Shared State** (Defer)
+
+Create `AppState` struct when more shared state is needed:
+
+```rust
+pub struct AppState {
+    pub dark_mode: bool,
+    pub dark_mode_anim: f64,
+    pub connection_status: ConnectionStatus,
+}
+```
+
+**Phase 3: Event Bus** (Defer)
+
+Add only if inter-app communication becomes needed.
 
 ---
 
@@ -810,7 +882,7 @@ Current `MofaApp` trait is **90% complete**:
 | P2.1 Color Consolidation | ✅ | Single source of truth for colors |
 | P2.2 Naming Consistency | ✅ | Already consistent |
 | P2.3 Dead Code Removal | ✅ | 4 items removed |
-| P2.4 State Management | 📋 Analyzed | Deferred - architecture documented |
+| P2.4 State Management | ✅ | StateChangeListener trait implemented |
 
 **Next**: P3 (Testing, Widget Library, Documentation)
 

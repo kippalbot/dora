@@ -11,7 +11,7 @@ use makepad_widgets::*;
 use mofa_studio_shell::widgets::sidebar::SidebarWidgetRefExt;
 
 // App plugin system imports
-use mofa_widgets::{MofaApp, AppRegistry};
+use mofa_widgets::{MofaApp, AppRegistry, StateChangeListener};
 use mofa_fm::{MoFaFMApp, MoFaFMScreenWidgetRefExt};
 use mofa_settings::MoFaSettingsApp;
 use mofa_settings::data::Preferences;
@@ -294,8 +294,11 @@ live_design! {
                 title = <Label> {
                     text: "MoFA Studio"
                     draw_text: {
-                        color: (TEXT_PRIMARY)
+                        instance dark_mode: 0.0
                         text_style: <FONT_BOLD>{ font_size: 24.0 }
+                        fn get_color(self) -> vec4 {
+                            return mix((TEXT_PRIMARY), (TEXT_PRIMARY_DARK), self.dark_mode);
+                        }
                     }
                 }
 
@@ -1319,6 +1322,11 @@ impl App {
             draw_bg: { dark_mode: (dm) }
         });
 
+        // Apply to header title
+        self.ui.label(ids!(body.dashboard_base.header.title)).apply_over(cx, live!{
+            draw_text: { dark_mode: (dm) }
+        });
+
         // Apply to sidebar menu overlay
         self.ui.view(ids!(sidebar_menu_overlay)).apply_over(cx, live!{
             draw_bg: { dark_mode: (dm) }
@@ -1417,20 +1425,21 @@ impl App {
     }
 
     /// Apply dark mode to screens with a specific value
+    /// Uses StateChangeListener trait for standardized state propagation
     fn apply_dark_mode_screens_with_value(&mut self, cx: &mut Cx, dm: f64) {
-        // Apply to MoFA FM screen
+        // Apply to MoFA FM screen via StateChangeListener
         self.ui.mo_fa_fmscreen(ids!(body.dashboard_base.content_area.main_content.content.fm_page))
-            .update_dark_mode(cx, dm);
+            .on_dark_mode_change(cx, dm);
 
-        // Apply to Settings screen in main content
+        // Apply to Settings screen in main content via StateChangeListener
         self.ui.settings_screen(ids!(body.dashboard_base.content_area.main_content.content.settings_page))
-            .update_dark_mode(cx, dm);
+            .on_dark_mode_change(cx, dm);
 
         // Apply to tab overlay content - only when tabs are open
         if !self.open_tabs.is_empty() {
             if self.open_tabs.contains(&TabId::Settings) {
                 self.ui.settings_screen(ids!(body.tab_overlay.tab_content.settings_tab_page))
-                    .update_dark_mode(cx, dm);
+                    .on_dark_mode_change(cx, dm);
             }
         }
     }
@@ -1589,25 +1598,13 @@ impl App {
 
 impl App {
     /// Handle MofaHero start/stop button clicks
+    /// Note: The actual dataflow start/stop is handled by MoFaFMScreen via MofaHeroAction
+    /// This method only handles the button visibility toggle in the shell
     fn handle_mofa_hero_buttons(&mut self, cx: &mut Cx, event: &Event) {
-        let start_view = self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page.mofa_hero.action_section.start_view));
-        match event.hits(cx, start_view.area()) {
-            Hit::FingerUp(_) => {
-                self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page.mofa_hero.action_section.start_view)).set_visible(cx, false);
-                self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page.mofa_hero.action_section.stop_view)).set_visible(cx, true);
-                self.ui.redraw(cx);
-            }
-            _ => {}
-        }
-        let stop_view = self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page.mofa_hero.action_section.stop_view));
-        match event.hits(cx, stop_view.area()) {
-            Hit::FingerUp(_) => {
-                self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page.mofa_hero.action_section.start_view)).set_visible(cx, true);
-                self.ui.view(ids!(body.dashboard_base.content_area.main_content.content.fm_page.mofa_hero.action_section.stop_view)).set_visible(cx, false);
-                self.ui.redraw(cx);
-            }
-            _ => {}
-        }
+        // Button visibility is now managed by MoFaFMScreen.set_running()
+        // We don't need to handle it here anymore since MofaHero widget handles its own state
+        // The MofaHeroAction is dispatched by mofa_hero.rs and received by screen.rs
+        let _ = (cx, event); // Suppress unused warnings
     }
 }
 

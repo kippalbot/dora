@@ -1,0 +1,360 @@
+# MoFA Studio Roadmap
+
+## Executive Summary
+
+This document captures a critical analysis comparing mofa-fm (MoFA Studio) with conference-dashboard, identifying architectural strengths, weaknesses, and a roadmap for improvement.
+
+**Current State:** mofa-fm has better abstractions but worse execution (monolithic files, over-engineering). conference-dashboard has better execution but worse abstractions (stringly-typed, hard-coded). Neither is ideal, but conference-dashboard is more production-ready due to completeness.
+
+---
+
+## Architecture Comparison
+
+### Code Organization
+
+| Metric | mofa-fm | conference-dashboard |
+|--------|---------|---------------------|
+| Largest file | screen.rs (94KB) | app.rs (108KB) |
+| Dora integration | 20KB abstracted | 61KB direct |
+| Widget modularity | Monolithic | widgets/ directory |
+| Dependencies | 3 mofa-* crates | Self-contained |
+
+### Integration Approach
+
+**mofa-fm (Over-Abstracted)**
+```
+UI → DoraIntegration → mofa-dora-bridge → BridgeDispatcher → AudioPlayerBridge → DoraNode
+```
+
+**conference-dashboard (Direct)**
+```
+UI → SharedState ← dora_bridge thread → DoraNode
+```
+
+### Key Differences
+
+| Aspect | mofa-fm | conference-dashboard |
+|--------|---------|---------------------|
+| Dora Integration | Abstracted via mofa-dora-bridge | Direct dora-node-api |
+| State Model | Event-driven, minimal | Rich shared state (Arc<Mutex>) |
+| Participant Tracking | String IDs (flexible) | Array indices [0,1,2] (efficient) |
+| Dynamic Nodes | 4 specialized nodes | 1 unified dashboard node |
+| Control Commands | Type-safe DoraCommand enum | JSON string formatting |
+| Buffer Tracking | Estimated from time elapsed | Measured from actual buffer |
+| System Monitoring | Not integrated | Full CPU/Memory/Device tracking |
+| Error Handling | Basic | Comprehensive timeouts/fallbacks |
+
+---
+
+## Critical Issues in mofa-fm
+
+### 1. Monolithic Code Structure (HIGH PRIORITY)
+
+**Problem:**
+- `screen.rs` is 94KB - unmaintainable
+- `mofa_hero.rs` is 25KB - excessive live_design! macros
+- Violates single responsibility principle
+
+**Impact:**
+- Difficult to navigate and modify
+- High cognitive load for developers
+- Merge conflicts likely
+
+**Solution:** Extract into modular widget files following conference-dashboard pattern.
+
+### 2. Over-Abstraction (MEDIUM PRIORITY)
+
+**Problem:**
+- Extra indirection layers (DoraIntegration → mofa-dora-bridge → BridgeDispatcher → Bridge)
+- Debugging is harder when tracing through multiple crates
+- 3 additional crate dependencies (mofa-widgets, mofa-dora-bridge, mofa-settings)
+
+**Impact:**
+- Increased complexity without clear benefit
+- Harder to understand signal flow
+- More code to maintain
+
+**Solution:** Consider flattening to direct dora-node-api with thin wrapper.
+
+### 3. Buffer Status Architecture (HIGH PRIORITY)
+
+**Problem:**
+```rust
+// mofa-fm: ESTIMATES samples based on time elapsed
+let samples_played = (32 * elapsed_ms).min(samples_in_buffer);
+samples_in_buffer = samples_in_buffer.saturating_sub(samples_played);
+let buffer_pct = (samples_in_buffer as f64 / buffer_capacity as f64) * 100.0;
+```
+
+vs conference-dashboard:
+```rust
+// conference-dashboard: MEASURES actual buffer state
+let buf = audio_buffer.lock();
+let fill_pct = buf.fill_percentage();
+```
+
+**Impact:**
+- Inaccurate backpressure signaling
+- Buffer overruns or underruns
+- Text-segmenter receives wrong flow control signals
+
+**Solution:** Read actual buffer fill from AudioPlayer in screen.rs poll loop.
+
+### 4. Missing Features (MEDIUM PRIORITY)
+
+| Feature | mofa-fm | conference-dashboard |
+|---------|---------|---------------------|
+| Waveform visualization | Missing | 512-sample rolling buffer |
+| System metrics | Missing | CPU/Memory monitoring |
+| Settings persistence | Missing | Full preferences system |
+| Device selection | Missing | Audio device dropdown |
+| Streaming timeout | Missing | 2s auto-complete fallback |
+| Session filtering | Basic | Comprehensive tracking |
+
+### 5. String-Based Participant IDs (LOW PRIORITY)
+
+**Problem:**
+```rust
+// mofa-fm
+struct AudioSegment {
+    participant_id: Option<String>,  // Heap allocation per segment
+    samples_remaining: usize,
+}
+```
+
+vs conference-dashboard:
+```rust
+struct AudioSegment {
+    participant_idx: Option<usize>,   // Stack allocation
+    samples_remaining: usize,
+}
+```
+
+**Impact:** Minor performance overhead, but more flexible for dynamic participants.
+
+**Solution:** Keep string IDs if flexibility needed; convert to indices if performance critical.
+
+---
+
+## What mofa-fm Gets Right
+
+### 1. Type-Safe Command/Event Enums
+```rust
+pub enum DoraCommand {
+    StartDataflow { dataflow_path, env_vars },
+    StopDataflow,
+    SendPrompt { message },
+    UpdateBufferStatus { fill_percentage },
+}
+
+pub enum DoraEvent {
+    DataflowStarted { dataflow_id },
+    AudioReceived { data },
+    ChatReceived { message },
+    // ...
+}
+```
+- Prevents runtime errors from typos
+- Self-documenting API
+- Compiler-enforced exhaustive matching
+
+### 2. Library Approach
+- `mofa-dora-bridge` is reusable across apps
+- Clean separation of concerns
+- Testable in isolation
+
+### 3. Multiple Dynamic Nodes
+- More modular dataflow definition
+- Each node has single responsibility
+- Easier to debug individual components
+
+### 4. Metadata Extraction Fix
+- Handles all Parameter types (String, Integer, Float, Bool, Lists)
+- Matches conference-dashboard's get_metadata_string() pattern
+- Critical for question_id tracking (Integer type)
+
+---
+
+## What conference-dashboard Gets Right
+
+### 1. Shared State Pattern
+```rust
+pub struct SharedState {
+    pub buffer_fill: f64,
+    pub participants: [ParticipantState; 3],
+    pub chat_messages: Vec<ChatMessage>,
+    pub control_commands: Vec<ControlCommand>,
+    // ...
+}
+```
+- UI and bridge are decoupled
+- Thread-safe via Arc<Mutex>
+- Single source of truth
+
+### 2. Comprehensive Tracking
+- Streaming timeout detection (2s auto-complete)
+- Session/question filtering
+- Participant name configuration
+- Waveform visualization
+
+### 3. Modular Widget System
+```
+widgets/
+├── mofa_hero.rs
+├── participant_panel.rs
+├── log_panel.rs
+├── waveform_view.rs
+├── buffer_gauge.rs
+└── settings_screen.rs
+```
+
+### 4. Direct dora-node-api
+- Fewer layers, easier debugging
+- No middleware dependencies
+- Full control over event handling
+
+---
+
+## Roadmap
+
+### Phase 1: Critical Fixes (Immediate)
+
+1. **Fix buffer status to use actual measurement**
+   - File: `apps/mofa-fm/src/screen.rs`
+   - Change: Poll `audio_player.buffer_fill_percentage()` instead of estimating
+   - Impact: Accurate backpressure, no buffer overruns
+
+2. **Verify signal flow**
+   - Ensure `session_start` sent once per question_id
+   - Ensure `audio_complete` sent for every chunk
+   - Ensure `buffer_status` sent every 50ms
+
+### Phase 2: Code Quality (Short-term)
+
+3. **Break up screen.rs (94KB)**
+   - Extract participant panel widget
+   - Extract chat/prompt widget
+   - Extract log panel widget
+   - Extract connection status widget
+   - Target: No file > 20KB
+
+4. **Break up mofa_hero.rs (25KB)**
+   - Separate live_design! into theme file
+   - Extract sub-widgets
+
+### Phase 3: Feature Parity (Medium-term)
+
+5. **Add waveform visualization**
+   - Port from conference-dashboard's waveform_view.rs
+   - 512-sample rolling buffer
+   - Real-time audio feedback
+
+6. **Add system monitoring**
+   - CPU usage display
+   - Memory usage display
+   - Use existing sysinfo crate
+
+7. **Add settings persistence**
+   - API keys storage
+   - Audio device preferences
+   - Theme preferences
+
+8. **Add streaming timeout**
+   - 2s auto-complete fallback
+   - Prevents stuck sessions
+
+### Phase 4: Architecture Refinement (Long-term)
+
+9. **Evaluate abstraction layers**
+   - Profile mofa-dora-bridge overhead
+   - Consider direct dora-node-api if beneficial
+   - Keep type-safe commands regardless
+
+10. **Adopt shared state pattern**
+    - Create SharedState struct
+    - UI reads state, sends commands
+    - Bridge thread updates state
+    - Cleaner than current event polling
+
+11. **Unify dynamic node approach**
+    - Evaluate: 4 specialized nodes vs 1 unified node
+    - Consider maintenance overhead
+    - Document decision rationale
+
+---
+
+## Target Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│  UI Layer (Makepad)                                 │
+│  ├── widgets/                                       │
+│  │   ├── mofa_hero.rs        (< 15KB)              │
+│  │   ├── participant_panel.rs                       │
+│  │   ├── chat_panel.rs                              │
+│  │   ├── log_panel.rs                               │
+│  │   ├── waveform_view.rs                           │
+│  │   └── buffer_gauge.rs                            │
+│  └── screen.rs               (< 20KB, composition)  │
+└─────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────┐
+│  SharedState (Arc<RwLock<>>)                        │
+│  ├── buffer_fill: f64                               │
+│  ├── participants: Vec<ParticipantState>            │
+│  ├── chat_messages: Vec<ChatMessage>                │
+│  ├── log_entries: Vec<LogEntry>                     │
+│  ├── system_metrics: SystemMetrics                  │
+│  └── pending_commands: Vec<DoraCommand>  ◄── typed! │
+└─────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────┐
+│  Dora Bridge Layer                                  │
+│  ├── Type-safe DoraCommand/DoraEvent enums          │
+│  ├── Direct dora-node-api OR thin mofa-dora-bridge  │
+│  ├── Proper signal flow:                            │
+│  │   ├── session_start (once per question_id)       │
+│  │   ├── audio_complete (every chunk)               │
+│  │   └── buffer_status (every 50ms, MEASURED)       │
+│  └── Comprehensive error handling                   │
+└─────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────┐
+│  Audio Layer                                        │
+│  ├── 30s circular buffer @ 32kHz                    │
+│  ├── Segment tracking with participant IDs          │
+│  ├── CPAL stream output                             │
+│  └── Real buffer_fill_percentage() method           │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Success Metrics
+
+| Metric | Current | Target |
+|--------|---------|--------|
+| Largest source file | 94KB | < 20KB |
+| Conversation rounds before stall | 3-4 | Unlimited |
+| Buffer overrun incidents | Frequent | None |
+| Buffer status accuracy | Estimated | Measured |
+| System metrics visibility | None | Full |
+| Waveform visualization | None | Real-time |
+
+---
+
+## References
+
+- Architecture diagram: `MOFA_DORA_ARCHITECTURE.md`
+- conference-dashboard: `../conference-dashboard/`
+- Dora dataflow: `apps/mofa-fm/dataflow/voice-chat.yml`
+- Audio player bridge: `mofa-dora-bridge/src/widgets/audio_player.rs`
+
+---
+
+## Changelog
+
+- 2026-01-05: Initial roadmap created from critical analysis comparing mofa-fm and conference-dashboard

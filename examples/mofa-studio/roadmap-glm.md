@@ -1,20 +1,28 @@
 # MoFA Studio - Architecture Roadmap
 
-**Analysis Date:** 2025-01-04
-**Overall Grade:** C+ (68/100)
+**Analysis Date:** 2025-01-05 (Updated)
+**Overall Grade:** C (65/100) ⚠️ **DOWNGRADED** due to critical audio duplication
 **Codebase Size:** ~7,845 lines across 27 files
 
 ---
 
 ## Executive Summary
 
-MoFA Studio demonstrates solid architectural foundations with clear app isolation concepts and good workspace organization. However, the implementation suffers from critical code duplication (8%), monolithic files, and scalability concerns that must be addressed to support growth beyond 2-3 apps.
+MoFA Studio demonstrates solid architectural foundations with clear app isolation concepts and good workspace organization. The **MofaApp trait system** is well-designed for extensibility. However, critical findings from cross-project analysis reveal **severe code duplication (12%)** with conference-dashboard, including **missing production features** that cause incorrect behavior in multi-question scenarios.
 
 **Key Metrics:**
 - Main Components: 4 crates (1 binary, 3 libraries)
 - Apps: 2 (mofa-fm, mofa-settings)
 - Shared Widgets: 7 reusable components
 - Largest File: app.rs (1,120 lines) - **CRITICAL ISSUE**
+- **NEW:** 988 duplicated lines (12%) - **CRITICAL ISSUE**
+- **NEW:** Missing smart reset & streaming timeout - **PRODUCTION BUGS**
+
+**Critical New Findings:**
+1. **Audio player duplicated** (362 lines) from conference-dashboard with **features removed**
+2. **Smart reset missing** - May play stale audio after reset in multi-question scenarios
+3. **Streaming timeout missing** - Incomplete LLM responses can hang UI indefinitely
+4. **Conference dashboard has only placeholder** for MoFA FM (109 lines "Coming Soon")
 
 ---
 
@@ -22,20 +30,65 @@ MoFA Studio demonstrates solid architectural foundations with clear app isolatio
 
 ### 1. Code Duplication - Grade: D
 
-**Impact:** 626 duplicated lines (8% of codebase)
+**Impact:** 988 duplicated lines (12% of codebase) ⚠️ **Worse than previously estimated**
 
 | File | Locations | Lines Duplicated |
 |------|-----------|-------------------|
 | `participant_panel.rs` | shell/widgets/ & mofa-widgets/ | 246 × 2 = 492 |
 | `log_panel.rs` | shell/widgets/ & mofa-widgets/ | 67 × 2 = 134 |
+| `audio_player.rs` | **CRITICAL** - mofa-fm/ & conference-dashboard/ | **362 × 2 = 724** |
+
+**Critical Finding - Audio Player Duplication:**
+
+MoFA Studio's `apps/mofa-fm/src/audio_player.rs` is duplicated from `conference-dashboard/src/audio_player.rs`:
+```rust
+//! Adapted from conference-dashboard for mofa-fm.
+```
+
+**Impact Analysis:**
+- **362 lines duplicated** (with modifications)
+- Dashboard's version has **critical production features** missing in MoFA Studio:
+  - ✅ Smart reset with question_id filtering
+  - ✅ Streaming timeout detection (auto-complete after 2s)
+  - ✅ Participant index tracking (usize vs String)
+  - ✅ Waveform stretching for visualization
+- Divergence creates **maintenance burden**
+- No shared audio crate exists
+
+**Missing Features (Critical for Production):**
+
+| Feature | Dashboard | MoFA Studio | Impact |
+|---------|-----------|-------------|--------|
+| **Smart Reset** | ✅ question_id filtering | ❌ Missing | **CRITICAL** - may play stale audio after reset |
+| **Streaming Timeout** | ✅ Auto-complete (2s) | ❌ Missing | **HIGH** - incomplete LLM responses hang UI |
+| **Participant Tracking** | ✅ usize-based | ⚠️ String-based | **Medium** - performance |
+| **Waveform Stretching** | ✅ Adaptive visualization | ❌ Basic | **LOW** - UX quality |
 
 **Action Items:**
+- [ ] **CRITICAL: Create shared `mofa-audio` crate**
+- [ ] Port smart reset logic from dashboard to MoFA Studio
+- [ ] Add streaming timeout detection (2s auto-complete)
+- [ ] Unify participant tracking (use usize instead of String)
+- [ ] Add waveform stretching to audio visualization
 - [ ] Delete `mofa-studio-shell/src/widgets/participant_panel.rs`
 - [ ] Delete `mofa-studio-shell/src/widgets/log_panel.rs`
 - [ ] Update imports to use `mofa_widgets::` versions
 - [ ] Verify functionality after removal
 
-**Timeline:** 1-2 hours
+**Recommended Structure:**
+```
+mofa-audio/
+├── Cargo.toml
+└── src/
+    ├── audio_player.rs      # Unified circular buffer (best of both)
+    ├── device_manager.rs    # Device enumeration (from mofa-fm)
+    ├── mic_monitor.rs       # Level monitoring (from mofa-fm)
+    └── smart_reset.rs       # Question_id filtering (from dashboard)
+```
+
+**Timeline:** 1 week (was 1-2 hours)
+
+**See Also:** [MOFA_FM_COMPARISON_ANALYSIS.md](./MOFA_FM_COMPARISON_ANALYSIS.md) - Complete comparison with code examples
 
 ---
 
@@ -323,7 +376,7 @@ mod tests {
 | **Project Structure** | B+ | 85/100 | Good organization, needs core crate |
 | **Code Organization** | B | 80/100 | Apps are good, shell needs refactoring |
 | **Dependencies** | C+ | 70/100 | Too much coupling, violations |
-| **Code Duplication** | D | 50/100 | **8% duplication** |
+| **Code Duplication** | **D-** | **40/100** | **12% duplication** (was 8%) - **DOWNGRADED** |
 | **Scalability** | C- | 60/100 | Won't scale beyond 5 apps |
 | **Widget Reusability** | B- | 75/100 | Good foundation, needs library |
 | **State Management** | C+ | 70/100 | Fragmented, needs centralization |
@@ -331,7 +384,9 @@ mod tests {
 | **Testing** | F | 0/100 | No tests at all |
 | **Documentation** | C | 60/100 | Good arch doc, no API docs |
 
-**Overall: C+ (68/100)**
+**Overall: C (65/100)** - **DOWNGRADED from C+ (68/100)**
+
+**Reason for downgrade:** Critical audio player duplication with missing production features (smart reset, streaming timeout) that cause incorrect behavior in multi-question scenarios.
 
 ---
 
@@ -395,12 +450,19 @@ Each module should have one reason to change:
 ## Migration Path
 
 ### Phase 1: Quick Wins (Week 1-2)
-1. Remove duplicate widgets
-2. Consolidate font definitions
-3. Add basic documentation
+1. **CRITICAL: Create shared `mofa-audio` crate** (1 week)
+   - Port smart reset from conference-dashboard
+   - Add streaming timeout detection
+   - Unify audio player implementation
+2. Remove duplicate widgets
+3. Consolidate font definitions
+4. Add basic documentation
 
 **Success Criteria:**
-- [ ] 0 duplicate files
+- [ ] **mofa-audio** crate created with unified implementation
+- [ ] Smart reset working (question_id filtering)
+- [ ] Streaming timeout detection (2s auto-complete)
+- [ ] 0 duplicate widget files
 - [ ] Single source of truth for fonts
 - [ ] README updated
 
@@ -589,6 +651,7 @@ This roadmap is part of a multi-document analysis:
 | **roadmap-m2.md** | Tactical bug fixes | Quick wins and immediate fixes |
 | **roadmap-glm.md** (this) | Strategic planning | Long-term roadmap with grades |
 | **STATE_MANAGEMENT_ANALYSIS.md** | State management deep dive | Makepad architecture & patterns |
+| **MOFA_FM_COMPARISON_ANALYSIS.md** | **NEW** - Cross-project comparison | Audio duplication findings, missing production features |
 
 See also:
 - [CHECKLIST.md](./CHECKLIST.md) - Master consolidated checklist
@@ -596,6 +659,6 @@ See also:
 
 ---
 
-**Generated:** 2025-01-04
+**Generated:** 2025-01-05 (Updated)
 **Analyzer:** Claude (Architectural Review Agent)
-**Method:** Static code analysis, dependency graph analysis, pattern recognition
+**Method:** Static code analysis, dependency graph analysis, pattern recognition, cross-project comparison

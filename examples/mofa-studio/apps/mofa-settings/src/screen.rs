@@ -4,6 +4,7 @@ use makepad_widgets::*;
 use crate::data::{Provider, ProviderId, Preferences};
 use crate::providers_panel::{ProvidersPanelAction, ProvidersPanelWidgetExt};
 use crate::provider_view::ProviderViewWidgetExt;
+use mofa_widgets::StateChangeListener;
 
 live_design! {
     use link::theme::*;
@@ -421,9 +422,10 @@ impl SettingsScreenRef {
             inner.view.redraw(cx);
         }
     }
+}
 
-    /// Update dark mode for this screen
-    pub fn update_dark_mode(&self, cx: &mut Cx, dark_mode: f64) {
+impl StateChangeListener for SettingsScreenRef {
+    fn on_dark_mode_change(&self, cx: &mut Cx, dark_mode: f64) {
         if let Some(mut inner) = self.borrow_mut() {
             // Apply dark mode to screen background
             inner.view.apply_over(cx, live!{

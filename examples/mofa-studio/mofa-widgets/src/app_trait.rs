@@ -110,6 +110,45 @@ pub trait TimerControl {
     fn start_timers(&self, cx: &mut Cx);
 }
 
+/// Trait for widgets that respond to shared state changes
+///
+/// The shell calls these methods when global state changes (dark mode, etc.).
+/// Implement on your screen's `WidgetRef` type to receive notifications.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// impl StateChangeListener for MoFaFMScreenRef {
+///     fn on_dark_mode_change(&self, cx: &mut Cx, dark_mode: f64) {
+///         if let Some(mut inner) = self.borrow_mut() {
+///             inner.view.apply_over(cx, live!{
+///                 draw_bg: { dark_mode: (dark_mode) }
+///             });
+///             inner.view.redraw(cx);
+///         }
+///     }
+/// }
+/// ```
+///
+/// # Shell Integration
+///
+/// The shell propagates state changes to all registered listeners:
+///
+/// ```rust,ignore
+/// fn apply_dark_mode(&mut self, cx: &mut Cx, dark_mode: f64) {
+///     self.ui.mo_fa_fmscreen(ids!(fm_page)).on_dark_mode_change(cx, dark_mode);
+///     self.ui.settings_screen(ids!(settings_page)).on_dark_mode_change(cx, dark_mode);
+/// }
+/// ```
+pub trait StateChangeListener {
+    /// Called when dark mode state changes
+    ///
+    /// # Arguments
+    /// * `cx` - Makepad context for redrawing
+    /// * `dark_mode` - 0.0 for light mode, 1.0 for dark mode (supports animation values)
+    fn on_dark_mode_change(&self, cx: &mut Cx, dark_mode: f64);
+}
+
 /// Registry of all installed apps
 ///
 /// Note: Due to Makepad's architecture, apps must still be imported at compile time.

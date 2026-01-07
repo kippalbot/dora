@@ -93,6 +93,7 @@ live_design! {
     use crate::theme::ACCENT_RED;
     use crate::theme::GRAY_200;
     use crate::theme::SLATE_600;
+    use crate::theme::BORDER;
 
     // Status indicator with 3 states: 0=idle(blue), 1=speaking(green), 2=error(red)
     StatusIndicator = <View> {
@@ -285,11 +286,19 @@ live_design! {
     pub ParticipantPanel = {{ParticipantPanel}} <RoundedView> {
         width: Fill, height: Fit
         padding: 6
+        show_bg: true
         draw_bg: {
             instance dark_mode: 0.0
             border_radius: 2.0
-            fn get_color(self) -> vec4 {
-                return mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+            border_size: 1.0
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+                let bg = mix((PANEL_BG), (PANEL_BG_DARK), self.dark_mode);
+                let border = mix((BORDER), (SLATE_600), self.dark_mode);
+                sdf.fill(bg);
+                sdf.stroke(border, self.border_size);
+                return sdf.result;
             }
         }
         flow: Down
@@ -354,6 +363,69 @@ impl ParticipantPanelRef {
             // Waveform background
             inner.view.view(ids!(waveform)).apply_over(cx, live!{
                 draw_bg: { dark_mode: (dark_mode) }
+            });
+
+            inner.view.redraw(cx);
+        }
+    }
+
+    /// Set audio level for visualization
+    ///
+    /// - `level`: Audio level 0.0 to 1.0 for background bar
+    /// - `active`: Whether this participant is currently speaking
+    /// - `bands`: Optional 8-band frequency levels for waveform display
+    pub fn set_audio_level(&self, cx: &mut Cx, level: f64, active: bool, bands: Option<[f64; 8]>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            let active_val = if active { 1.0 } else { 0.0 };
+
+            // Update status indicator (green when speaking)
+            let status = if active { 1.0 } else { 0.0 };
+            inner.view.view(ids!(header.indicator)).apply_over(cx, live!{
+                draw_bg: { status: (status) }
+            });
+
+            // Update waveform
+            if let Some(b) = bands {
+                inner.view.view(ids!(waveform)).apply_over(cx, live!{
+                    draw_bg: {
+                        level: (level),
+                        active: (active_val),
+                        band0: (b[0]),
+                        band1: (b[1]),
+                        band2: (b[2]),
+                        band3: (b[3]),
+                        band4: (b[4]),
+                        band5: (b[5]),
+                        band6: (b[6]),
+                        band7: (b[7]),
+                    }
+                });
+            } else {
+                // Simple level bar without bands
+                inner.view.view(ids!(waveform)).apply_over(cx, live!{
+                    draw_bg: {
+                        level: (level),
+                        active: (active_val),
+                    }
+                });
+            }
+
+            inner.view.redraw(cx);
+        }
+    }
+
+    /// Set participant as inactive (decaying level)
+    pub fn set_inactive(&self, cx: &mut Cx, decay_level: f64) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.view.view(ids!(header.indicator)).apply_over(cx, live!{
+                draw_bg: { status: 0.0 }  // Blue = waiting
+            });
+
+            inner.view.view(ids!(waveform)).apply_over(cx, live!{
+                draw_bg: {
+                    level: (decay_level),
+                    active: 0.0,
+                }
             });
 
             inner.view.redraw(cx);
