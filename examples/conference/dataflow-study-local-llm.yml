@@ -1,0 +1,202 @@
+# Conference Study Session Example - Local LLM (3-Bridge Architecture)
+#
+# Uses local dora-local-llm server for multi-tenant inference
+# with prefix-based KV caching for efficient serving.
+#
+# Architecture:
+# - Single dora-local-llm HTTP server (loads model once)
+# - Three maas-client instances pointing to local server
+# - Same conference bridge/controller pattern as dataflow-study-sequential.yml
+#
+# Benefits:
+# - One model instance serves all participants
+# - Prefix-based KV cache for 10-100x faster subsequent turns
+# - Memory efficient: ~8GB model + ~100MB per cached prefix
+
+nodes:
+  # ============ Local LLM Server ============
+  # Single instance serving all participants via HTTP
+  # Provides OpenAI-compatible /v1/chat/completions endpoint
+
+  - id: llm-server
+    path: ../../target/release/dora-local-llm
+    env:
+      PORT: "8000"
+      MLX_MODEL: "mlx-community/Qwen2.5-7B-Instruct-4bit"
+      MAX_CACHE_ENTRIES: "20"
+      LOG_LEVEL: INFO
+    outputs:
+      - log
+
+  # ============ Study Participants (via Local LLM) ============
+  # Use maas-client with local provider config
+
+  - id: student1
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-student1/text
+      control: conference-controller/llm_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: study_config_local_student1.toml
+      LOG_LEVEL: INFO
+
+  - id: student2
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-student2/text
+      control: conference-controller/llm_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: study_config_local_student2.toml
+      LOG_LEVEL: INFO
+
+  - id: tutor
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-tutor/text
+      control: conference-controller/judge_prompt
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: study_config_local_tutor.toml
+      LOG_LEVEL: INFO
+
+  # ============ 3 Conference Bridges (Switch) ============
+  # Each bridge forwards to one participant, controlled by conference-controller
+  # Same pattern as dataflow-study-sequential.yml
+
+  # Bridge 1: Student1 + Student2 → Tutor
+  - id: bridge-to-tutor
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student1: student1/text
+      student2: student2/text
+      control:
+        source: conference-controller/control_judge
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  # Bridge 2: Student1 + Tutor → Student2
+  - id: bridge-to-student2
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student1: student1/text
+      tutor: tutor/text
+      control:
+        source: conference-controller/control_llm2
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  # Bridge 3: Student2 + Tutor → Student1
+  - id: bridge-to-student1
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties. We will proceed without their response.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student2: student2/text
+      tutor: tutor/text
+      control:
+        source: conference-controller/control_llm1
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  # ============ Conference Controller (Brain) ============
+  # Controls speaking order: student2 → student1 → tutor → repeat
+
+  - id: conference-controller
+    path: ../../target/release/dora-conference-controller
+    env:
+      DORA_POLICY_PATTERN: "[(tutor, *), (student2, 2), (student1, 1)]"
+    inputs:
+      student1: student1/text
+      student2: student2/text
+      tutor: tutor/text
+      control: debate-monitor/control
+    outputs:
+      - control_judge
+      - control_llm2
+      - control_llm1
+      - llm_control
+      - judge_prompt
+      - status
+
+  # ============ Study Monitor (TUI) ============
+  # Real-time 3-panel terminal UI
+
+  - id: debate-monitor
+    path: dynamic
+    env:
+      DORA_STUDY_MODE: "true"
+    inputs:
+      llm1_text: student1/text
+      llm1_status: student1/status
+      llm1_prompt: bridge-to-student1/text
+      llm2_text: student2/text
+      llm2_status: student2/status
+      llm2_prompt: bridge-to-student2/text
+      judge_text: tutor/text
+      judge_status: tutor/status
+      judge_prompt: bridge-to-tutor/text
+    outputs:
+      - control
+
+  # ============ Viewer (Logging) ============
+
+  - id: viewer
+    path: dynamic
+    inputs:
+      llm1_log: student1/log
+      llm1_status: student1/status
+      llm1_text: student1/text
+      llm2_log: student2/log
+      llm2_status: student2/status
+      llm2_text: student2/text
+      judge_log: tutor/log
+      judge_status: tutor/status
+      judge_text: tutor/text
+      bridge1_log: bridge-to-tutor/log
+      bridge1_status: bridge-to-tutor/status
+      bridge1_text: bridge-to-tutor/text
+      bridge2_log: bridge-to-student2/log
+      bridge2_status: bridge-to-student2/status
+      bridge2_text: bridge-to-student2/text
+      bridge3_log: bridge-to-student1/log
+      bridge3_status: bridge-to-student1/status
+      bridge3_text: bridge-to-student1/text
+      controller_status: conference-controller/status
+      controller_log: conference-controller/log
+      control_judge: conference-controller/control_judge
+      control_llm2: conference-controller/control_llm2
+      control_llm1: conference-controller/control_llm1
+      llm_server_log: llm-server/log

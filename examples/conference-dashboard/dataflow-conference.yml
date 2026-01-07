@@ -1,0 +1,303 @@
+# Conference Study Session with Makepad Dashboard
+#
+# Replaces debate-monitor, viewer, and audio-player with integrated Makepad dashboard
+#
+# Launch sequence:
+#   Terminal 1: dora start dataflow-conference.yml
+#   Terminal 2: DORA_NODE_ID=dashboard cargo run  (from conference-dashboard)
+#
+# The dashboard provides:
+#   - Visual participant panels (configurable names via PARTICIPANT1_NAME, etc.)
+#   - Audio playback with buffer visualization
+#   - Waveform display
+#   - System logs aggregation
+#   - Control buttons (reset, mute, talk)
+#
+# Participant names can be configured via environment variables:
+#   PARTICIPANT1_NAME: First participant (default: Daniu / Student 1)
+#   PARTICIPANT2_NAME: Second participant (default: Yifei / Student 2)
+#   PARTICIPANT3_NAME: Third participant (default: Laoshi / Tutor)
+
+nodes:
+  # ============ Study Participants (MaaS) ============
+
+  - id: student1
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-student1/text
+      control: conference-controller/llm_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: ../conference/study_config_maas_student1.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  - id: student2
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-student2/text
+      control: conference-controller/llm_control
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: ../conference/study_config_maas_student2.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  - id: tutor
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: bridge-to-tutor/text
+      control: conference-controller/judge_prompt
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: ../conference/study_config_maas_tutor.toml
+      ALIBABA_CLOUD_API_KEY: ${ALIBABA_CLOUD_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LOG_LEVEL: INFO
+
+  # ============ Audio Pipeline for Tutor ============
+
+  - id: tutor-text-segmenter
+    build: pip install -e ../../node-hub/dora-text-segmenter
+    path: dora-text-segmenter
+    inputs:
+      text:
+        source: tutor/text
+        queue_size: 1000
+      tts_complete: primespeech-tutor/segment_complete
+      reset: conference-controller/control_judge
+      buffer_status: dashboard/buffer_status
+    outputs:
+      - text_segment
+      - status
+      - metrics
+      - log
+    env:
+      SEGMENTER_MODE: "single"
+      ENABLE_BACKPRESSURE: "true"
+      SEGMENT_MODE: "sentence"
+      MIN_SEGMENT_LENGTH: "5"
+      MAX_SEGMENT_LENGTH: "15"
+      PUNCTUATION_MARKS: '。！？.!?，,、；：""''（）【】《》'
+      REMOVE_SPEAKER_ID: "true"
+      LOG_LEVEL: "INFO"
+
+  - id: primespeech-tutor
+    build: pip install -e ../../node-hub/dora-primespeech
+    path: dora-primespeech
+    inputs:
+      text: tutor-text-segmenter/text_segment
+    outputs:
+      - audio
+      - status
+      - segment_complete
+      - log
+    env:
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+      VOICE_NAME: "Luo Xiang"
+      PRIMESPEECH_MODEL_DIR: $HOME/.dora/models/primespeech
+      TEXT_LANG: zh
+      PROMPT_LANG: zh
+      TOP_K: 5
+      TOP_P: 1.0
+      TEMPERATURE: 1.0
+      SPEED_FACTOR: 1.0
+      USE_GPU: false
+      NUM_THREADS: 4
+      RETURN_FRAGMENT: "false"
+      LOG_LEVEL: INFO
+      ENABLE_INTERNAL_SEGMENTATION: "true"
+      TTS_MAX_SEGMENT_LENGTH: "100"
+      TTS_MIN_SEGMENT_LENGTH: "20"
+
+  # ============ Conference Bridges ============
+
+  - id: bridge-to-tutor
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student1:
+        source: student1/text
+        queue_size: 1000
+      student2:
+        source: student2/text
+        queue_size: 1000
+      control:
+        source: conference-controller/control_judge
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  - id: bridge-to-student2
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student1:
+        source: student1/text
+        queue_size: 1000
+      tutor:
+        source: tutor/text
+        queue_size: 1000
+      control:
+        source: conference-controller/control_llm2
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  - id: bridge-to-student1
+    path: ../../target/release/dora-conference-bridge
+    env:
+      LOG_LEVEL: INFO
+      STREAMING_PORTS: student1,tutor,student2
+      ERROR_MESSAGE_TEMPLATE: "[{participant} is experiencing technical difficulties.]"
+      DORA_STUDY_MODE: "true"
+    inputs:
+      student2:
+        source: student2/text
+        queue_size: 1000
+      tutor:
+        source: tutor/text
+        queue_size: 1000
+      control:
+        source: conference-controller/control_llm1
+        queue_size: 10
+    outputs:
+      - text
+      - status
+      - log
+
+  # ============ Conference Controller ============
+
+  - id: conference-controller
+    path: ../../target/release/dora-conference-controller
+    env:
+      DORA_POLICY_PATTERN: "[(tutor, *), (student2, 2), (student1, 1)]"
+      INITIAL_QUESTION_ID: 1
+    inputs:
+      student1:
+        source: student1/text
+        queue_size: 1000
+      student2:
+        source: student2/text
+        queue_size: 1000
+      tutor:
+        source: tutor/text
+        queue_size: 1000
+      control: dashboard/control
+      session_start: dashboard/session_start
+    outputs:
+      - control_judge
+      - control_llm2
+      - control_llm1
+      - llm_control
+      - judge_prompt
+      - status
+      - log
+
+  # ============ Makepad Dashboard (replaces monitor + viewer + audio-player) ============
+
+  - id: dashboard
+    path: dynamic
+    inputs:
+      # === Audio for playback ===
+      audio:
+        source: primespeech-tutor/audio
+        queue_size: 1000
+
+      # === Student1 panel ===
+      student1_text:
+        source: student1/text
+        queue_size: 1000
+      student1_status: student1/status
+      student1_prompt:
+        source: bridge-to-student1/text
+        queue_size: 1000
+      student1_log:
+        source: student1/log
+        queue_size: 1000
+
+      # === Student2 panel ===
+      student2_text:
+        source: student2/text
+        queue_size: 1000
+      student2_status: student2/status
+      student2_prompt:
+        source: bridge-to-student2/text
+        queue_size: 1000
+      student2_log:
+        source: student2/log
+        queue_size: 1000
+
+      # === Tutor panel ===
+      tutor_text:
+        source: tutor/text
+        queue_size: 1000
+      tutor_status: tutor/status
+      tutor_prompt:
+        source: bridge-to-tutor/text
+        queue_size: 1000
+      tutor_log:
+        source: tutor/log
+        queue_size: 1000
+
+      # === Bridge logs ===
+      bridge1_log:
+        source: bridge-to-tutor/log
+        queue_size: 1000
+      bridge2_log:
+        source: bridge-to-student2/log
+        queue_size: 1000
+      bridge3_log:
+        source: bridge-to-student1/log
+        queue_size: 1000
+
+      # === Controller logs ===
+      controller_log:
+        source: conference-controller/log
+        queue_size: 1000
+      controller_status: conference-controller/status
+
+      # === Audio pipeline logs ===
+      segmenter_log:
+        source: tutor-text-segmenter/log
+        queue_size: 1000
+      segmenter_status: tutor-text-segmenter/status
+      tts_log:
+        source: primespeech-tutor/log
+        queue_size: 1000
+      tts_status: primespeech-tutor/status
+
+    outputs:
+      # Control commands to conference-controller
+      - control
+      # Session start signal for round sync (replaces audio-player/session_end)
+      - session_start
+      # Buffer status for backpressure
+      - buffer_status

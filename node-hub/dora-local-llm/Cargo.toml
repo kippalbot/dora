@@ -1,0 +1,51 @@
+[package]
+name = "dora-local-llm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+documentation.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Dora
+dora-node-api = { workspace = true, features = ["tracing"] }
+
+# HTTP Server (same as dora-mcp-host)
+salvo = { version = "0.81.0", default-features = false, features = [
+    "affix-state", "cors", "server", "http1", "http2"
+] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+
+# OpenAI Types (same as dora-mcp-host)
+outfox-openai = { version = "0.1.0", git = "https://github.com/outfox-ai/outfox.git" }
+
+# MLX Inference (Apple Silicon only)
+mlx-rs = "0.21"
+# mlx-lm = "0.21"  # TODO: check if this crate exists for LLM utils
+
+# Tokenizer
+tokenizers = "0.21"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Utilities
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+eyre = "0.6"
+sha2 = "0.10"
+hex = "0.4"
+
+# HuggingFace Hub for model download
+hf-hub = "0.4"
+
+[[bin]]
+name = "dora-local-llm"
+path = "src/main.rs"

@@ -1,0 +1,27 @@
+# Simple MaaS Client Config for Testing
+# No MCP tools, just basic streaming
+
+default_model = "gpt-4o-mini"
+system_prompt = "You are a helpful assistant. Keep responses brief."
+
+max_history_exchanges = 5
+enable_streaming = true
+enable_cancellation = true
+enable_tools = false
+log_level = "DEBUG"
+
+# OpenAI Provider
+[[providers]]
+id = "openai"
+kind = "openai"
+api_key = "env:OPENAI_API_KEY"
+api_url = "https://api.openai.com/v1"
+proxy = false
+
+[[models]]
+id = "gpt-4o-mini"
+route = { provider = "openai", model = "gpt-4o-mini" }
+
+[[models]]
+id = "gpt-4o"
+route = { provider = "openai", model = "gpt-4o" }

@@ -369,12 +369,30 @@ impl Config {
 pub fn get_env_or_value(value: &str) -> String {
     if value.starts_with("env:") {
         let env_var = &value[4..];
-        std::env::var(env_var).unwrap_or_else(|_| {
-            eprintln!("Environment variable {} not found", env_var);
-            String::new()
-        })
+        let result = std::env::var(env_var)
+            .unwrap_or_else(|_| {
+                eprintln!("❌ Environment variable {} not found", env_var);
+                String::new()
+            })
+            .trim()
+            .to_string();
+
+        // Log masked API key for debugging
+        if result.is_empty() {
+            eprintln!("⚠️  {} resolved to EMPTY string", env_var);
+        } else if result.len() > 8 {
+            eprintln!("✓ {} = {}...{} (len={})", env_var, &result[..4], &result[result.len()-4..], result.len());
+        } else {
+            eprintln!("⚠️  {} = {} (too short, len={})", env_var, result, result.len());
+        }
+        result
     } else {
-        value.to_string()
+        // Literal value - also log masked
+        let result = value.trim().to_string();
+        if result.len() > 8 {
+            eprintln!("✓ Literal API key: {}...{} (len={})", &result[..4], &result[result.len()-4..], result.len());
+        }
+        result
     }
 }
 

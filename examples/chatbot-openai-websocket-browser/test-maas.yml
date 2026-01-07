@@ -1,0 +1,30 @@
+# Simple test dataflow for maas-client streaming
+nodes:
+  # Simple text source that sends a test message
+  - id: text-source
+    path: dynamic
+    outputs:
+      - text
+
+  # MaaS Client
+  - id: maas-client
+    build: cargo build -p dora-maas-client --release
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: text-source/text
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: maas_simple_config.toml
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOG_LEVEL: DEBUG
+
+  # Log viewer
+  - id: viewer
+    path: dynamic
+    inputs:
+      maas_log: maas-client/log
+      maas_status: maas-client/status
+      maas_text: maas-client/text

@@ -1,0 +1,131 @@
+# Conference Dashboard with MAC-AEC Voice Chat Pipeline (Integrated Audio)
+#
+# This dataflow integrates the Makepad conference dashboard with the
+# mac-aec voice chat system. The dashboard handles audio playback directly,
+# replacing the separate audio-player node.
+#
+# Launch sequence:
+#   Terminal 1: dora start dataflow-with-aec.yml
+#   Terminal 2: python mac_aec_simple_segmentation.py  (from mac-aec-chat)
+#   Terminal 3: DORA_NODE_ID=dashboard cargo run       (this dashboard)
+
+nodes:
+  # =============================================================================
+  # ASR - Speech Recognition
+  # =============================================================================
+  - id: asr
+    operator:
+      python: ../../node-hub/dora-asr
+    inputs:
+      audio: mac-aec/audio_segment
+    outputs:
+      - transcription
+      - log
+    env:
+      ASR_ENGINE: funasr
+      LANGUAGE: zh
+      ENABLE_PUNCTUATION: "true"
+
+  # =============================================================================
+  # MaaS Client - Cloud LLM
+  # =============================================================================
+  - id: maas-client
+    path: ../../target/release/dora-maas-client
+    inputs:
+      text: asr/transcription
+      reset: mac-aec/question_ended
+    outputs:
+      - text
+      - status
+      - log
+    env:
+      MAAS_CONFIG_PATH: ../mac-aec-chat/maas_config.local.toml
+
+  # =============================================================================
+  # Text Segmenter - Buffers LLM output for TTS
+  # =============================================================================
+  - id: text-segmenter
+    operator:
+      python: ../../node-hub/dora-text-segmenter
+    inputs:
+      text: maas-client/text
+      tts_complete: primespeech/segment_complete
+      reset: mac-aec/question_ended
+      buffer_status: dashboard/buffer_status
+    outputs:
+      - text_segment
+      - status
+      - log
+    env:
+      ENABLE_BACKPRESSURE: "true"
+      SEGMENT_MODE: sentence
+      MIN_SEGMENT_LENGTH: "5"
+      MAX_SEGMENT_LENGTH: "20"
+
+  # =============================================================================
+  # PrimeSpeech TTS - Text to Speech
+  # =============================================================================
+  - id: primespeech
+    operator:
+      python: ../../node-hub/dora-primespeech
+    inputs:
+      text: text-segmenter/text_segment
+    outputs:
+      - audio
+      - segment_complete
+      - log
+    env:
+      VOICE_NAME: Doubao
+      PRIMESPEECH_MODEL_DIR: $HOME/.dora/models/primespeech
+      TEXT_LANG: zh
+      SPEED_FACTOR: "1.0"
+      USE_GPU: "false"
+
+  # =============================================================================
+  # Dynamic Nodes (started separately)
+  # =============================================================================
+
+  # MAC-AEC - Audio capture with echo cancellation
+  - id: mac-aec
+    path: dynamic
+    outputs:
+      - audio
+      - audio_segment
+      - speech_started
+      - speech_ended
+      - question_ended
+      - log
+
+  # =============================================================================
+  # Conference Dashboard - Makepad visualization with integrated audio player
+  # =============================================================================
+  - id: dashboard
+    path: dynamic
+    inputs:
+      # TTS audio for playback
+      audio: primespeech/audio
+
+      # Reset signal
+      reset: mac-aec/question_ended
+
+      # Speech detection
+      speech_started: mac-aec/speech_started
+      speech_ended: mac-aec/speech_ended
+
+      # Transcription
+      transcription: asr/transcription
+
+      # LLM output
+      llm_text: maas-client/text
+      llm_status: maas-client/status
+
+      # Logs from all nodes
+      asr_log: asr/log
+      llm_log: maas-client/log
+      segmenter_log: text-segmenter/log
+      tts_log: primespeech/log
+      aec_log: mac-aec/log
+
+    outputs:
+      # Buffer status for backpressure control
+      - buffer_status

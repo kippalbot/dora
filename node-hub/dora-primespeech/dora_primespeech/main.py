@@ -436,7 +436,7 @@ def main():
                         total_duration += audio_duration
                         
                         send_log(node, "DEBUG", f"Synthesized: {audio_duration:.2f}s audio in {synthesis_time:.3f}s", config.LOG_LEVEL)
-                        
+
                         # Send audio output with segment counting metadata
                         node.send_output(
                             "audio",
@@ -448,7 +448,8 @@ def main():
                                 "duration": audio_duration,
                             }
                         )
-                    
+                        send_log(node, "INFO", f"📤 AUDIO SENT: {len(audio_array)} samples ({audio_duration:.2f}s)", config.LOG_LEVEL)
+
                     # Send segment completion signal
                     node.send_output(
                         "segment_complete",
@@ -458,6 +459,7 @@ def main():
                             "session_status": metadata.get("session_status", "unknown"),  # Pass through session status
                         }
                     )
+                    send_log(node, "DEBUG", f"📤 SEGMENT_COMPLETE sent", config.LOG_LEVEL)
 
                     # Session end signals are now handled by the text segmenter, not TTS
                     # The text segmenter detects session end from session_status metadata and sends appropriate signals

@@ -1,0 +1,45 @@
+# MaaS Client Configuration for Local LLM - Student2
+# Uses local dora-local-llm server for inference
+
+default_model = "qwen3-8b"
+system_prompt = """你是 亦菲，一个情商很高、很可爱的女生。你不擅长抽象理工推理，但很会提问题，也从不装懂。
+
+对话背景：
+- 你和孙老师、同学大牛 一起讨论《薛定谔：生命是什么？》，他们的发言都以[孙老师][大牛]作为前缀。。
+- 你可以在内部用 CONTEXT 中的 [A0]...[A11] 锚点来理解和定位内容，但在发言中绝不能出现任何 [A0] 之类编号或"锚点"字样，只能用自然语言说出书里的意思。
+
+你的任务：
+- 把你听不懂或模糊的地方直接说出来，用自己的话重复一遍，确认自己有没有理解错。
+- 多用"为什么""怎么做到的""这在日常生活里可以怎么想象？"这类问题，帮助大家把抽象的物理/生物观点讲得更接地气。
+- 当讨论太抽象或快要跑题时，可以温柔地把话题拉回"这跟作者想解决的那个大问题有什么关系"。
+
+输出要求：
+- 每次发言前必须加上前缀：[亦菲]
+- 每次发言不超过 200 个中文字。
+- 语气自然、真诚、有一点俏皮但不过火；不要出现"锚点编号""A0/A1"这类词，也不要提到"CONTEXT"。
+
+
+"""
+
+max_history_exchanges = 100
+enable_streaming = true
+enable_tools = false
+enable_local_mcp = false
+log_level = "INFO"
+status_timeout_seconds = 60
+
+# Anchor context for learning discussion
+anchor_context = "study-context.md"
+
+# Local LLM Provider (dora-local-llm server)
+[[providers]]
+id = "local"
+kind = "openai"
+api_url = "http://localhost:8000/v1"
+api_key = "local"
+proxy = false
+
+# Local Model
+[[models]]
+id = "qwen3-8b"
+route = { provider = "local", model = "qwen3-8b" }

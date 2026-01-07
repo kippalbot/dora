@@ -100,15 +100,55 @@ dora-node-api = { workspace = true }
 ## Building
 
 ```bash
-cargo build --release
+cargo build --release -p dora-openai-websocket
 ```
 
 ## Usage
 
-The server is automatically started by Dora when needed. It:
-1. Listens on port 8080 for WebSocket connections
-2. Spawns appropriate Dora dataflows based on client configuration
-3. Routes audio between WebSocket and Dora nodes with proper resampling
+```
+dora-openai-websocket - WebSocket server for OpenAI Realtime API
+
+USAGE:
+    dora-openai-websocket [OPTIONS]
+
+OPTIONS:
+    -n, --name <NODE_NAME>      Dynamic node name to connect as (required)
+    -d, --dataflow <PATH>       Path to dataflow YAML file to start (required)
+    -h, --help                  Print help information
+
+ENVIRONMENT VARIABLES:
+    DORA_NODE_NAME, DORA_NODE_ID    Node name (if --name not provided)
+    DATAFLOW_PATH                   Dataflow file path (if --dataflow not provided)
+    PORT                            WebSocket server port (default: 8123)
+    HOST                            WebSocket server host (default: 0.0.0.0)
+```
+
+### Examples
+
+```bash
+# Start with PrimeSpeech TTS dataflow
+dora-openai-websocket --dataflow chatbot-openai-websocket-primespeech.yml --name NODE_ID
+
+# Start with Kokoro TTS dataflow (short form)
+dora-openai-websocket -d chatbot-openai-websocket-kokoro.yml -n NODE_ID
+
+# Using environment variables
+DATAFLOW_PATH=my-dataflow.yml DORA_NODE_NAME=wserver dora-openai-websocket
+
+# Custom port
+PORT=8080 dora-openai-websocket -d dataflow.yml -n NODE_ID
+```
+
+### How It Works
+
+The server:
+1. Starts the Dora daemon if not running
+2. Starts the specified dataflow if not already running
+3. Connects as a dynamic node to the dataflow
+4. Listens on the specified port (default: 8123) for WebSocket connections
+5. Routes audio between WebSocket clients and Dora nodes with proper resampling
+6. Sends reset signals to ASR, text-segmenter, and TTS when clients disconnect
+7. Gracefully stops the dataflow on Ctrl+C
 
 ## Architecture
 

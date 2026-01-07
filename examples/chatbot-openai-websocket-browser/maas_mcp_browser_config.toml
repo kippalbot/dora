@@ -14,6 +14,7 @@ Answer in the language the user speaks."""
 
 max_history_exchanges = 30
 enable_streaming = true
+enable_cancellation = false
 log_level = "INFO"
 
 # Enable MCP tools

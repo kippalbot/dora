@@ -39,6 +39,7 @@ members = [
     "node-hub/openai-response-client",
     "node-hub/dora-openai-websocket",
     "node-hub/dora-maas-client",
+    "node-hub/dora-local-llm",
     "node-hub/dora-conference-bridge",
     "node-hub/dora-conference-controller",
     "node-hub/dora-kit-car",

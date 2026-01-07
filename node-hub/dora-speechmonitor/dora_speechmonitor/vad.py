@@ -69,7 +69,8 @@ class SileroVAD:
         # Window size based on sample rate
         window_size = 512 if sample_rate == 16000 else 256
         
-        audio_tensor = torch.from_numpy(audio_frame)
+        # Make array writable to avoid PyTorch warning
+        audio_tensor = torch.from_numpy(audio_frame.copy())
         
         try:
             probs = []

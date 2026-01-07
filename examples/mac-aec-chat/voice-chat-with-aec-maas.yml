@@ -40,7 +40,7 @@ nodes:
     # Run as a static node using the prebuilt binary
     path: ../../target/release/dora-maas-client
     inputs:
-      text: asr/transcription  # Direct from ASR
+      text: asr/transcription # Direct from ASR
     outputs:
       - text
       - status
@@ -58,17 +58,17 @@ nodes:
     build: pip install -e ../../node-hub/dora-text-segmenter
     path: dora-text-segmenter
     inputs:
-      text: maas-client/text  # From MaaS Client
-      tts_complete: primespeech/segment_complete  # TTS completion signal
-      reset: mac-aec/question_ended  # Clear queue when new question detected
+      text: maas-client/text # From MaaS Client
+      tts_complete: primespeech/segment_complete # TTS completion signal
+      reset: mac-aec/question_ended # Clear queue when new question detected
     outputs:
       - text_segment
       - status
       - metrics
       - log
     env:
-      ENABLE_BACKPRESSURE: "false"  # Don't wait initially - send first segment immediately
-      SEGMENT_MODE: "sentence"  # sentence, punctuation, or fixed
+      ENABLE_BACKPRESSURE: "false" # Don't wait initially - send first segment immediately
+      SEGMENT_MODE: "sentence" # sentence, punctuation, or fixed
       MIN_SEGMENT_LENGTH: "5"
       MAX_SEGMENT_LENGTH: "15"
       PUNCTUATION_MARKS: "。！？.!?，,"
@@ -79,7 +79,7 @@ nodes:
     build: pip install -e ../../node-hub/dora-primespeech
     path: dora-primespeech
     inputs:
-      text: text-segmenter/text_segment  # From text segmenter (not directly from LLM)
+      text: text-segmenter/text_segment # From text segmenter (not directly from LLM)
     outputs:
       - audio
       - status
@@ -92,38 +92,37 @@ nodes:
       HF_HUB_OFFLINE: "1"
 
       # Voice selection
-      VOICE_NAME: Doubao  # Available: Doubao, Luo Xiang, Yang Mi, Zhou Jielun, Ma Yun, Maple, Cove
+      VOICE_NAME: Doubao # Available: Doubao, Luo Xiang, Yang Mi, Zhou Jielun, Ma Yun, Maple, Cove
       PRIMESPEECH_MODEL_DIR: $HOME/.dora/models/primespeech
       # Language settings
-      TEXT_LANG: zh  # zh for Chinese, en for English, auto for detection
-      PROMPT_LANG: zh  # Language of the reference prompt
+      TEXT_LANG: zh # zh for Chinese, en for English, auto for detection
+      PROMPT_LANG: zh # Language of the reference prompt
 
       # Inference parameters
       TOP_K: 5
       TOP_P: 1.0
       TEMPERATURE: 1.0
-      SPEED_FACTOR: 1.0  # Speech speed multiplier
+      SPEED_FACTOR: 1.0 # Speech speed multiplier
 
       # Performance
       USE_GPU: false
       NUM_THREADS: 4
 
-      RETURN_FRAGMENT: "false"  # Disable streaming TTS for now
-      LOG_LEVEL: "INFO"
+      RETURN_FRAGMENT: "false" # Disable streaming TTS for now
       # Internal text segmentation for faster TTS
-      ENABLE_INTERNAL_SEGMENTATION: "true"  # Split long text internally
-      TTS_MAX_SEGMENT_LENGTH: "100"  # Max chars per TTS segment
-      TTS_MIN_SEGMENT_LENGTH: "20"   # Min chars per TTS segment
+      ENABLE_INTERNAL_SEGMENTATION: "true" # Split long text internally
+      TTS_MAX_SEGMENT_LENGTH: "100" # Max chars per TTS segment
+      TTS_MIN_SEGMENT_LENGTH: "20" # Min chars per TTS segment
 
       # Logging
-      LOG_LEVEL: INFO  # DEBUG, INFO, WARNING, ERROR
+      LOG_LEVEL: INFO # DEBUG, INFO, WARNING, ERROR
 
   # Audio player
   - id: audio-player
     path: dynamic
     inputs:
       audio: primespeech/audio
-      control: mac-aec/question_ended  # Reset buffer when new question detected
+      control: mac-aec/question_ended # Reset buffer when new question detected
     outputs:
       - buffer_status
       - status
@@ -133,7 +132,7 @@ nodes:
     path: dynamic
     inputs:
       transcription: asr/transcription
-      llm_output: maas-client/text  # Changed from qwen3-llm to maas-client
+      llm_output: maas-client/text # Changed from qwen3-llm to maas-client
       segment: text-segmenter/text_segment
       speech_started: mac-aec/speech_started
       speech_ended: mac-aec/speech_ended

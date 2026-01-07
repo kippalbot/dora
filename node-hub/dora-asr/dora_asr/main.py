@@ -218,6 +218,13 @@ def main():
                     manager.cleanup()
                     send_log(node, "INFO", "Cleanup complete", config.LOG_LEVEL)
 
+                elif command == "reset":
+                    # Reset signal from websocket server - ASR is stateless so just log
+                    send_log(node, "INFO", "🔄 Reset received - ASR ready for new session", config.LOG_LEVEL)
+                    # Reset counters for the new session
+                    total_segments = 0
+                    total_duration = 0.0
+
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,6 @@
 # MaaS Client Configuration with Browser Automation (Chinese enforced)
 
-default_model = "qwen-max"
+default_model = "gpt-4o-mini"
 system_prompt = """你是AI助手。请以自然流畅的中文口语化表达直接回答问题，避免冗余的思考过程。如果问题不明确，请礼貌地请求澄清。回答既不要过短也不要过长，以适应对话语境。使用口语化输出，回答应准确、精炼且有依据。不要输出 markdown 格式，不要生成不能够被语音合成的内容，不要使用 1, 2， 3 这种书面化的表达方式。"""
 
 max_history_exchanges = 30
@@ -131,4 +131,3 @@ args = [
     "--output-dir",
     "/tmp/browser-data"
 ]
-

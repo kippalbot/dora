@@ -302,14 +302,12 @@ def main():
                 text = event["value"][0].as_py()
                 metadata = event.get("metadata", {})
 
-                # Extract metadata
-                segment_index = metadata.get("segment_index", -1)
-                segments_remaining = metadata.get("segments_remaining", 0)
-                question_id = metadata.get("question_id", "default")
-                session_status = metadata.get("session_status", "unknown")
-                session_id = metadata.get("session_id", "unknown")
+                # Extract metadata - use safe defaults for optional fields
+                question_id = metadata.get("question_id", "default") if metadata else "default"
+                session_status = metadata.get("session_status", "unknown") if metadata else "unknown"
+                session_id = metadata.get("session_id", "unknown") if metadata else "unknown"
 
-                send_log(node, "DEBUG", f"Received text: '{text}' (len={len(text)}, segment={segment_index})", LOG_LEVEL)
+                send_log(node, "DEBUG", f"Received text: '{text}' (len={len(text)})", LOG_LEVEL)
 
                 # Skip if text is only punctuation or whitespace
                 text_stripped = text.strip()
@@ -320,7 +318,6 @@ def main():
                         "segment_complete",
                         pa.array(["skipped"]),
                         metadata={
-                            "segment_index": segment_index,
                             "question_id": question_id,
                             "session_status": session_status,
                             "session_id": session_id
@@ -328,7 +325,7 @@ def main():
                     )
                     continue
 
-                send_log(node, "INFO", f"Processing segment {segment_index + 1} (len={len(text)})", LOG_LEVEL)
+                send_log(node, "INFO", f"Processing text (len={len(text)})", LOG_LEVEL)
 
                 # Lazy initialize backend on first use
                 if backend is None:
@@ -342,7 +339,6 @@ def main():
                             "segment_complete",
                             pa.array(["error"]),
                             metadata={
-                                "segment_index": segment_index,
                                 "question_id": question_id,
                                 "session_status": "error",
                                 "session_id": session_id,
@@ -359,7 +355,7 @@ def main():
 
                 # Log synthesis parameters at DEBUG level
                 send_log(node, "DEBUG",
-                        f"MLX synthesis: text='{text[:50]}...' voice={VOICE} speed={SPEED} lang={lang_code}",
+                        f"Synthesis: text='{text[:50]}...' voice={VOICE} speed={SPEED} lang={lang_code}",
                         LOG_LEVEL)
 
                 # Synthesize speech
@@ -387,11 +383,9 @@ def main():
                         "audio",
                         pa.array([audio_array]),
                         metadata={
-                            "segment_index": segment_index,
-                            "segments_remaining": segments_remaining,
                             "question_id": question_id,
-                            "session_status": session_status,  # Pass through for audio player
-                            "session_id": session_id,  # Pass through for audio player
+                            "session_status": session_status,
+                            "session_id": session_id,
                             "sample_rate": sample_rate,
                             "duration": audio_duration,
                             "is_streaming": False,
@@ -404,13 +398,12 @@ def main():
                         "segment_complete",
                         pa.array(["completed"]),
                         metadata={
-                            "segment_index": segment_index,
                             "question_id": question_id,
                             "session_status": session_status,
                             "session_id": session_id
                         }
                     )
-                    send_log(node, "INFO", f"Sent segment_complete for segment {segment_index + 1}", LOG_LEVEL)
+                    send_log(node, "INFO", "Sent segment_complete", LOG_LEVEL)
 
                 except Exception as e:
                     error_details = traceback.format_exc()
@@ -422,7 +415,6 @@ def main():
                         "segment_complete",
                         pa.array(["error"]),
                         metadata={
-                            "segment_index": segment_index,
                             "question_id": question_id,
                             "session_status": "error",
                             "session_id": session_id,
@@ -430,7 +422,7 @@ def main():
                             "error_stage": "synthesis"
                         }
                     )
-                    send_log(node, "ERROR", f"Sent error segment_complete for segment {segment_index + 1}", LOG_LEVEL)
+                    send_log(node, "ERROR", "Sent error segment_complete", LOG_LEVEL)
 
             elif input_id == "control":
                 # Handle control commands

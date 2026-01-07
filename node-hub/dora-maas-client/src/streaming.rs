@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use eyre::{Result, eyre};
 use futures::StreamExt;
 use reqwest_eventsource::{Event, EventSource};
@@ -151,11 +152,13 @@ pub async fn stream_completion<F>(
 where
     F: FnMut(String) -> Result<()>,
 {
+    // Convert request body to Bytes so it can be cloned for EventSource
+    let body_bytes: Bytes = serde_json::to_vec(&request_body)?.into();
     let request = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
-        .json(&request_body);
+        .body(body_bytes);
 
     let mut event_source = EventSource::new(request)?;
     let mut accumulated_content = String::new();
@@ -210,6 +213,7 @@ where
             }
             Err(e) => {
                 eprintln!("[SSE] Error after {} chunks: {}", chunk_count, e);
+                eprintln!("[SSE] Error details: {:?}", e);
                 return Err(eyre!("SSE error: {}", e));
             }
         }
@@ -238,11 +242,13 @@ pub async fn stream_completion_with_cancellation<F>(
 where
     F: FnMut(String) -> Result<()>,
 {
+    // Convert request body to Bytes so it can be cloned for EventSource
+    let body_bytes: Bytes = serde_json::to_vec(&request_body)?.into();
     let request = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
-        .json(&request_body);
+        .body(body_bytes);
 
     let mut event_source = EventSource::new(request)?;
     let mut accumulated_content = String::new();

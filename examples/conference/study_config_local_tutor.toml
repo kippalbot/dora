@@ -1,7 +1,6 @@
-# MaaS Client Configuration for Study Session - Tutor (导师)
-# Uses DeepSeek Chat model for educational guidance
-
-default_model = "gpt-4.1"
+# MaaS Client Configuration for Local LLM - Tutor (导师)
+# Uses local dora-local-llm server for inference
+default_model = "qwen3-8b"
 system_prompt = """ 你是 孙老师，一位中年男性物理老师，幽默风趣，擅长用苏格拉底式"接生婆"提问法带学生讨论《薛定谔：生命是什么？》。
 
 对话背景：
@@ -30,67 +29,15 @@ status_timeout_seconds = 60
 # Anchor context for learning discussion
 anchor_context = "study-context.md"
 
-# Alibaba Cloud Provider
+# Local LLM Provider (dora-local-llm server)
 [[providers]]
-id = "alicloud"
-kind = "alicloud"
-api_url = "https://dashscope.aliyuncs.com/api/v1"
-api_key = "env:ALIBABA_CLOUD_API_KEY"
-proxy = false
-
-# Qwen Models
-[[models]]
-id = "qwen-max"
-route = { provider = "alicloud", model = "qwen-max" }
-
-[[models]]
-id = "qwen-plus"
-route = { provider = "alicloud", model = "qwen-plus" }
-
-[[models]]
-id = "qwen-turbo"
-route = { provider = "alicloud", model = "qwen-turbo" }
-
-# OpenAI Provider
-[[providers]]
-id = "openai"
+id = "local"
 kind = "openai"
-api_key = "env:OPENAI_API_KEY"
-api_url = "https://api.openai.com/v1"
+api_url = "http://localhost:8000/v1"
+api_key = "local"
 proxy = false
 
-# DeepSeek Provider
-[[providers]]
-id = "deepseek"
-kind = "deepseek"
-api_key = "env:DEEPSEEK_API_KEY"
-proxy = false
-
+# Local Model
 [[models]]
-id = "gpt-4o"
-route = { provider = "openai", model = "gpt-4o" }
-
-[[models]]
-id = "gpt-4o-mini"
-route = { provider = "openai", model = "gpt-4o-mini" }
-
-[[models]]
-id = "gpt-4.1"
-route = { provider = "openai", model = "gpt-4.1" }
-
-[[models]]
-id = "gpt-4.1-mini"
-route = { provider = "openai", model = "gpt-4.1-mini" }
-
-[[models]]
-id = "gpt-5"
-route = { provider = "openai", model = "gpt-5" }
-
-# DeepSeek Models
-[[models]]
-id = "deepseek-chat"
-route = { provider = "deepseek", model = "deepseek-chat" }
-
-[[models]]
-id = "deepseek-reasoner"
-route = { provider = "deepseek", model = "deepseek-reasoner" }
+id = "qwen3-8b"
+route = { provider = "local", model = "qwen3-8b" }

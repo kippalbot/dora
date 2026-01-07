@@ -123,21 +123,28 @@ Examples:
     parser.add_argument(
         '--voice',
         type=str,
-        default='doubao',
-        choices=['doubao', 'luoxiang', 'yangmi', 'zhoujielun', 'mayun', 
-                 'maple', 'cove', 'bys', 'ellen', 'juniper', 
-                 'mabaoguo', 'shenyi', 'trump'],
-        help='Voice to use for TTS'
+        default='luoxiang',
+        choices=['luoxiang', 'mayun', 'bys', 'dnz', 'yfc', 'doubao'],
+        help='Voice to use for TTS (available voices with model files)'
     )
     
+    # Auto-detect best device
+    import torch
+    if torch.cuda.is_available():
+        default_device = 'cuda'
+    elif torch.backends.mps.is_available():
+        default_device = 'mps'
+    else:
+        default_device = 'cpu'
+
     parser.add_argument(
         '--device',
         type=str,
-        default='cpu',
-        choices=['cpu', 'cuda'],
-        help='Device to use for TTS (cpu or cuda)'
+        default=default_device,
+        choices=['cpu', 'cuda', 'mps'],
+        help=f'Device to use for TTS (auto-detected: {default_device})'
     )
-    
+
     args = parser.parse_args()
     
     # Setup paths
