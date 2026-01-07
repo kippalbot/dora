@@ -129,7 +129,7 @@ live_design! {
                     }
                     flow: Down
 
-                    // Chat header
+                    // Chat header with copy button
                     chat_header = <PanelHeader> {
                         chat_title = <Label> {
                             text: "Chat History"
@@ -138,6 +138,56 @@ live_design! {
                                 text_style: <FONT_SEMIBOLD>{ font_size: 13.0 }
                                 fn get_color(self) -> vec4 {
                                     return mix((TEXT_PRIMARY), (TEXT_PRIMARY_DARK), self.dark_mode);
+                                }
+                            }
+                        }
+                        <Filler> {}
+                        // Copy to clipboard button
+                        copy_chat_btn = <Button> {
+                            width: 28, height: 24
+                            text: ""
+                            draw_bg: {
+                                instance hover: 0.0
+                                instance pressed: 0.0
+                                instance copied: 0.0
+                                fn pixel(self) -> vec4 {
+                                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                    let c = self.rect_size * 0.5;
+
+                                    // Background - flash green when copied
+                                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
+                                    let bg_color = mix((BORDER), (GRAY_300), self.hover);
+                                    let bg_color = mix(bg_color, (TEXT_MUTED), self.pressed);
+                                    let bg_color = mix(bg_color, #22c55e, self.copied);
+                                    sdf.fill(bg_color);
+
+                                    // Icon color - white when copied for contrast
+                                    let icon_color = mix((GRAY_600), #ffffff, self.copied);
+
+                                    // Always draw clipboard, color changes to indicate success
+                                    // Clipboard icon - back rectangle
+                                    sdf.box(c.x - 4.0, c.y - 2.0, 8.0, 9.0, 1.0);
+                                    sdf.stroke(icon_color, 1.2);
+
+                                    // Clipboard icon - front rectangle (overlapping)
+                                    sdf.box(c.x - 2.0, c.y - 5.0, 8.0, 9.0, 1.0);
+                                    sdf.fill(bg_color);
+                                    sdf.box(c.x - 2.0, c.y - 5.0, 8.0, 9.0, 1.0);
+                                    sdf.stroke(icon_color, 1.2);
+
+                                    return sdf.result;
+                                }
+                            }
+                            animator: {
+                                hover = {
+                                    default: off
+                                    off = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 0.0}} }
+                                    on = { from: {all: Forward {duration: 0.1}} apply: {draw_bg: {hover: 1.0}} }
+                                }
+                                pressed = {
+                                    default: off
+                                    off = { from: {all: Forward {duration: 0.05}} apply: {draw_bg: {pressed: 0.0}} }
+                                    on = { from: {all: Forward {duration: 0.02}} apply: {draw_bg: {pressed: 1.0}} }
                                 }
                             }
                         }
@@ -906,18 +956,22 @@ live_design! {
                             draw_bg: {
                                 instance hover: 0.0
                                 instance pressed: 0.0
+                                instance copied: 0.0
                                 fn pixel(self) -> vec4 {
                                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                                     let c = self.rect_size * 0.5;
 
-                                    // Background
+                                    // Background - flash green when copied
                                     sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 4.0);
                                     let bg_color = mix((BORDER), (GRAY_300), self.hover);
                                     let bg_color = mix(bg_color, (TEXT_MUTED), self.pressed);
+                                    let bg_color = mix(bg_color, #22c55e, self.copied);
                                     sdf.fill(bg_color);
 
+                                    // Icon color - white when copied for contrast
+                                    let icon_color = mix((GRAY_600), #ffffff, self.copied);
+
                                     // Clipboard icon - back rectangle
-                                    let icon_color = (GRAY_600);
                                     sdf.box(c.x - 4.0, c.y - 2.0, 8.0, 9.0, 1.0);
                                     sdf.stroke(icon_color, 1.2);
 
@@ -1067,6 +1121,10 @@ pub struct MoFaFMScreen {
     #[rust]
     dora_timer: Timer,
     #[rust]
+    copy_chat_feedback_timer: Timer,
+    #[rust]
+    copy_log_feedback_timer: Timer,
+    #[rust]
     chat_messages: Vec<ChatMessageEntry>,
     #[rust]
     last_chat_count: usize,
@@ -1112,6 +1170,20 @@ impl Widget for MoFaFMScreen {
         // Handle dora timer for polling dora events
         if self.dora_timer.is_event(event).is_some() {
             self.poll_dora_events(cx);
+        }
+
+        // Handle copy chat feedback timer - reset animation
+        if self.copy_chat_feedback_timer.is_event(event).is_some() {
+            self.view.button(ids!(left_column.chat_container.chat_section.chat_header.copy_chat_btn))
+                .apply_over(cx, live!{ draw_bg: { copied: 0.0 } });
+            self.view.redraw(cx);
+        }
+
+        // Handle copy log feedback timer - reset animation
+        if self.copy_log_feedback_timer.is_event(event).is_some() {
+            self.view.button(ids!(log_section.log_content_column.log_header.log_filter_row.copy_log_btn))
+                .apply_over(cx, live!{ draw_bg: { copied: 0.0 } });
+            self.view.redraw(cx);
         }
 
         // Handle AEC toggle button click
@@ -1202,6 +1274,23 @@ impl Widget for MoFaFMScreen {
         // Handle copy log button
         if self.view.button(ids!(log_section.log_content_column.log_header.log_filter_row.copy_log_btn)).clicked(actions) {
             self.copy_logs_to_clipboard(cx);
+            // Trigger copied feedback animation
+            self.view.button(ids!(log_section.log_content_column.log_header.log_filter_row.copy_log_btn))
+                .apply_over(cx, live!{ draw_bg: { copied: 1.0 } });
+            self.view.redraw(cx);
+            // Start timer to reset animation after 1 second
+            self.copy_log_feedback_timer = cx.start_timeout(1.0);
+        }
+
+        // Handle copy chat button
+        if self.view.button(ids!(left_column.chat_container.chat_section.chat_header.copy_chat_btn)).clicked(actions) {
+            self.copy_chat_to_clipboard(cx);
+            // Trigger copied feedback animation
+            self.view.button(ids!(left_column.chat_container.chat_section.chat_header.copy_chat_btn))
+                .apply_over(cx, live!{ draw_bg: { copied: 1.0 } });
+            self.view.redraw(cx);
+            // Start timer to reset animation after 1 second
+            self.copy_chat_feedback_timer = cx.start_timeout(1.0);
         }
 
         // Handle log search text change
@@ -1442,7 +1531,6 @@ impl MoFaFMScreen {
 
     /// Update log display based on current filter and search
     fn update_log_display(&mut self, cx: &mut Cx) {
-        ::log::debug!("Updating log display with {} entries", self.log_entries.len());
         let search_text = self.view.text_input(ids!(log_section.log_content_column.log_header.log_filter_row.log_search)).text().to_lowercase();
         let level_filter = self.log_level_filter;
         let node_filter = self.log_node_filter;
@@ -1527,6 +1615,19 @@ impl MoFaFMScreen {
         };
 
         cx.copy_to_clipboard(&log_text);
+    }
+
+    /// Copy chat messages to clipboard
+    fn copy_chat_to_clipboard(&mut self, cx: &mut Cx) {
+        let chat_text = if self.chat_messages.is_empty() {
+            "No chat messages".to_string()
+        } else {
+            self.chat_messages.iter().map(|msg| {
+                format!("[{}] {}", msg.sender, msg.content)
+            }).collect::<Vec<_>>().join("\n\n")
+        };
+
+        cx.copy_to_clipboard(&chat_text);
     }
 
     /// Add a log entry
@@ -1663,6 +1764,16 @@ impl MoFaFMScreen {
                     let sender = message.sender.clone();
                     let session_id = message.session_id.clone();
 
+                    // Debug logging for chat messages
+                    ::log::info!("[Chat] sender={}, session_id={:?}, is_streaming={}, content_len={}, pending_count={}, finalized_count={}",
+                        sender,
+                        session_id,
+                        message.is_streaming,
+                        message.content.len(),
+                        self.pending_streaming_messages.len(),
+                        self.chat_messages.len()
+                    );
+
                     if message.is_streaming {
                         // Update or create pending streaming message
                         let entry = ChatMessageEntry {
@@ -1735,7 +1846,6 @@ impl MoFaFMScreen {
                     self.add_log(cx, &log_line);
                 }
                 DoraEvent::AudioReceived { data } => {
-                    ::log::debug!("Audio received: {} samples from {:?}", data.samples.len(), data.participant_id);
                     // Forward to audio player for playback
                     if let Some(ref player) = self.audio_player {
                         player.write_audio(&data.samples, data.participant_id.clone());
@@ -1827,10 +1937,13 @@ impl MoFaFMScreen {
 
     /// Send prompt to dora
     fn send_prompt(&mut self, cx: &mut Cx) {
-        let prompt_text = self.view.text_input(ids!(left_column.prompt_container.prompt_section.prompt_row.prompt_input)).text();
-        if prompt_text.is_empty() {
-            return;
-        }
+        let input_text = self.view.text_input(ids!(left_column.prompt_container.prompt_section.prompt_row.prompt_input)).text();
+        // Use default prompt if input is empty
+        let prompt_text = if input_text.is_empty() {
+            "开始吧".to_string()
+        } else {
+            input_text
+        };
 
         // Initialize dora if needed
         self.init_dora(cx);
@@ -1861,8 +1974,20 @@ impl MoFaFMScreen {
         self.view.redraw(cx);
     }
 
-    /// Reset conversation
+    /// Reset conversation - sends reset to conference controller
     fn reset_conversation(&mut self, cx: &mut Cx) {
+        ::log::info!("Reset clicked");
+
+        // Send reset command to conference controller via dora
+        if let Some(ref dora) = self.dora_integration {
+            if dora.is_running() {
+                dora.send_control("reset");
+                self.add_log(cx, "[INFO] [App] Sent reset command to conference controller");
+            } else {
+                self.add_log(cx, "[WARN] [App] Dataflow not running - reset not sent");
+            }
+        }
+
         // Clear chat messages and pending streaming messages
         self.chat_messages.clear();
         self.pending_streaming_messages.clear();
@@ -1871,8 +1996,11 @@ impl MoFaFMScreen {
         // Clear prompt input
         self.view.text_input(ids!(left_column.prompt_container.prompt_section.prompt_row.prompt_input)).set_text(cx, "");
 
-        // Add log entry
-        self.add_log(cx, "[INFO] [App] Conversation reset");
+        // Reset audio player buffer
+        if let Some(ref audio_player) = self.audio_player {
+            audio_player.reset();
+            self.add_log(cx, "[INFO] [App] Audio buffer reset");
+        }
 
         self.view.redraw(cx);
     }
@@ -1896,6 +2024,12 @@ impl MoFaFMScreen {
                 .collect::<Vec<_>>()
                 .join("\n\n---\n\n")
         };
+
+        ::log::debug!("[Chat] update_display: text_len={}, finalized={}, pending={}",
+            chat_text.len(),
+            self.chat_messages.len(),
+            self.pending_streaming_messages.len()
+        );
 
         self.view.markdown(ids!(left_column.chat_container.chat_section.chat_scroll.chat_content_wrapper.chat_content))
             .set_text(cx, &chat_text);
@@ -1956,6 +2090,13 @@ impl MoFaFMScreen {
     /// Handle MoFA start button click
     fn handle_mofa_start(&mut self, cx: &mut Cx) {
         ::log::info!("MoFA Start clicked");
+
+        // Clear chat window and system log
+        self.chat_messages.clear();
+        self.pending_streaming_messages.clear();
+        self.last_chat_count = 0;
+        self.update_chat_display(cx);
+        self.clear_logs(cx);
 
         // Initialize dora if not already done
         self.init_dora(cx);

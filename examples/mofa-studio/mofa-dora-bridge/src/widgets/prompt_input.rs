@@ -48,10 +48,10 @@ pub struct PromptInputBridge {
 impl PromptInputBridge {
     /// Create a new prompt input bridge
     pub fn new(node_id: &str) -> Self {
-        let (event_tx, event_rx) = bounded(100);
+        let (event_tx, event_rx) = bounded(1000);  // Increased from 100 to prevent blocking
         let (prompt_tx, prompt_rx) = bounded(10);
         let (control_tx, control_rx) = bounded(10);
-        let (chat_tx, chat_rx) = bounded(100);
+        let (chat_tx, chat_rx) = bounded(1000);  // Increased from 100 to prevent blocking
 
         Self {
             node_id: node_id.to_string(),
@@ -203,7 +203,8 @@ impl PromptInputBridge {
                         let accumulated = streaming_text.entry(key.clone()).or_insert_with(String::new);
                         accumulated.push_str(&text);
 
-                        let is_complete = session_status == "complete";
+                        // LLM sends "ended" (not "complete") when streaming finishes
+                        let is_complete = session_status == "ended" || session_status == "complete";
                         let content = accumulated.clone();
 
                         let msg = ChatMessage {
@@ -215,12 +216,17 @@ impl PromptInputBridge {
                             session_id: Some(session_id.clone()),
                         };
 
-                        let _ = chat_sender.send(msg.clone());
-                        let _ = event_sender.send(BridgeEvent::DataReceived {
+                        // Use try_send to avoid blocking if channel is full
+                        if let Err(e) = chat_sender.try_send(msg.clone()) {
+                            warn!("Chat channel full, dropping message: {}", e);
+                        }
+                        if let Err(e) = event_sender.try_send(BridgeEvent::DataReceived {
                             input_id: input_id.to_string(),
                             data: DoraData::Chat(msg),
                             metadata: event_meta,
-                        });
+                        }) {
+                            warn!("Event channel full, dropping event: {}", e);
+                        }
 
                         // Clear accumulated text when session is complete
                         if is_complete {

@@ -171,6 +171,13 @@ impl DoraIntegration {
         })
     }
 
+    /// Send a control command (e.g., "reset", "cancel")
+    pub fn send_control(&self, command: impl Into<String>) -> bool {
+        self.send_command(DoraCommand::SendControl {
+            command: command.into(),
+        })
+    }
+
     /// Poll for events (non-blocking)
     pub fn poll_events(&self) -> Vec<DoraEvent> {
         let mut events = Vec::new();
@@ -306,7 +313,17 @@ impl DoraIntegration {
                     }
 
                     DoraCommand::SendControl { command } => {
-                        log::debug!("Sending control: {}", command);
+                        if let Some(ref disp) = dispatcher {
+                            if let Some(bridge) = disp.get_bridge("mofa-prompt-input") {
+                                log::info!("Sending control command: {}", command);
+                                let ctrl = mofa_dora_bridge::ControlCommand::new(&command);
+                                if let Err(e) = bridge.send("control", mofa_dora_bridge::DoraData::Control(ctrl)) {
+                                    log::error!("Failed to send control: {}", e);
+                                }
+                            } else {
+                                log::warn!("mofa-prompt-input bridge not found for control");
+                            }
+                        }
                     }
 
                     DoraCommand::UpdateBufferStatus { fill_percentage } => {
